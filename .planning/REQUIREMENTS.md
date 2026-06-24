@@ -103,13 +103,48 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (to be filled by roadmapper) | — | Pending |
+| AUTH-01 | Phase 2 | Pending |
+| AUTH-02 | Phase 2 | Pending |
+| AUTH-03 | Phase 2 | Pending |
+| SMTP-01 | Phase 2 | Pending |
+| SMTP-02 | Phase 2 | Pending |
+| SMTP-03 | Phase 2 | Pending |
+| SMTP-04 | Phase 2 | Pending |
+| SMTP-05 | Phase 2 | Pending |
+| CSV-01 | Phase 3 | Pending |
+| CSV-02 | Phase 3 | Pending |
+| CSV-03 | Phase 3 | Pending |
+| CSV-04 | Phase 3 | Pending |
+| CSV-05 | Phase 3 | Pending |
+| EDIT-01 | Phase 4 | Pending |
+| EDIT-02 | Phase 4 | Pending |
+| EDIT-03 | Phase 4 | Pending |
+| EDIT-04 | Phase 4 | Pending |
+| PREV-01 | Phase 4 | Pending |
+| PREV-02 | Phase 4 | Pending |
+| PREV-03 | Phase 4 | Pending |
+| TEST-01 | Phase 5 | Pending |
+| TEST-02 | Phase 5 | Pending |
+| TEST-03 | Phase 5 | Pending |
+| SEND-01 | Phase 6 | Pending |
+| SEND-02 | Phase 6 | Pending |
+| SEND-03 | Phase 6 | Pending |
+| SEND-04 | Phase 6 | Pending |
+| SEND-05 | Phase 6 | Pending |
+| SEND-06 | Phase 6 | Pending |
+| HIST-01 | Phase 6 | Pending |
+| HIST-02 | Phase 6 | Pending |
+| ATCH-01 | Phase 7 | Pending |
+| ATCH-02 | Phase 7 | Pending |
+| ATCH-03 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 34 total
-- Mapped to phases: (pending roadmap)
-- Unmapped: (pending roadmap)
+- Mapped to phases: 34 (100%)
+- Unmapped: 0
+
+> Phase 1 (Foundation) and Phase 8 (Packaging) are infrastructure/operational phases with no exclusive v1 REQ-IDs. Phase 1 underpins AUTH-02 (isolation), SMTP-04 (encryption), and SEND-06 (durable state). Phase 8 hardens SEND-01/SEND-06 durability and AUTH-02 isolation in production.
 
 ---
 *Requirements defined: 2026-06-24*
-*Last updated: 2026-06-24 after initial definition*
+*Last updated: 2026-06-24 after roadmap creation (traceability populated)*
