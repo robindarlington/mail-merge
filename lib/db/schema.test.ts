@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import * as schema from "./schema.ts";
+import * as schema from "./schema";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
 
 // These tests assert on the SCHEMA DEFINITION objects only.
@@ -99,11 +99,10 @@ test("send_records enforces UNIQUE(campaign_id, to_addr) for idempotent material
   }
   for (const idx of config.indexes ?? []) {
     if (idx.config.unique) {
-      uniqueColumnSets.push(
-        idx.config.columns
-          .filter((c): c is { name: string } => "name" in (c as object))
-          .map((c) => (c as { name: string }).name),
-      );
+      const names = idx.config.columns
+        .map((c) => (c as { name?: string }).name)
+        .filter((n): n is string => typeof n === "string");
+      uniqueColumnSets.push(names);
     }
   }
 
