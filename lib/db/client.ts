@@ -50,6 +50,11 @@ function openConnection(): Database.Database {
  * Module-level singleton. ESM module caching already makes this a per-process
  * singleton; the globalThis guard additionally survives Next.js dev HMR module
  * reloads so we never leak a second handle onto the same file.
+ *
+ * The guard is written unconditionally (not just in dev) so the invariant holds
+ * regardless of NODE_ENV: if a dynamic re-import or a production bundler quirk
+ * ever re-evaluates this module, the same handle is returned instead of opening
+ * a second one.
  */
 const globalForDb = globalThis as unknown as {
   __mailMergeDbConnection?: Database.Database;
@@ -58,9 +63,9 @@ const globalForDb = globalThis as unknown as {
 export const connection: Database.Database =
   globalForDb.__mailMergeDbConnection ?? openConnection();
 
-if (process.env.NODE_ENV !== "production") {
-  globalForDb.__mailMergeDbConnection = connection;
-}
+// Always save — not only in dev. The guard is cheap and makes the
+// single-opener invariant unconditional across all NODE_ENV values.
+globalForDb.__mailMergeDbConnection = connection;
 
 /** The typed Drizzle client. Import this everywhere; never open the DB elsewhere. */
 export const db = drizzle(connection, { schema });
