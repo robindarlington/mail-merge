@@ -1,0 +1,44 @@
+{
+  "name": "mail-merge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "worker": "tsx worker/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "cli:dry": "node --env-file=.env send-credentials.ts",
+    "cli:test": "node --env-file=.env send-credentials.ts --test",
+    "cli:send": "node --env-file=.env send-credentials.ts --send"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^7.5",
+    "better-sqlite3": "^12.11",
+    "drizzle-orm": "^0.45",
+    "next": "^16.2",
+    "nodemailer": "^9",
+    "p-queue": "^9.3",
+    "papaparse": "^5.5",
+    "pino": "^10.3",
+    "plainjob": "^0.0.14",
+    "react": "^19.2",
+    "react-dom": "^19.2",
+    "zod": "^4.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6",
+    "@types/node": "^24",
+    "@types/nodemailer": "^6.4",
+    "@types/papaparse": "^5",
+    "drizzle-kit": "^0.31",
+    "tailwindcss": "^4.3",
+    "tsx": "^4.22",
+    "typescript": "~5.9"
+  }
+}
