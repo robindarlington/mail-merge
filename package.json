@@ -29,6 +29,7 @@
     "p-queue": "^9.3",
     "papaparse": "^5.5",
     "pino": "^10.3",
+    "tsx": "^4.22",
     "plainjob": "^0.0.14",
     "radix-ui": "^1.6.0",
     "react": "^19.2",
@@ -48,7 +49,6 @@
     "@types/react-dom": "^19.2.3",
     "drizzle-kit": "^0.31",
     "tailwindcss": "^4.3",
-    "tsx": "^4.22",
     "typescript": "~5.9"
   }
 }
