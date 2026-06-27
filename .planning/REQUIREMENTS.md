@@ -10,7 +10,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Authentication
 
 - [ ] **AUTH-01**: User can sign up and sign in via Clerk
-- [ ] **AUTH-02**: All user data (SMTP config, CSVs, campaigns, attachments) is scoped to the signed-in user (multi-tenant isolation enforced on every data access)
+- [x] **AUTH-02**: All user data (SMTP config, CSVs, campaigns, attachments) is scoped to the signed-in user (multi-tenant isolation enforced on every data access)
 - [ ] **AUTH-03**: Unauthenticated users are redirected to sign-in for all app routes
 
 ### SMTP Onboarding
@@ -18,7 +18,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **SMTP-01**: User can enter their SMTP server details (host, port, username, password, from-name, from-address)
 - [ ] **SMTP-02**: User sets an explicit TLS mode (implicit SSL vs STARTTLS) rather than it being inferred from the port number
 - [ ] **SMTP-03**: App validates the SMTP config with a live connection check before saving, distinguishing auth failure vs host/port failure vs TLS failure in the error message
-- [ ] **SMTP-04**: SMTP credentials are stored encrypted at rest (AES-256-GCM) and reused across sessions; the password is never returned to the client or written to logs
+- [x] **SMTP-04**: SMTP credentials are stored encrypted at rest (AES-256-GCM) and reused across sessions; the password is never returned to the client or written to logs
 - [ ] **SMTP-05**: Onboarding completes only after a successful validation (with an optional test-send to the user's own address)
 
 ### CSV & Recipients
@@ -55,7 +55,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **SEND-03**: App records per-recipient send state (`pending → sending → sent`/`failed`) with error reason and timestamp
 - [ ] **SEND-04**: Per-recipient failures are logged and do not abort the batch; the failed count is surfaced at the end
 - [ ] **SEND-05**: User sees live per-recipient progress (sent / failed / remaining + current recipient) during a send
-- [ ] **SEND-06**: A send is idempotent and resumable — after a crash or restart, only un-sent (`pending`) recipients are processed; no recipient is double-sent
+- [x] **SEND-06**: A send is idempotent and resumable — after a crash or restart, only un-sent (`pending`) recipients are processed; no recipient is double-sent
 
 ### History & Records
 
@@ -104,12 +104,12 @@ Which phases cover which requirements. Populated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | AUTH-01 | Phase 2 | Pending |
-| AUTH-02 | Phase 2 | Pending |
+| AUTH-02 | Phase 2 | Complete |
 | AUTH-03 | Phase 2 | Pending |
 | SMTP-01 | Phase 2 | Pending |
 | SMTP-02 | Phase 2 | Pending |
 | SMTP-03 | Phase 2 | Pending |
-| SMTP-04 | Phase 2 | Pending |
+| SMTP-04 | Phase 2 | Complete |
 | SMTP-05 | Phase 2 | Pending |
 | CSV-01 | Phase 3 | Pending |
 | CSV-02 | Phase 3 | Pending |
@@ -131,7 +131,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SEND-03 | Phase 6 | Pending |
 | SEND-04 | Phase 6 | Pending |
 | SEND-05 | Phase 6 | Pending |
-| SEND-06 | Phase 6 | Pending |
+| SEND-06 | Phase 6 | Complete |
 | HIST-01 | Phase 6 | Pending |
 | HIST-02 | Phase 6 | Pending |
 | ATCH-01 | Phase 7 | Pending |

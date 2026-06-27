@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-06-27T21:04:36.907Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-06-27T21:10:19.364Z"
 last_activity: 2026-06-27
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-24)
 ## Current Position
 
 Phase: 01 (Foundation — DB, Crypto, Core Engine) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-06-27
 
-Progress: [██░░░░░░░░] 20%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [██░░░░░░░░] 20%
 
 *Updated after each plan completion*
 | Phase 01 P01 | 4 | 2 tasks | 16 files |
+| Phase 01 P02 | 9 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,8 @@ Recent decisions affecting current work:
 - [Stack]: Drizzle ORM over better-sqlite3; explicit `secure` TLS toggle (not inferred from port); plainjob queue flagged for maturity check before Phase 6.
 - [Phase ?]: [Scaffold]: Phase 1 is a single non-workspace Next.js 16 app (D-01); shared code lives in lib/, web build uses output:standalone (D-08), Node pinned to 24.
 - [Phase ?]: [Stack]: plainjob pinned ^0.0.14 (published latest; STACK.md ^1 unreleased); added @types/react(-dom) and @tailwindcss/postcss as build-required deps.
+- [Phase ?]: [Phase 1][Schema]: send_records & attachments carry NO userId — tenancy inherited via campaign_id FK; userId lives on the four top-level tenant tables (AUTH-02).
+- [Phase ?]: [Phase 1][D-04]: lib/db/client.ts is the sole SQLite opener; WAL+busy_timeout=5000+synchronous=NORMAL+foreign_keys=ON set in one place.
 
 ### Pending Todos
 
@@ -91,6 +94,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-27T21:04:14.388Z
-Stopped at: Phase 1 context gathered
+Last session: 2026-06-27T21:10:19.356Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
