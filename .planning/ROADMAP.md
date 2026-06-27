@@ -47,7 +47,7 @@ Plans:
 
 - [x] 01-02-PLAN.md — Full v1 Drizzle schema (6 entities, userId-scoped) + single WAL'd SQLite client (4 pragmas, sole opener)
 - [x] 01-03-PLAN.md — AES-256-GCM credential crypto: fail-closed key loader + round-trip encrypt/decrypt (TDD)
-- [ ] 01-04-PLAN.md — Lift lib/core from CLI: generalized {{column}} fill (subject+body), papaparse CSV, explicit-secure send (TDD)
+- [x] 01-04-PLAN.md — Lift lib/core from CLI: generalized {{column}} fill (subject+body), papaparse CSV, explicit-secure send (TDD)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -173,7 +173,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation — DB, Crypto, Core Engine | 3/5 | In Progress|  |
+| 1. Foundation — DB, Crypto, Core Engine | 4/5 | In Progress|  |
 | 2. Auth + SMTP Onboarding | 0/TBD | Not started | - |
 | 3. CSV Upload + Parsing + Recipient Mapping | 0/TBD | Not started | - |
 | 4. Editor + Preview + Template Save | 0/TBD | Not started | - |

@@ -24,7 +24,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### CSV & Recipients
 
 - [ ] **CSV-01**: User can upload a CSV file through the browser
-- [ ] **CSV-02**: App parses the CSV robustly (quoted fields, BOM, Windows line endings, encoding) and detects the header row
+- [x] **CSV-02**: App parses the CSV robustly (quoted fields, BOM, Windows line endings, encoding) and detects the header row
 - [ ] **CSV-03**: App auto-detects the recipient (email) column and lets the user confirm or override it
 - [ ] **CSV-04**: App validates recipient email addresses at upload and reports the count of invalid rows
 - [ ] **CSV-05**: Parsed recipients and detected columns are saved as a recipient set for the campaign
@@ -33,7 +33,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **EDIT-01**: User composes a plain-text email subject and body in an in-browser editor
 - [ ] **EDIT-02**: Editor offers autocomplete / click-to-insert merge fields drawn from the uploaded CSV's columns (triggered on `{{`)
-- [ ] **EDIT-03**: Merge fields are applied to BOTH subject and body (fixes the CLI's subject-not-personalized gap)
+- [x] **EDIT-03**: Merge fields are applied to BOTH subject and body (fixes the CLI's subject-not-personalized gap)
 - [ ] **EDIT-04**: User can save the composed subject + body as a template for the campaign
 
 ### Preview & Validation
@@ -51,7 +51,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Sending (Background)
 
 - [ ] **SEND-01**: Live send runs as a background job that survives the HTTP request lifecycle and worker restarts
-- [ ] **SEND-02**: One personalized email is sent per recipient over the user's SMTP, with a configurable throttle/delay between sends
+- [x] **SEND-02**: One personalized email is sent per recipient over the user's SMTP, with a configurable throttle/delay between sends
 - [ ] **SEND-03**: App records per-recipient send state (`pending → sending → sent`/`failed`) with error reason and timestamp
 - [ ] **SEND-04**: Per-recipient failures are logged and do not abort the batch; the failed count is surfaced at the end
 - [ ] **SEND-05**: User sees live per-recipient progress (sent / failed / remaining + current recipient) during a send
@@ -112,13 +112,13 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SMTP-04 | Phase 2 | Complete |
 | SMTP-05 | Phase 2 | Pending |
 | CSV-01 | Phase 3 | Pending |
-| CSV-02 | Phase 3 | Pending |
+| CSV-02 | Phase 3 | Complete |
 | CSV-03 | Phase 3 | Pending |
 | CSV-04 | Phase 3 | Pending |
 | CSV-05 | Phase 3 | Pending |
 | EDIT-01 | Phase 4 | Pending |
 | EDIT-02 | Phase 4 | Pending |
-| EDIT-03 | Phase 4 | Pending |
+| EDIT-03 | Phase 4 | Complete |
 | EDIT-04 | Phase 4 | Pending |
 | PREV-01 | Phase 4 | Pending |
 | PREV-02 | Phase 4 | Pending |
@@ -127,7 +127,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | TEST-02 | Phase 5 | Pending |
 | TEST-03 | Phase 5 | Pending |
 | SEND-01 | Phase 6 | Pending |
-| SEND-02 | Phase 6 | Pending |
+| SEND-02 | Phase 6 | Complete |
 | SEND-03 | Phase 6 | Pending |
 | SEND-04 | Phase 6 | Pending |
 | SEND-05 | Phase 6 | Pending |
