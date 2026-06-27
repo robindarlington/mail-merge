@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: verifying
 stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-06-27T21:21:32.915Z"
+last_updated: "2026-06-27T21:28:54.158Z"
 last_activity: 2026-06-27
 progress:
   total_phases: 8
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 4
-  percent: 0
+  completed_plans: 5
+  percent: 13
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-06-24)
 
 Phase: 01 (Foundation — DB, Crypto, Core Engine) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-27
 
-Progress: [████████░░] 80%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [████████░░] 80%
 | Phase 01 P02 | 9 | 2 tasks | 4 files |
 | Phase 01 P03 | 12 | 1 tasks | 3 files |
 | Phase 01 P04 | 14 | 2 tasks | 7 files |
+| Phase 01 P05 | 4 | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,9 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 1][Crypto]: AES-256-GCM credential helper (node:crypto only, no library) — fresh 12-byte IV per call, GCM auth tag verified on decrypt; output { enc, iv, tag } maps to smtp_configs password_enc/_iv/_tag.
 - [Phase ?]: [Phase 1][Security]: CREDENTIAL_ENC_KEY loader fails closed (throws secret-free error) when key absent or != 32 bytes; key in env only (.env gitignored, .env.example placeholder), never in repo/DB volume.
 - [Phase ?]: [Phase 1][Core] lib/core lifted from CLI: fill() generalized to arbitrary {{column}} over subject AND body (EDIT-03 fix); papaparse CSV with BOM/quoting/CRLF + invalid-email count (CSV-02/04); send with explicit secure boolean (no port===465) and structured sendOne { ok,messageId }/{ ok,error } contract for Phase 6 worker — pure (nodemailer+papaparse only), secret-safe (no logging, grep-enforced).
+- [Phase ?]: [Phase 1][Migrations] Six v1 tables physically created on disk via committed Drizzle migration (drizzle/0000); db:migrate runner reuses the single lib/db client (D-04, no second opener).
+- [Phase ?]: [Phase 1][Concurrency] Success criterion #1 proven EMPIRICALLY via a two-PROCESS smoke test (child_process.fork): overlapping cross-process read+write against the WAL'd app.db with NO SQLITE_BUSY; same-process async rejected (better-sqlite3 is synchronous).
+- [Phase ?]: [Phase 1][Packaging] Docker Compose SKELETON (D-10): web + worker from one image share named volume appdata at /data; HOSTNAME=0.0.0.0; CREDENTIAL_ENC_KEY runtime-injected, never inlined; hardening deferred to Phase 8.
 
 ### Pending Todos
 
@@ -99,6 +103,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-27T21:21:18.964Z
+Last session: 2026-06-27T21:28:26.889Z
 Stopped at: Completed 01-02-PLAN.md
 Resume file: None
