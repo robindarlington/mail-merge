@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-06-27T21:10:19.364Z"
+last_updated: "2026-06-27T21:15:13.565Z"
 last_activity: 2026-06-27
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-24)
 ## Current Position
 
 Phase: 01 (Foundation — DB, Crypto, Core Engine) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-06-27
 
-Progress: [████░░░░░░] 40%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [████░░░░░░] 40%
 *Updated after each plan completion*
 | Phase 01 P01 | 4 | 2 tasks | 16 files |
 | Phase 01 P02 | 9 | 2 tasks | 4 files |
+| Phase 01 P03 | 12 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [Stack]: plainjob pinned ^0.0.14 (published latest; STACK.md ^1 unreleased); added @types/react(-dom) and @tailwindcss/postcss as build-required deps.
 - [Phase ?]: [Phase 1][Schema]: send_records & attachments carry NO userId — tenancy inherited via campaign_id FK; userId lives on the four top-level tenant tables (AUTH-02).
 - [Phase ?]: [Phase 1][D-04]: lib/db/client.ts is the sole SQLite opener; WAL+busy_timeout=5000+synchronous=NORMAL+foreign_keys=ON set in one place.
+- [Phase ?]: [Phase 1][Crypto]: AES-256-GCM credential helper (node:crypto only, no library) — fresh 12-byte IV per call, GCM auth tag verified on decrypt; output { enc, iv, tag } maps to smtp_configs password_enc/_iv/_tag.
+- [Phase ?]: [Phase 1][Security]: CREDENTIAL_ENC_KEY loader fails closed (throws secret-free error) when key absent or != 32 bytes; key in env only (.env gitignored, .env.example placeholder), never in repo/DB volume.
 
 ### Pending Todos
 
@@ -94,6 +97,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-27T21:10:19.356Z
+Last session: 2026-06-27T21:14:59.067Z
 Stopped at: Completed 01-02-PLAN.md
 Resume file: None
