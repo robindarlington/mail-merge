@@ -51,3 +51,16 @@ test("accepts a Buffer input (worker reads file as bytes)", () => {
   const out = parseCsv(Buffer.from("email,name\na@x.com,Ada\n", "utf8"));
   assert.equal(out.rows[0].email, "a@x.com");
 });
+
+test("returns empty parseErrors for a well-formed CSV (WR-01)", () => {
+  const out = parseCsv("email,name\na@x.com,Ada\nb@x.com,Bo\n");
+  assert.equal(out.parseErrors.length, 0);
+});
+
+test("surfaces papaparse structural errors for a malformed CSV (WR-01)", () => {
+  // Row 2 has only 1 field; papaparse should report a TooFewFields FieldMismatch error.
+  const out = parseCsv("email,name\na@x.com,Ada\nb@x.com\n");
+  const fieldErrors = out.parseErrors.filter((e) => e.type === "FieldMismatch");
+  assert.ok(fieldErrors.length > 0, "expected at least one FieldMismatch error");
+  assert.equal(fieldErrors[0].code, "TooFewFields");
+});

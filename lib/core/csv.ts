@@ -23,6 +23,8 @@ export interface ParsedCsv {
   rows: Row[];
   /** Count of rows whose `email` column failed a simple RFC-lite check. */
   invalidEmailCount: number;
+  /** Structural parse errors from papaparse (field-count mismatch, quote errors, etc.). */
+  parseErrors: Papa.ParseError[];
 }
 
 // Simple RFC-lite email check: a non-empty local part, an @, a dotted domain.
@@ -62,5 +64,5 @@ export function parseCsv(input: string | Buffer): ParsedCsv {
     }
   }
 
-  return { columns, rows, invalidEmailCount };
+  return { columns, rows, invalidEmailCount, parseErrors: result.errors };
 }
