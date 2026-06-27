@@ -132,7 +132,7 @@ async function parentMain(selfPath: string): Promise<void> {
     "[concurrency-smoke] starting TWO-PROCESS probe (parent + forked child)",
   );
 
-  let parentError: string | null = null;
+  const parentErrors: string[] = [];
 
   // PASS 1: child WRITER contends with parent READER (WAL many-readers/one-writer).
   // PASS 2: child WRITER contends with parent WRITER (two processes fight for the
@@ -141,7 +141,7 @@ async function parentMain(selfPath: string): Promise<void> {
   try {
     runReader("parent-reader");
   } catch (err) {
-    parentError = err instanceof Error ? err.message : String(err);
+    parentErrors.push(err instanceof Error ? err.message : String(err));
   }
   const res1 = await childWriter1;
 
@@ -149,7 +149,7 @@ async function parentMain(selfPath: string): Promise<void> {
   try {
     runWriter("parent-writer");
   } catch (err) {
-    parentError = err instanceof Error ? err.message : String(err);
+    parentErrors.push(err instanceof Error ? err.message : String(err));
   }
   const res2 = await childWriter2;
 
@@ -168,7 +168,7 @@ async function parentMain(selfPath: string): Promise<void> {
     }
   }
 
-  if (parentError) {
+  for (const parentError of parentErrors) {
     if (LOCK_PATTERN.test(parentError)) {
       failures.push(`parent reported a lock error: ${parentError}`);
     } else {
