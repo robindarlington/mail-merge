@@ -1,0 +1,17 @@
+Subject: Vos identifiants de messagerie OVH
+
+Bonjour,
+
+Suite à la migration de vos boites mail vers OVH, voici vos identifiants de connexion au webmail. Ils sont valides dès maintenant.
+
+    Adresse e-mail : {{email}}
+    Mot de passe   : {{password}}
+    Webmail        :     https://ex2.mail.ovh.net  
+
+Ces informations vous permetront de consulter votre messagerie en ligne dès lors que la reception des mails aura basculé vers OVH mais avant que nous n'ayons pu reconfigurer vos apareils. 
+
+En cas de difficulté, n'hésitez pas à répondre à ce message ou à me joindre par téléphone au 0633064406
+
+Cordialement,
+
+Robin

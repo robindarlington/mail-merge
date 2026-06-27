@@ -5,6 +5,9 @@ node_modules/
 /.next/
 next-env.d.ts
 
+# TypeScript incremental build cache
+*.tsbuildinfo
+
 # Local dev data (D-09): SQLite DB + WAL/SHM sidecars + uploads live under /data
 /data/
 *.db
