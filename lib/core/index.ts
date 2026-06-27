@@ -10,7 +10,7 @@ export { fill, fillMessage } from "./fill";
 export type { Row as FillRow, MessageTemplate } from "./fill";
 
 export { parseCsv } from "./csv";
-export type { ParsedCsv } from "./csv";
+export type { ParsedCsv, Row as CsvRow } from "./csv";
 
 export {
   createSmtpTransport,
