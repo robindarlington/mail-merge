@@ -65,6 +65,7 @@ of exactly what was sent and to whom.
 - **Use-case shift:** The CLI was credential delivery with fixed `{{email}}`/`{{password}}` fields. The web app generalizes to arbitrary CSV columns as merge-fields.
 - **Carry-forward gaps surfaced by the codebase map:** no sent-log / idempotency (re-running re-sends everyone), no confirmation before live send, subject line not personalized, hard-coded CSV path, no `.env.example`/README, no tests. The web app should address the reliability gaps (history, progress, confirmation) by design.
 - **Deployment:** Self-hosted via Coolify on the user's VPS (Docker). Persistent host — long-running workers, on-disk SQLite, and an optional Redis container are all viable; no serverless function-timeout constraints.
+- **Current state (Phase 1 complete):** Foundation built and verified — single Next.js 16 app scaffolded; the full v1 Drizzle schema (6 entities, the `send_record` state machine) migrated onto a WAL'd SQLite file behind one shared opener (proven concurrent-safe with a two-process no-`SQLITE_BUSY` test); AES-256-GCM credential crypto; and the lifted `lib/core` merge/send engine (subject+body `{{column}}` fill, papaparse, explicit `secure` boolean). Worker entrypoint + Docker Compose skeleton in place. UI/auth/sending logic begin in later phases.
 
 ## Constraints
 
@@ -80,12 +81,12 @@ of exactly what was sent and to whom.
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Next.js + Node worker (over Laravel) | Keeps Clerk + shadcn first-class (both React); background jobs are achievable in a persistent Node worker on the VPS | — Pending |
+| Next.js + Node worker (over Laravel) | Keeps Clerk + shadcn first-class (both React); background jobs are achievable in a persistent Node worker on the VPS | ✓ Good — foundation (app + worker + shared SQLite) built & verified in Phase 1 |
 | BYO SMTP per user, validated at onboarding | Mirrors CLI model; avoids shared-reputation deliverability risk; user owns compliance | — Pending |
 | Background send with live progress + campaign history | Medium-scale sends (100–1,000) outlive a single request; addresses CLI's idempotency/audit gaps | — Pending |
 | Plain text only for v1 | Editor's value is merge-field autocomplete + preview, not formatting; keeps scope lean | — Pending |
 | Per-row attachments | User asked for it; most flexible mail-merge attachment model | — Pending |
-| SQLite backend, Coolify/VPS deploy | "Keep backend simple"; persistent host makes SQLite + workers straightforward | — Pending |
+| SQLite backend, Coolify/VPS deploy | "Keep backend simple"; persistent host makes SQLite + workers straightforward | ✓ Good — WAL'd SQLite proven concurrent-safe across web+worker in Phase 1 |
 | Compliance deferred | Internal/transactional BYO-SMTP use; not a marketing tool in v1 | — Pending |
 
 ## Evolution
@@ -106,4 +107,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-24 after initialization*
+*Last updated: 2026-06-27 after Phase 1 (Foundation) completion*
