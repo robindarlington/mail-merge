@@ -19,7 +19,7 @@ process.env.CREDENTIAL_ENC_KEY = TEST_KEY_B64;
 
 // Import after the env var is set so the key loader (if it caches at import)
 // sees a valid key. We import dynamically inside tests for clarity.
-const { encrypt, decrypt } = await import("./index.ts");
+const { encrypt, decrypt } = await import("./index");
 
 test("round-trips ASCII plaintext", () => {
   const payload = encrypt("hunter2");
@@ -182,7 +182,7 @@ test("fails closed when CREDENTIAL_ENC_KEY decodes to the wrong length", () => {
 test("the fail-closed error message does not leak the key value", () => {
   // Use a long, distinctive but wrong-length key so we can grep for it.
   const distinctive = randomBytes(16).toString("base64");
-  const env = { ...process.env, LEAK_CHECK: distinctive };
+  const env: NodeJS.ProcessEnv = { ...process.env, LEAK_CHECK: distinctive };
   const script = `
     import('./lib/crypto/index.ts').then((m) => {
       try { m.encrypt('x'); process.exit(2); }
