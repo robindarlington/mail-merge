@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 1 context gathered
-last_updated: "2026-06-26T21:32:47.748Z"
-last_activity: 2026-06-26 -- Phase 1 planning complete
+last_updated: "2026-06-27T21:04:36.907Z"
+last_activity: 2026-06-27
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-24)
 
 **Core value:** A signed-in user can reliably send a personalized email to every row of their CSV, using their own validated SMTP, with confidence (preview + test-send) and a record of exactly what was sent and to whom.
-**Current focus:** Phase 1 — Foundation (DB, Crypto, Core Engine)
+**Current focus:** Phase 01 — Foundation — DB, Crypto, Core Engine
 
 ## Current Position
 
-Phase: 1 of 8 (Foundation — DB, Crypto, Core Engine)
-Plan: 0 of TBD in current phase
+Phase: 01 (Foundation — DB, Crypto, Core Engine) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-06-26 -- Phase 1 planning complete
+Last activity: 2026-06-27
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 01 P01 | 4 | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -64,6 +65,8 @@ Recent decisions affecting current work:
 - [Architecture]: The persisted per-recipient `send_record` state machine (`pending → sent|failed`) is the linchpin — progress, history, idempotency, and the confirmation modal are all views/behaviors over it. Build it in Phase 6.
 - [Security]: SMTP credentials encrypted AES-256-GCM with a runtime-injected key; password never logged or returned to the client.
 - [Stack]: Drizzle ORM over better-sqlite3; explicit `secure` TLS toggle (not inferred from port); plainjob queue flagged for maturity check before Phase 6.
+- [Phase ?]: [Scaffold]: Phase 1 is a single non-workspace Next.js 16 app (D-01); shared code lives in lib/, web build uses output:standalone (D-08), Node pinned to 24.
+- [Phase ?]: [Stack]: plainjob pinned ^0.0.14 (published latest; STACK.md ^1 unreleased); added @types/react(-dom) and @tailwindcss/postcss as build-required deps.
 
 ### Pending Todos
 
@@ -88,6 +91,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-26T21:06:57.811Z
+Last session: 2026-06-27T21:04:14.388Z
 Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-foundation-db-crypto-core-engine/01-CONTEXT.md
+Resume file: None

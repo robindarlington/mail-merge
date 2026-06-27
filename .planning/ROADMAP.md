@@ -41,7 +41,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Scaffold single Next.js 16 app: pinned deps, scripts, .env.example, .nvmrc, standalone config, drizzle/shadcn init
+- [x] 01-01-PLAN.md — Scaffold single Next.js 16 app: pinned deps, scripts, .env.example, .nvmrc, standalone config, drizzle/shadcn init
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -173,7 +173,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation — DB, Crypto, Core Engine | 0/5 | Planned | - |
+| 1. Foundation — DB, Crypto, Core Engine | 1/5 | In Progress|  |
 | 2. Auth + SMTP Onboarding | 0/TBD | Not started | - |
 | 3. CSV Upload + Parsing + Recipient Mapping | 0/TBD | Not started | - |
 | 4. Editor + Preview + Template Save | 0/TBD | Not started | - |
