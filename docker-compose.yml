@@ -1,0 +1,58 @@
+# Phase 1 Docker Compose SKELETON (D-10) — success criterion #4.
+#
+# Two services (web + worker) built from ONE image (the single Dockerfile),
+# BOTH mounting the SAME named volume `appdata` at /data. That shared mount is
+# what makes web-enqueue / worker-dequeue over one SQLite file work: app.db
+# (+ -wal/-shm sidecars) and later uploads all live on /data. WAL requires a
+# LOCAL volume on the SAME host — never NFS (PITFALLS #5/#9).
+#
+# SKELETON ONLY — full production hardening is Phase 8 (D-10):
+#   - stop_grace_period tuning + SIGTERM/graceful-shutdown handling
+#   - healthchecks, restart policies, PID1/tini init
+#   - WAL checkpointing between campaigns, volume backup/persistence acceptance
+#   - the worker built to a bundled worker.js (D-07) instead of `tsx`
+# This file declares the correct service/volume TOPOLOGY and is valid compose;
+# it is NOT a hardened production deployment.
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mail-merge:skeleton
+    command: ["node", "server.js"]
+    environment:
+      # Next.js standalone server must bind all interfaces in a container.
+      HOSTNAME: "0.0.0.0"
+      PORT: "3000"
+      NODE_ENV: production
+      # Single SQLite file on the shared /data volume.
+      DATABASE_PATH: /data/app.db
+      # AES-256-GCM master key — injected from the host env / Coolify secret at
+      # runtime, NEVER inlined here or baked into the image (PITFALLS #1/#2).
+      CREDENTIAL_ENC_KEY: ${CREDENTIAL_ENC_KEY}
+    ports:
+      - "3000:3000"
+    volumes:
+      - appdata:/data
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mail-merge:skeleton
+    # Same image, different entrypoint (D-02). Phase 8 swaps tsx -> worker.js (D-07).
+    command: ["npx", "tsx", "worker/index.ts"]
+    environment:
+      NODE_ENV: production
+      # Same DB file as web — both processes open the one app.db on /data.
+      DATABASE_PATH: /data/app.db
+      CREDENTIAL_ENC_KEY: ${CREDENTIAL_ENC_KEY}
+    volumes:
+      - appdata:/data
+    depends_on:
+      - web
+
+# One named local volume shared by both services at /data (same host, not NFS).
+volumes:
+  appdata:
