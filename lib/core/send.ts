@@ -34,6 +34,22 @@ export interface SmtpConfig {
   /** Explicit TLS mode — NOT inferred from the port (PITFALLS #3). */
   secure: boolean;
   auth: { user: string; pass: string };
+  /**
+   * Onboarding-only additive options (plan 02-02). All optional so existing
+   * callers (the worker's send loop) are unaffected — omitted fields are not
+   * passed to nodemailer, preserving the single-factory contract.
+   */
+  /** Force STARTTLS upgrade; set true when `secure:false` so a STARTTLS-capable
+   *  server cannot silently keep the connection in cleartext (T-2-TLS). */
+  requireTLS?: boolean;
+  /** ms to wait for the TCP connection (nodemailer default 120_000). */
+  connectionTimeout?: number;
+  /** ms to wait for the SMTP greeting (nodemailer default 30_000). */
+  greetingTimeout?: number;
+  /** ms of socket inactivity before giving up (nodemailer default 600_000). */
+  socketTimeout?: number;
+  /** ms to wait for DNS resolution (nodemailer default 30_000). */
+  dnsTimeout?: number;
 }
 
 /** Minimal duck-typed transport surface this module relies on. */
@@ -72,6 +88,19 @@ export function createSmtpTransport(config: SmtpConfig): nodemailer.Transporter 
     port: config.port,
     secure: config.secure,
     auth: { user: config.auth.user, pass: config.auth.pass },
+    // Additive onboarding options — only forwarded when the caller sets them,
+    // so the worker's default transport is byte-for-byte unchanged.
+    ...(config.requireTLS !== undefined && { requireTLS: config.requireTLS }),
+    ...(config.connectionTimeout !== undefined && {
+      connectionTimeout: config.connectionTimeout,
+    }),
+    ...(config.greetingTimeout !== undefined && {
+      greetingTimeout: config.greetingTimeout,
+    }),
+    ...(config.socketTimeout !== undefined && {
+      socketTimeout: config.socketTimeout,
+    }),
+    ...(config.dnsTimeout !== undefined && { dnsTimeout: config.dnsTimeout }),
   });
 }
 
