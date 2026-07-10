@@ -122,6 +122,11 @@ None - no external service configuration required (Clerk + SMTP wiring already e
 - The `ActionResult` / `ActionError` contract is ready for the onboarding wizard UI (02-06) to consume.
 - `sendTestEmail` defaults its recipient to the Clerk primary email (Open Question 1) — the wizard can pass an explicit address or rely on the default.
 
+## Self-Check: PASSED
+
+- Files: lib/smtp/actions.ts, lib/smtp/actions.test.ts, 02-05-SUMMARY.md all present.
+- Commits: 750795e (feat), da504c6 (docs) both present in git log.
+
 ---
 *Phase: 02-auth-smtp-onboarding*
 *Completed: 2026-07-11*
