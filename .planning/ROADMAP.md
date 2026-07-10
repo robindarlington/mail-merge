@@ -71,7 +71,29 @@ Plans:
   5. The final onboarding step offers a test-send to the user's own address, confirming the saved transport actually delivers mail.
   6. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
-**Plans**: TBD
+**Plans**: 7 plans
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Clerk auth slice (proxy.ts, ClerkProvider layout, sign-in/up pages, root redirect) + all phase deps/shadcn installs
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 02-02-PLAN.md — SMTP verify engine: shared zod schema, error classifier, verify-with-timeouts + TLS auto-retry (smtp-server fixtures)
+- [ ] 02-03-PLAN.md — userId-scoped DAL + DTO redaction + [BLOCKING] smtp_configs unique-index migration
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 02-04-PLAN.md — App shell (sidebar + UserButton + footer) + dashboard soft-gate / summary states
+- [ ] 02-05-PLAN.md — Server Actions: verifyAndSave, updateFromFields, sendTestEmail (auth-first, secret-free typed results)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 02-06-PLAN.md — SMTP onboarding wizard UI (3 gated steps) + edit flow (RHF + zod, field-anchored errors, TLS switch, test-send)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 02-07-PLAN.md — Staging deploy: Dockerfile Clerk build ARGs + compose runtime secret + Coolify deploy/smoke
 **UI hint**: yes
 
 ### Phase 3: CSV Upload + Parsing + Recipient Mapping
@@ -202,7 +224,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — DB, Crypto, Core Engine | 5/5 | Complete   | 2026-06-27 |
-| 2. Auth + SMTP Onboarding | 0/TBD | Not started | - |
+| 2. Auth + SMTP Onboarding | 0/7 | Not started | - |
 | 3. CSV Upload + Parsing + Recipient Mapping | 0/TBD | Not started | - |
 | 4. Editor + Preview + Template Save | 0/TBD | Not started | - |
 | 5. Test-Send + Confirmation Gate | 0/TBD | Not started | - |
