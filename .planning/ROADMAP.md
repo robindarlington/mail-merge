@@ -79,8 +79,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 02-02-PLAN.md — SMTP verify engine: shared zod schema, error classifier, verify-with-timeouts + TLS auto-retry (smtp-server fixtures)
-- [ ] 02-03-PLAN.md — userId-scoped DAL + DTO redaction + [BLOCKING] smtp_configs unique-index migration
+- [x] 02-02-PLAN.md — SMTP verify engine: shared zod schema, error classifier, verify-with-timeouts + TLS auto-retry (smtp-server fixtures)
+- [x] 02-03-PLAN.md — userId-scoped DAL + DTO redaction + [BLOCKING] smtp_configs unique-index migration
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -224,7 +224,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — DB, Crypto, Core Engine | 5/5 | Complete   | 2026-06-27 |
-| 2. Auth + SMTP Onboarding | 1/7 | In Progress|  |
+| 2. Auth + SMTP Onboarding | 3/7 | In Progress|  |
 | 3. CSV Upload + Parsing + Recipient Mapping | 0/TBD | Not started | - |
 | 4. Editor + Preview + Template Save | 0/TBD | Not started | - |
 | 5. Test-Send + Confirmation Gate | 0/TBD | Not started | - |
