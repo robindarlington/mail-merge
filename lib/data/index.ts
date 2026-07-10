@@ -1,0 +1,18 @@
+/**
+ * Barrel for the userId-scoped data-access layer. Web Server Actions and the
+ * worker import DAL functions from `@/lib/data` (never reaching for `db` +
+ * `schema` directly for tenant-owned reads/writes), so the "every access is
+ * userId-scoped" invariant (AUTH-02) lives behind one import surface.
+ *
+ * lib/data depends on lib/db (the sole SQLite opener, D-04); it never opens the
+ * database itself.
+ */
+
+export {
+  getSmtpConfigForUser,
+  upsertSmtpConfig,
+  updateFromFields,
+  toSmtpConfigDto,
+  type PersistableConfig,
+  type SmtpConfigDto,
+} from "./smtp";
