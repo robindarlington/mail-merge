@@ -38,24 +38,31 @@ const unixNow = sql`(unixepoch())`;
  * Stores host/port/from in plaintext (for display) but the password ONLY as the
  * encrypted AES-256-GCM triple. `secure` is explicit (SMTP-04).
  */
-export const smtp_configs = sqliteTable("smtp_configs", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: text("user_id").notNull(),
-  host: text("host").notNull(),
-  port: integer("port").notNull(),
-  // Explicit TLS mode — NOT inferred from port (PITFALLS #3).
-  secure: integer("secure", { mode: "boolean" }).notNull(),
-  username: text("username").notNull(),
-  // AES-256-GCM ciphertext parts — the ONLY representation of the password.
-  password_enc: blob("password_enc").notNull(),
-  password_iv: blob("password_iv").notNull(),
-  password_tag: blob("password_tag").notNull(),
-  from_addr: text("from_addr").notNull(),
-  from_name: text("from_name"),
-  // Set when transport.verify() succeeded during onboarding.
-  verified_at: integer("verified_at"),
-  created_at: integer("created_at").notNull().default(unixNow),
-});
+export const smtp_configs = sqliteTable(
+  "smtp_configs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id").notNull(),
+    host: text("host").notNull(),
+    port: integer("port").notNull(),
+    // Explicit TLS mode — NOT inferred from port (PITFALLS #3).
+    secure: integer("secure", { mode: "boolean" }).notNull(),
+    username: text("username").notNull(),
+    // AES-256-GCM ciphertext parts — the ONLY representation of the password.
+    password_enc: blob("password_enc").notNull(),
+    password_iv: blob("password_iv").notNull(),
+    password_tag: blob("password_tag").notNull(),
+    from_addr: text("from_addr").notNull(),
+    from_name: text("from_name"),
+    // Set when transport.verify() succeeded during onboarding.
+    verified_at: integer("verified_at"),
+    created_at: integer("created_at").notNull().default(unixNow),
+  },
+  // One SMTP config per user (D-09). This UNIQUE index is the on-disk conflict
+  // target that makes `upsertSmtpConfig`'s onConflictDoUpdate(target userId)
+  // atomic instead of a read-then-insert race (Pattern 5 / T-2-DUPE).
+  (t) => [unique("smtp_configs_user_uq").on(t.userId)],
+);
 
 /**
  * recipient_sets — an uploaded CSV. columns_json drives editor autocomplete;
