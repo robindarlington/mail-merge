@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CheckCircle2 } from "lucide-react";
@@ -8,10 +9,11 @@ import { CheckCircle2 } from "lucide-react";
 import { smtpFormSchema, type SmtpFormValues } from "@/lib/smtp";
 import type { SmtpConfigDto } from "@/lib/data/smtp";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Form } from "@/components/ui/form";
 import { StepDetails } from "@/components/smtp/step-details";
+import { StepVerify } from "@/components/smtp/step-verify";
+import { StepTestSend } from "@/components/smtp/step-test-send";
 
 /**
  * SmtpWizard — the client shell for the three-step SMTP onboarding wizard AND the
@@ -70,7 +72,11 @@ export function SmtpWizard({
   testEmailDefault: string;
 }) {
   const isEdit = initial !== null;
-  const [step, setStep] = useState(0);
+  const router = useRouter();
+  // Wizard stage: the details+verify screen, then the test-send screen. The
+  // stepper's "Verify" marker lights while a verify is in flight (`pending`).
+  const [stage, setStage] = useState<"details" | "test">("details");
+  const [pending, setPending] = useState(false);
 
   const form = useForm<SmtpFormValues>({
     // `port` uses z.coerce, so the schema's INPUT type (port: unknown) diverges
@@ -91,28 +97,42 @@ export function SmtpWizard({
     },
   });
 
-  // Client-side gate: advance to step 2 only when the details validate (D-01).
-  const onContinue = form.handleSubmit(() => setStep(1));
+  // D-08 routing: in edit mode, a from-only change saves directly; any connection
+  // field (host/port/secure/username/password) re-routes through verify.
+  const dirty = form.formState.dirtyFields;
+  const connectionDirty = Boolean(
+    dirty.host || dirty.port || dirty.secure || dirty.username || dirty.password,
+  );
+
+  // Stepper marker: details (0), verify while in flight (1), test send (2).
+  const current = stage === "test" ? 2 : pending ? 1 : 0;
+
+  const finish = () => {
+    router.push("/dashboard");
+    router.refresh();
+  };
 
   return (
     <Card>
       <CardContent className="flex flex-col gap-12">
-        <Stepper current={step} />
+        <Stepper current={current} />
 
         <Form {...form}>
-          {step === 0 ? (
+          {stage === "details" ? (
             <div className="flex flex-col gap-8">
-              <StepDetails form={form} isEdit={isEdit} disabled={false} />
-              <div className="flex justify-end">
-                <Button type="button" onClick={() => onContinue()}>
-                  Verify &amp; continue
-                </Button>
-              </div>
+              <StepDetails form={form} isEdit={isEdit} disabled={pending} />
+              <StepVerify
+                form={form}
+                isEdit={isEdit}
+                connectionDirty={connectionDirty}
+                pending={pending}
+                onPendingChange={setPending}
+                onVerified={() => setStage("test")}
+                onComplete={finish}
+              />
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Verify and test-send steps are wired next.
-            </p>
+            <StepTestSend defaultEmail={testEmailDefault} onComplete={finish} />
           )}
         </Form>
       </CardContent>
