@@ -4,6 +4,8 @@
 
 This roadmap turns an existing single-file Node.js CLI (`send-credentials.ts`) into a multi-tenant, self-serve mail-merge web app. The journey is dependency-driven: first lay the shared foundation (one WAL'd SQLite file, AES-256-GCM crypto, and the lifted CLI merge/send engine), then build the first end-to-end vertical slice (Clerk auth + live-verified SMTP onboarding). With identity and a validated transport in place, we add CSV upload and parsing (which supplies merge-field columns), then the editor + preview that prove merge logic against real data, then the test-send and confirmation gate that exercise the full synchronous send path. Only then do we tackle the highest-risk phase — the background worker with idempotent per-recipient sending, live progress, and campaign history — built on the `send_record` state machine that is the architectural linchpin. Per-row attachments extend the proven pipeline, and final Docker/Coolify packaging hardens the system for the VPS. The result: a signed-in user can reliably send a personalized email to every CSV row, using their own validated SMTP, with confidence and a durable record of exactly what was sent.
 
+**Standing staging environment:** The Phase-1 Compose skeleton is deployed as a standing staging environment early — during Phase 2 — and kept current with each phase's slice. This de-risks the Phase 8 packaging work and provides an always-shareable demo URL throughout the build.
+
 ## Phases
 
 **Phase Numbering:**
@@ -21,6 +23,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 6: Background Worker + Live Send + Progress + History** - Idempotent background sending with live progress and campaign history
 - [ ] **Phase 7: Per-Row Attachments** - Per-CSV-row file attachments with path-traversal and size safety
 - [ ] **Phase 8: Docker / Coolify Packaging + Operational Hardening** - Production containers, volume persistence, redeploy-safe sends
+- [ ] **Phase 9: Launch Collateral** - Public README + screenshots, niche-framed landing copy, "how it was built" write-up, and the UI attribution + hire-me link (BRAND-01)
 
 ## Phase Details
 
@@ -66,6 +69,7 @@ Plans:
   3. User enters SMTP host/port/username/password/from-name/from-address and an explicit TLS mode (implicit SSL vs STARTTLS, not inferred from port), and onboarding completes only after a live `transport.verify()` succeeds — with errors distinguishing auth vs host/port vs TLS failure.
   4. SMTP credentials are stored AES-256-GCM-encrypted and reused across sessions; the password never appears in any client response or log line.
   5. The final onboarding step offers a test-send to the user's own address, confirming the saved transport actually delivers mail.
+  6. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
 **Plans**: TBD
 **UI hint**: yes
@@ -82,6 +86,7 @@ Plans:
   2. The app auto-detects the recipient (email) column and the user can confirm or override the choice.
   3. The app validates recipient email addresses at upload and reports the count of invalid rows.
   4. Parsed recipients and detected columns are saved as a per-user recipient set (with `columns_json`, row count, storage path) that later phases read for merge fields.
+  5. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
 **Plans**: TBD
 **UI hint**: yes
@@ -98,6 +103,7 @@ Plans:
   2. Merge fields apply to BOTH subject and body (fixing the CLI's subject-not-personalized gap), and the composed subject + body can be saved as a template for the campaign.
   3. User can step through individual merged rows rendered against real CSV data, with rows that would send an empty merge value highlighted.
   4. The app produces a pre-send validation report aggregating invalid emails and missing merge values for the recipient set.
+  5. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
 **Plans**: TBD
 **UI hint**: yes
@@ -113,6 +119,7 @@ Plans:
   1. User can send the whole batch to a single test address with each recipient's real subject/body fill preserved (CLI `--test` parity), running the full decrypt → verify → fill → sendMail path synchronously.
   2. Before a live send, the user must pass a confirmation modal showing recipient count, sender identity, a sample recipient, and validation warnings.
   3. A campaign can transition from draft to queued only once, so double-submission cannot enqueue a duplicate send.
+  4. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
 **Plans**: TBD
 **UI hint**: yes
@@ -122,7 +129,7 @@ Plans:
 **Goal**: A live send runs as a crash-safe background job that sends one personalized email per recipient, shows live progress, persists per-recipient outcomes, and is fully resumable — backed by the `send_record` state machine.
 **Mode:** mvp
 **Depends on**: Phase 5
-**Requirements**: SEND-01, SEND-02, SEND-03, SEND-04, SEND-05, SEND-06, HIST-01, HIST-02
+**Requirements**: SEND-01, SEND-02, SEND-03, SEND-04, SEND-05, SEND-06, HIST-01, HIST-02, HIST-03
 **Success Criteria** (what must be TRUE):
 
   1. A live send survives the HTTP request lifecycle and a worker restart: the worker claims a campaign atomically, materializes one `pending` `send_record` per row, then sends one personalized email per recipient over the user's SMTP with a configurable throttle.
@@ -130,6 +137,8 @@ Plans:
   3. User sees live per-recipient progress (sent / failed / remaining + current recipient) during a send.
   4. After a crash or restart, only `pending` recipients are processed — no recipient is ever double-sent (resume sends to no already-sent recipient).
   5. User can view a list of past campaigns and drill into any one to see per-recipient success/fail status and error reasons.
+  6. User can download a CSV of per-recipient results for a completed campaign (HIST-03).
+  7. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
 **Plans**: TBD
 **Research flag**: NEEDS phase-specific research before planning. Atomic `BEGIN IMMEDIATE` claim, lease/heartbeat sizing, SIGTERM + Docker init interaction, SSE-vs-polling under WAL multi-process contention, plainjob API maturity, and 4xx/5xx SMTP backoff all have non-obvious failure modes. Run `/gsd:plan-phase --research-phase 6`.
@@ -146,6 +155,7 @@ Plans:
   1. User can attach a different file per CSV row via a filename column plus uploaded files, and the worker attaches the correct file per recipient at send time.
   2. The app validates that every referenced attachment file is present before allowing a send; a missing file is a blocking validation error.
   3. Attachment resolution is safe against path traversal (opaque upload IDs, never CSV-provided paths) and enforces per-file and per-message size limits.
+  4. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
 **Plans**: TBD
 **UI hint**: yes
@@ -162,14 +172,32 @@ Plans:
   2. Coolify env/secrets are wired (`CREDENTIAL_ENC_KEY`, `DATABASE_PATH=/data/app.db`, Clerk keys) and `HOSTNAME=0.0.0.0` is set.
   3. A redeploy acceptance test passes: all data survives a redeploy, and a send interrupted by the redeploy resumes cleanly with no recipient double-sent (worker traps SIGTERM, flushes writes, and exits cleanly).
   4. WAL checkpointing and attachment-orphan cleanup run as defined operational routines.
+  5. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
 **Plans**: TBD
 **Research flag**: Mostly standard; verify the exact Coolify `stop_grace_period` Compose field behavior in the target Coolify version (community-verified, version-dependent).
 
+### Phase 9: Launch Collateral
+
+**Goal**: The project is packaged as a public, niche-framed portfolio + lead-generation artifact — a README and landing copy that speak to the target niches, a "how it was built" write-up, and an in-app attribution + hire-me link.
+**Mode:** mvp
+**Depends on**: Phase 8
+**Requirements**: BRAND-01
+**Success Criteria** (what must be TRUE):
+
+  1. A public README with at least one screenshot and run/deploy instructions exists at the repo root.
+  2. Landing-page copy frames the two core niches (credential delivery, per-row documents like payslips/certificates/invoices).
+  3. A "how it was built" write-up is published/committed.
+  4. The app UI footer shows Robin Darlington attribution and a working "hire me / custom work" link (satisfies BRAND-01).
+  5. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
+
+**Plans**: TBD
+**UI hint**: yes
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -181,3 +209,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 6. Background Worker + Live Send + Progress + History | 0/TBD | Not started | - |
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
 | 8. Docker / Coolify Packaging + Operational Hardening | 0/TBD | Not started | - |
+| 9. Launch Collateral | 0/TBD | Not started | - |
