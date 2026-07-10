@@ -75,7 +75,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Clerk auth slice (proxy.ts, ClerkProvider layout, sign-in/up pages, root redirect) + all phase deps/shadcn installs
+- [x] 02-01-PLAN.md — Clerk auth slice (proxy.ts, ClerkProvider layout, sign-in/up pages, root redirect) + all phase deps/shadcn installs
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -224,7 +224,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — DB, Crypto, Core Engine | 5/5 | Complete   | 2026-06-27 |
-| 2. Auth + SMTP Onboarding | 0/7 | Not started | - |
+| 2. Auth + SMTP Onboarding | 1/7 | In Progress|  |
 | 3. CSV Upload + Parsing + Recipient Mapping | 0/TBD | Not started | - |
 | 4. Editor + Preview + Template Save | 0/TBD | Not started | - |
 | 5. Test-Send + Confirmation Gate | 0/TBD | Not started | - |
