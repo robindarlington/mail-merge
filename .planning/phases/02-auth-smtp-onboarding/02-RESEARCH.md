@@ -586,20 +586,24 @@ export async function verifyAndSave(raw: unknown): Promise<ActionResult> {
 | A4 | `NEXT_PUBLIC_*` inlining at `next build` (standard Next.js behavior) applies unchanged in Next 16 standalone output | Pitfall 3 | Same as A2 |
 | A5 | SSRF/private-range host blocking is appropriate for v1 (no legit internal-SMTP user) | Pitfall 9 | A self-hosted user with internal SMTP is blocked; make the check a warn-not-block if that persona matters |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Test-send recipient default (D-03 "the user's own address")**
    - What we know: the step sends via the saved config; Clerk exposes the account's primary email via `currentUser()`.
    - What's unclear: prefill with the Clerk account email or the `from_addr`?
    - Recommendation: prefill with the Clerk primary email, editable field. Planner may decide otherwise; trivial either way.
+   - **RESOLVED:** Prefill with the Clerk primary email (editable). Plan 02-05 Task 2 `sendTestEmail` defaults `toAddress` to `currentUser()` primary email; plan 02-06 Step 3 prefills the editable recipient field with it.
 2. **Unique index migration on `smtp_configs.user_id`**
    - What we know: schema lacks it; D-09 implies exactly one row per user; upsert needs a conflict target.
    - Recommendation: add the additive migration in this phase (drizzle-kit generate). Alternative is code-level read-then-write, which has a (minor) race.
+   - **RESOLVED:** Add the additive unique-index migration this phase. Plan 02-03 Task 2 adds `smtp_configs_user_uq`, runs `db:generate` + `db:migrate`, and gates on the index existing on disk — giving `upsertSmtpConfig` a real conflict target (no read-then-write race).
 3. **Compose `ports:` vs Coolify proxy**
    - What we know: the Phase 1 compose publishes `3000:3000`; Coolify normally fronts services with its own proxy/domain.
    - Recommendation: keep compose as-is for local, let Coolify manage exposure on the staging app; resolve on the actual instance during execution (Claude's-discretion area per CONTEXT).
+   - **RESOLVED (deferred to execution-time by design):** Keep the compose `3000:3000` publish for local; Coolify manages exposure on staging. This is intentionally resolved on the actual instance during plan 02-07's human deploy checkpoint (Claude's-discretion area per CONTEXT) — no plan change needed pre-execution.
 4. **Where `/` lands**
    - Recommendation: `/` server-redirects to `/dashboard` (protected). Marketing/landing is Phase 9 territory.
+   - **RESOLVED:** `/` server-redirects to `/dashboard` (protected). Plan 02-01 Task 3 implements the `app/page.tsx` redirect and its verify gate asserts `redirect("/dashboard")` is present.
 
 ## Environment Availability
 
