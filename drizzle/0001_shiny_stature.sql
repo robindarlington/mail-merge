@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `smtp_configs_user_uq` ON `smtp_configs` (`user_id`);
