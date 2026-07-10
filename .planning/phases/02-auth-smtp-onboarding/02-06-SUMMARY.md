@@ -142,3 +142,13 @@ Files and commits verified below; plan not marked complete because Task 3 (human
 ---
 *Phase: 02-auth-smtp-onboarding*
 *Completed (automatable tasks): 2026-07-11*
+
+## Post-merge orchestrator fix
+
+**Commit `bae5580`** — The production build failed after merge: the three
+client components imported `smtpFormSchema`/`SmtpFormValues` from the
+`@/lib/smtp` barrel, whose `verifySmtp` re-export drags `lib/core/send.ts`
+and nodemailer's Node-only modules (`child_process`, `fs`, `dns`) into the
+client bundle graph (13 Turbopack module-not-found errors). Client imports
+now target `@/lib/smtp/schema` directly. `next build`, `tsc --noEmit`, and
+all 85 tests pass after the change.
