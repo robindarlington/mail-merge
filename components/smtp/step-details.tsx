@@ -2,7 +2,7 @@
 
 import type { UseFormReturn } from "react-hook-form";
 
-import type { SmtpFormValues } from "@/lib/smtp";
+import type { SmtpFormValues } from "@/lib/smtp/schema";
 import {
   FormControl,
   FormDescription,

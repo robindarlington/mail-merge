@@ -5,7 +5,7 @@ import type { UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
 import { AlertCircle, CheckCircle2, ChevronDown, Loader2 } from "lucide-react";
 
-import type { SmtpFormValues } from "@/lib/smtp";
+import type { SmtpFormValues } from "@/lib/smtp/schema";
 import {
   verifyAndSave,
   updateFromFields,

@@ -6,7 +6,7 @@ import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CheckCircle2 } from "lucide-react";
 
-import { smtpFormSchema, type SmtpFormValues } from "@/lib/smtp";
+import { smtpFormSchema, type SmtpFormValues } from "@/lib/smtp/schema";
 import type { SmtpConfigDto } from "@/lib/data/smtp";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
