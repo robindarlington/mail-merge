@@ -61,6 +61,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **HIST-01**: User can view a list of past campaigns (what was sent, to how many recipients, when)
 - [ ] **HIST-02**: User can drill into a campaign to see per-recipient success/fail status and error reasons
+- [ ] **HIST-03**: User can download a CSV of per-recipient results for a campaign (downloadable send report)
 
 ### Attachments
 
@@ -68,15 +69,28 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **ATCH-02**: App validates that every referenced attachment file is present before allowing a send (missing file = validation error)
 - [ ] **ATCH-03**: Attachment resolution is safe against path traversal and enforces per-file and per-message size limits
 
+### Branding & Attribution
+
+- [ ] **BRAND-01**: The app UI displays attribution to Robin Darlington with a visible "hire me for tech support / custom work" link (footer or equivalent)
+
 ## v2 Requirements
 
 Deferred to a future release. Tracked but not in the current roadmap.
 
 ### Convenience
 
-- **CONV-01**: Downloadable send report (CSV of per-recipient results)
+<!-- Downloadable send report promoted to v1 as HIST-03 (2026-07-10). -->
+
 - **CONV-02**: Saved/reusable templates across campaigns (beyond per-campaign save)
 - **CONV-03**: Multiple saved SMTP profiles per user
+
+### Funnel / Demo
+
+- **DEMO-01**: Sandbox/demo transport (Ethereal/Mailpit-backed) so a visitor can upload a CSV, compose, preview, and "send" to a captured inbox with zero SMTP setup (v1.x funnel entry point)
+
+### Deliverability
+
+- **DNS-01**: Soft SPF/DKIM DNS check at SMTP onboarding, with a hint when the sending server isn't covered (doubles as a consulting hook)
 
 ### Scheduling
 
@@ -134,17 +148,19 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SEND-06 | Phase 6 | Complete |
 | HIST-01 | Phase 6 | Pending |
 | HIST-02 | Phase 6 | Pending |
+| HIST-03 | Phase 6 | Pending |
 | ATCH-01 | Phase 7 | Pending |
 | ATCH-02 | Phase 7 | Pending |
 | ATCH-03 | Phase 7 | Pending |
+| BRAND-01 | Phase 9 | Pending |
 
 **Coverage:**
-- v1 requirements: 34 total
-- Mapped to phases: 34 (100%)
+- v1 requirements: 36 total
+- Mapped to phases: 36 (100%)
 - Unmapped: 0
 
 > Phase 1 (Foundation) and Phase 8 (Packaging) are infrastructure/operational phases with no exclusive v1 REQ-IDs. Phase 1 underpins AUTH-02 (isolation), SMTP-04 (encryption), and SEND-06 (durable state). Phase 8 hardens SEND-01/SEND-06 durability and AUTH-02 isolation in production.
 
 ---
 *Requirements defined: 2026-06-24*
-*Last updated: 2026-06-24 after roadmap creation (traceability populated)*
+*Last updated: 2026-07-10 (go-to-market updates: HIST-03 promotion, BRAND-01, DEMO-01, DNS-01)*
