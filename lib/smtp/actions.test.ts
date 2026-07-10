@@ -30,7 +30,7 @@ process.env.CREDENTIAL_ENC_KEY = Buffer.from(
 
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
-const { applyVerifiedConfig, sendTestVia } = await import("./actions");
+const { applyVerifiedConfig, sendTestVia } = await import("./actions-core");
 const { getSmtpConfigForUser, updateFromFields } = await import("../data/smtp");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 type VerifyOutcome = import("./verify").VerifyOutcome;

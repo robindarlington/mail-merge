@@ -19,9 +19,12 @@
  *                     `transport.verify()` BEFORE any send.
  *
  * SECURITY:
- *  - T-2-IDOR / AUTH-02: every action re-derives `userId` server-side via `auth()`
- *    and passes it to the userId-scoped DAL — a client-supplied id is never trusted
- *    (defense in depth behind the DAL's own scoping).
+ *  - T-2-IDOR / AUTH-02: every runtime export of a "use server" module is a
+ *    client-invocable endpoint, so this file exports ONLY the three actions
+ *    above — each re-derives `userId` server-side via `auth()` and passes it to
+ *    the userId-scoped DAL; a client-supplied id is never trusted. The testable
+ *    seams that accept `userId`/transport parameters live in ./actions-core.ts
+ *    (no "use server"), where they are imports, not endpoints.
  *  - T-2-CRED / SMTP-04 / D-06: no action return ever carries the password or a raw
  *    nodemailer Error object. A classified failure carries only a message STRING in
  *    `raw`. Nothing secret is logged (grep-enforced).
@@ -31,130 +34,43 @@
  */
 
 import type { MailTransport } from "../core";
-import { createSmtpTransport, sendOne, verifyTransport } from "../core";
-import { decrypt, encrypt } from "../crypto";
+import { createSmtpTransport } from "../core";
+import { decrypt } from "../crypto";
 import {
   getSmtpConfigForUser,
   updateFromFields as dalUpdateFromFields,
-  upsertSmtpConfig,
 } from "../data/smtp";
-import { classifyVerifyError, type VerifyErrorField } from "./errors";
-import { smtpFormSchema, type SmtpFormValues } from "./schema";
-import { verifySmtp, type VerifyOutcome } from "./verify";
+import {
+  applyVerifiedConfig,
+  sendTestVia,
+  underVerifyRateLimit,
+  type ActionResult,
+} from "./actions-core";
+import { smtpFormSchema } from "./schema";
+import { verifySmtp } from "./verify";
 
-/**
- * The typed failure surface every action returns. It is intentionally a closed
- * union of message-only shapes — a `raw` field is ALWAYS a string, never the raw
- * Error object or the config (T-2-CRED / D-06). This is the contract 02-06 reads.
- */
-export type ActionError =
-  | { kind: "unauthenticated" }
-  | { kind: "validation"; issues: unknown }
-  | {
-      kind: "auth" | "connection" | "tls" | "unknown";
-      field: VerifyErrorField;
-      raw: string;
-      suggestion?: "starttls" | "implicit";
-    }
-  | { kind: "rate_limited" }
-  | { kind: "send_failed"; raw: string };
-
-/** The uniform result every Server Action here resolves to (never rejects). */
-export type ActionResult = { ok: true } | { ok: false; error: ActionError };
-
-// --- Per-user verify rate limit (T-2-SPAM / Pitfall 9) ----------------------
-// A user-supplied host:port dial is an abuse/SSRF surface; cap verify attempts
-// per user in-process. Deliberately simple (a Map of recent timestamps) — a
-// durable limiter is out of scope for v1's single-process web tier.
-const VERIFY_MAX_ATTEMPTS = 5;
-const VERIFY_WINDOW_MS = 60_000;
-const verifyAttempts = new Map<string, number[]>();
-
-/**
- * Record a verify attempt and report whether the caller is still under the limit.
- * Returns true when the attempt is allowed, false when the window is saturated.
- */
-function underVerifyRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const recent = (verifyAttempts.get(userId) ?? []).filter(
-    (t) => now - t < VERIFY_WINDOW_MS,
-  );
-  if (recent.length >= VERIFY_MAX_ATTEMPTS) {
-    verifyAttempts.set(userId, recent);
-    return false;
-  }
-  recent.push(now);
-  verifyAttempts.set(userId, recent);
-  return true;
-}
-
-/**
- * Non-action orchestration seam (testable): parse → verify → persist. The
- * `verifyFn` is injectable so tests can drive verified_at semantics without a
- * live SMTP dial. The "use server" wrappers call it with the real `verifySmtp`.
- *
- * Persists ONLY on a clean verify (D-04). A verify failure OR a D-05
- * alternate-mode `suggestion` returns WITHOUT saving (T-2-VERIFY): an unverified
- * or suggestion-only config never reaches the DB.
- */
-export async function applyVerifiedConfig(
-  userId: string,
-  input: unknown,
-  verifyFn: (values: SmtpFormValues) => Promise<VerifyOutcome> = verifySmtp,
-): Promise<ActionResult> {
-  const parsed = smtpFormSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: { kind: "validation", issues: parsed.error.issues } };
-  }
-
-  const outcome = await verifyFn(parsed.data);
-  if (!outcome.ok) {
-    // Whether it is a plain failure or a D-05 suggestion, nothing is saved.
-    // Carry only the classified kind/field and a message-only `raw` (D-06).
-    return {
-      ok: false,
-      error: {
-        kind: outcome.kind,
-        field: outcome.field,
-        raw: outcome.raw,
-        ...(outcome.suggestion ? { suggestion: outcome.suggestion } : {}),
-      },
-    };
-  }
-
-  // Verify succeeded — encrypt the password server-side and upsert (this is the
-  // ONLY path that stamps verified_at, via upsertSmtpConfig).
-  const { enc, iv, tag } = encrypt(parsed.data.password);
-  await upsertSmtpConfig(userId, {
-    host: parsed.data.host,
-    port: parsed.data.port,
-    secure: parsed.data.secure,
-    username: parsed.data.username,
-    password_enc: enc,
-    password_iv: iv,
-    password_tag: tag,
-    from_addr: parsed.data.from_addr,
-    from_name: parsed.data.from_name ?? null,
-  });
-  return { ok: true };
-}
+// Type-only re-exports are erased at compile time, so they are NOT registered
+// as server actions — the wizard (02-06) imports its contract from here.
+export type { ActionError, ActionResult } from "./actions-core";
 
 /**
  * verifyAndSave (SMTP-05 / D-04): auth → rate-limit → verify-then-save. Rejects
  * unauthenticated callers and callers over the per-user verify budget before any
- * dial. Delegates the parse/verify/persist to `applyVerifiedConfig`.
+ * dial. Delegates parse → verifySmtp → encrypt + upsertSmtpConfig to
+ * `applyVerifiedConfig` (actions-core), passing the real verify engine
+ * explicitly at this trust boundary.
  */
 export async function verifyAndSave(raw: unknown): Promise<ActionResult> {
   // Lazy import: `@clerk/nextjs/server` resolves its `auth` export only under the
   // Next server runtime, so importing it lazily keeps this module loadable under
-  // the plain test runner (the seams are what tests drive).
+  // the plain test runner.
   const { auth } = await import("@clerk/nextjs/server");
   const { userId } = await auth();
   if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
   if (!underVerifyRateLimit(userId)) {
     return { ok: false, error: { kind: "rate_limited" } };
   }
-  return applyVerifiedConfig(userId, raw);
+  return applyVerifiedConfig(userId, raw, verifySmtp);
 }
 
 /**
@@ -180,55 +96,6 @@ export async function updateFromFields(raw: unknown): Promise<ActionResult> {
     from_addr: parsed.data.from_addr,
     from_name: parsed.data.from_name ?? null,
   });
-  return { ok: true };
-}
-
-/**
- * Non-action send seam (testable): verify-before-send over an INJECTED transport,
- * then send one message. Mirrors verifyAndSave's classification path — a failed
- * pre-send verify is classified with `classifyVerifyError` and returned WITHOUT
- * calling `sendOne`. Tests inject a stub transport to drive both branches without
- * a live SMTP dial. Returns message-only failures (no config, no password).
- */
-export async function sendTestVia(
-  config: { from_addr: string; from_name: string | null },
-  toAddress: string,
-  transport: MailTransport,
-): Promise<ActionResult> {
-  // Carry-forward CLAUDE.md constraint: verify() BEFORE any send. The saved
-  // config could have gone stale / the network could be down since onboarding.
-  try {
-    await verifyTransport(transport);
-  } catch (err) {
-    const e = err as { code?: string; message?: string };
-    const classified = classifyVerifyError(e);
-    return {
-      ok: false,
-      error: {
-        kind: classified.kind,
-        field: classified.field,
-        raw: e.message ?? String(err),
-      },
-    };
-  }
-
-  const from = config.from_name
-    ? `${config.from_name} <${config.from_addr}>`
-    : config.from_addr;
-
-  const result = await sendOne({
-    transport,
-    from,
-    to: toAddress,
-    subject: "Mail Merge test email",
-    body:
-      "This is a test email from Mail Merge. If you received it, your SMTP " +
-      "configuration is working and ready to send your merge.",
-  });
-  if (!result.ok) {
-    // Map to a message-only send_failed — never the raw error object.
-    return { ok: false, error: { kind: "send_failed", raw: result.error.message } };
-  }
   return { ok: true };
 }
 
