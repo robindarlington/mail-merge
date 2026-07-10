@@ -19,6 +19,20 @@ A signed-in user can reliably send a personalized email to every row of their CS
 using their own validated SMTP, with confidence (preview + test-send) and a record
 of exactly what was sent and to whom.
 
+## Business Context
+
+The long-horizon goal is a **portfolio + client-pipeline artifact** for Robin
+Darlington's freelance "spreadsheet-to-tool" work — building, modifying, and
+maintaining internal tools that replace manual spreadsheet+email processes.
+
+- **Target niches:** IT admins / MSPs (credential delivery), per-row-document
+  senders (payslips / certificates / invoices), and self-hosters (distribution).
+- **Revenue rungs:** deploy-for-you, modify-for-you, and maintain-for-you
+  retainers — the app is the demo; the services are the business.
+- **Framing rule:** out-of-scope feature requests from users are **consulting
+  leads, not product gaps**. Future phase decisions should be weighed against this
+  framing — keep the product lean and let custom needs become billable work.
+
 ## Requirements
 
 ### Validated
@@ -48,6 +62,7 @@ of exactly what was sent and to whom.
 - [ ] User can attach per-row files to a send (different attachment per CSV row)
 - [ ] Live send runs as a background job with live per-recipient progress
 - [ ] Each send is persisted as a campaign with per-recipient success/fail status, viewable later
+- [ ] A zero-setup sandbox/demo transport lets a visitor try the full flow (upload → compose → preview → "send") with no SMTP — planned for v1.x as a funnel entry point (cross-references DEMO-01)
 
 ### Out of Scope
 
@@ -88,6 +103,9 @@ of exactly what was sent and to whom.
 | Per-row attachments | User asked for it; most flexible mail-merge attachment model | — Pending |
 | SQLite backend, Coolify/VPS deploy | "Keep backend simple"; persistent host makes SQLite + workers straightforward | ✓ Good — WAL'd SQLite proven concurrent-safe across web+worker in Phase 1 |
 | Compliance deferred | Internal/transactional BYO-SMTP use; not a marketing tool in v1 | — Pending |
+| MIT licensed | The code is the marketing; self-hosters are distribution; revenue is services | ✓ Applied 2026-07-10 |
+| Scope fences kept deliberately | Plain-text-only, no tracking, no compliance machinery, 100–1,000 scale — these fences keep the product in the transactional/internal niche, exclude the cold-outreach/spam crowd, and define the boundary between product scope and billable custom work | — Standing |
+| Keep Clerk despite per-client-deploy friction | Each single-tenant client deploy needs its own Clerk app; free tier covers it; revisit only if per-client deploys exceed ~5 | — Standing (revisit at >5 deploys) |
 
 ## Evolution
 
@@ -107,4 +125,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-27 after Phase 1 (Foundation) completion*
+*Last updated: 2026-07-10 (go-to-market planning updates applied)*
