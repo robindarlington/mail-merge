@@ -7,6 +7,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { Toaster } from "@/components/ui/sonner";
 
 /**
  * Authenticated app shell (D-11 / D-12). Every signed-in page in the (app) route
@@ -36,6 +37,8 @@ export default function AppLayout({
         </main>
         <SiteFooter />
       </SidebarInset>
+      {/* Sonner toast host — required for the wizard's success toasts to render. */}
+      <Toaster />
     </SidebarProvider>
   );
 }
