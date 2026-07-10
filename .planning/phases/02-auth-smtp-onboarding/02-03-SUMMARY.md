@@ -109,6 +109,10 @@ None - no external service configuration required.
 ## Threat Flags
 None - no security surface beyond the plan's threat model was introduced.
 
+## Self-Check: PASSED
+
+All 8 created/modified files exist on disk; all 3 commits (da0adca, 3b3498f, 3a412d0) are present in git history.
+
 ---
 *Phase: 02-auth-smtp-onboarding*
 *Completed: 2026-07-10*
