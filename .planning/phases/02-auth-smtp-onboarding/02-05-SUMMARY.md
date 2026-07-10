@@ -130,3 +130,18 @@ None - no external service configuration required (Clerk + SMTP wiring already e
 ---
 *Phase: 02-auth-smtp-onboarding*
 *Completed: 2026-07-11*
+
+## Post-merge orchestrator fix
+
+**Commit `fd4e22a`** — The executor exported the testable seams
+(`applyVerifiedConfig(userId, …)`, `sendTestVia(…)`) directly from the
+`"use server"` module. Next.js registers every runtime export of such a
+module as a client-invocable endpoint, so a caller could invoke
+`applyVerifiedConfig` with an arbitrary `userId`, bypassing `auth()` and
+the verify rate limit (T-2-IDOR / AUTH-02 violation). The seams (plus the
+`ActionError`/`ActionResult` types and rate-limit helper) now live in
+`lib/smtp/actions-core.ts` (no directive); `lib/smtp/actions.ts` exports
+only the three auth-guarded actions and re-exports the contract types.
+Tests import the seams from `actions-core`. All 85 tests, `tsc --noEmit`,
+and `next build` pass after the change; key-link verification state is
+unchanged.
