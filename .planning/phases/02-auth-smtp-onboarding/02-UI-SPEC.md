@@ -1,7 +1,8 @@
 ---
 phase: 2
 slug: auth-smtp-onboarding
-status: draft
+status: approved
+reviewed_at: 2026-07-10
 shadcn_initialized: true
 preset: radix-nova / neutral / cssVariables (components.json, initialized Phase 1)
 created: 2026-07-10
