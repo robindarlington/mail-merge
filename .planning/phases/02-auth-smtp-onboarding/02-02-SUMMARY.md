@@ -146,6 +146,10 @@ None - no external service configuration required.
 - The verify engine is ready for the 02-05 `verifyAndSave` Server Action (parse with `smtpFormSchema` → `verifySmtp` → on success `encrypt` + upsert) and for the 02-04 wizard form (shared `smtpFormSchema` resolver, field-anchored error `kind`/`field` and D-05 `suggestion` consumed by the UI copy contract).
 - No blockers. Per-user rate limiting of verify attempts (T-2-SPAM, partial) remains to be applied at the Server Action layer in 02-05, as planned.
 
+## Self-Check: PASSED
+
+All 8 source files and the SUMMARY exist on disk; all 4 commits (19ee5c6, c6aa68e, 6d48fc7, fa33a52) are present in the repo.
+
 ---
 *Phase: 02-auth-smtp-onboarding*
 *Completed: 2026-07-10*
