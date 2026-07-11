@@ -73,4 +73,7 @@ COPY --from=build /app/tsconfig.json ./tsconfig.json
 
 EXPOSE 3000
 # Default to the web entrypoint; the worker service overrides `command`.
-CMD ["node", "server.js"]
+# Apply pending Drizzle migrations before serving — idempotent (drizzle tracks
+# applied migrations), and only the web entrypoint migrates so the worker
+# never races it.
+CMD ["sh", "-c", "npx tsx scripts/migrate.ts && node server.js"]

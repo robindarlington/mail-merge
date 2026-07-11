@@ -32,7 +32,7 @@ services:
         NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: ${NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL:-/dashboard}
         NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: ${NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL:-/dashboard}
     image: mail-merge:skeleton
-    command: ["node", "server.js"]
+    command: ["sh", "-c", "npx tsx scripts/migrate.ts && node server.js"]
     environment:
       # Next.js standalone server must bind all interfaces in a container.
       HOSTNAME: "0.0.0.0"
