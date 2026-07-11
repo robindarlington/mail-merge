@@ -19,6 +19,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Clerk NEXT_PUBLIC_* values are inlined by `next build` (Pitfall 3), so
+      # they must reach the build stage as ARGs. Primary path on Coolify is the
+      # "Build Variable" toggle (Assumption A2); this build.args block is the
+      # fallback that passes the same host env through at build time. These are
+      # client-safe. CLERK_SECRET_KEY is deliberately NOT here — it must never
+      # enter a build arg or image layer (threat T-2-BUILD).
+      args:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${NEXT_PUBLIC_CLERK_SIGN_IN_URL:-/sign-in}
+        NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${NEXT_PUBLIC_CLERK_SIGN_UP_URL:-/sign-up}
+        NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: ${NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL:-/dashboard}
+        NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: ${NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL:-/dashboard}
     image: mail-merge:skeleton
     command: ["node", "server.js"]
     environment:
@@ -31,6 +43,9 @@ services:
       # AES-256-GCM master key — injected from the host env / Coolify secret at
       # runtime, NEVER inlined here or baked into the image (PITFALLS #1/#2).
       CREDENTIAL_ENC_KEY: ${CREDENTIAL_ENC_KEY}
+      # Clerk server-only secret — RUNTIME injection only (never a build ARG,
+      # never in an image layer). Mirrors CREDENTIAL_ENC_KEY handling.
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
     ports:
       - "3000:3000"
     volumes:
