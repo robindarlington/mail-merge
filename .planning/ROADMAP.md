@@ -71,7 +71,7 @@ Plans:
   5. The final onboarding step offers a test-send to the user's own address, confirming the saved transport actually delivers mail.
   6. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
-**Plans**: 7 plans
+**Plans**: 9 plans (7 original + 2 gap-closure)
 Plans:
 **Wave 1**
 
@@ -94,6 +94,14 @@ Plans:
 **Wave 5** *(blocked on Wave 4)*
 
 - [x] 02-07-PLAN.md — Staging deploy: Dockerfile Clerk build ARGs + compose runtime secret + Coolify deploy/smoke
+
+**Wave 6** *(gap closure — CR-01 / 02-VERIFICATION.md)*
+
+- [ ] 02-08-PLAN.md — Blank-password SMTP edit: smtpEditFormSchema variant + applyVerifiedConfig stored-password merge + wizard resolver switch + tests (SMTP-04 / D-07 / D-08)
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 02-09-PLAN.md — [CHECKPOINT] live blank-password edit walkthrough against a real SMTP server
 **UI hint**: yes
 
 ### Phase 3: CSV Upload + Parsing + Recipient Mapping
