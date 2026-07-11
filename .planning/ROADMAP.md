@@ -16,7 +16,7 @@ This roadmap turns an existing single-file Node.js CLI (`send-credentials.ts`) i
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation — DB, Crypto, Core Engine** - Shared WAL'd SQLite layer, AES-256-GCM crypto, lifted CLI merge/send engine, Compose skeleton (completed 2026-06-27)
-- [ ] **Phase 2: Auth + SMTP Onboarding** - Clerk auth, per-user isolation, and live-verified encrypted SMTP onboarding
+- [x] **Phase 2: Auth + SMTP Onboarding** - Clerk auth, per-user isolation, and live-verified encrypted SMTP onboarding (completed 2026-07-11)
 - [ ] **Phase 3: CSV Upload + Parsing + Recipient Mapping** - Robust CSV upload, header/email-column detection, recipient set persistence
 - [ ] **Phase 4: Editor + Preview + Template Save** - Merge-field autocomplete editor, live merged preview, pre-send validation report
 - [ ] **Phase 5: Test-Send + Confirmation Gate** - Whole-batch test-send to one address and a hard confirm-before-live gate
@@ -93,7 +93,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 02-07-PLAN.md — Staging deploy: Dockerfile Clerk build ARGs + compose runtime secret + Coolify deploy/smoke
+- [x] 02-07-PLAN.md — Staging deploy: Dockerfile Clerk build ARGs + compose runtime secret + Coolify deploy/smoke
 **UI hint**: yes
 
 ### Phase 3: CSV Upload + Parsing + Recipient Mapping
@@ -224,7 +224,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — DB, Crypto, Core Engine | 5/5 | Complete   | 2026-06-27 |
-| 2. Auth + SMTP Onboarding | 6/7 | In Progress|  |
+| 2. Auth + SMTP Onboarding | 7/7 | Complete   | 2026-07-11 |
 | 3. CSV Upload + Parsing + Recipient Mapping | 0/TBD | Not started | - |
 | 4. Editor + Preview + Template Save | 0/TBD | Not started | - |
 | 5. Test-Send + Confirmation Gate | 0/TBD | Not started | - |
