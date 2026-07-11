@@ -30,6 +30,24 @@ RUN npm ci
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Clerk NEXT_PUBLIC_* values are client-safe and are INLINED into the client
+# bundle by `next build` (Pitfall 3). They must therefore be present as ENV
+# during the build RUN below — a runtime env var is too late. In Coolify these
+# must be marked as BUILD VARIABLES (Assumption A2); the compose fallback passes
+# them via web.build.args. These are BUILD-TIME ONLY.
+# NOTE: CLERK_SECRET_KEY is intentionally ABSENT here — it is server-only and
+# must NEVER be a build ARG/ENV or baked into an image layer. It is injected at
+# runtime via docker-compose web.environment (Pitfall 1/2, threat T-2-BUILD).
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+ARG NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+ARG NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard
+ARG NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/dashboard
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+ENV NEXT_PUBLIC_CLERK_SIGN_IN_URL=${NEXT_PUBLIC_CLERK_SIGN_IN_URL}
+ENV NEXT_PUBLIC_CLERK_SIGN_UP_URL=${NEXT_PUBLIC_CLERK_SIGN_UP_URL}
+ENV NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=${NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL}
+ENV NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=${NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL}
 # Next.js standalone output (next.config.ts: output: 'standalone').
 RUN npm run build
 
