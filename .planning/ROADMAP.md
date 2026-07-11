@@ -89,7 +89,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 02-06-PLAN.md — SMTP onboarding wizard UI (3 gated steps) + edit flow (RHF + zod, field-anchored errors, TLS switch, test-send)
+- [x] 02-06-PLAN.md — SMTP onboarding wizard UI (3 gated steps) + edit flow (RHF + zod, field-anchored errors, TLS switch, test-send)
 
 **Wave 5** *(blocked on Wave 4)*
 
@@ -224,7 +224,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — DB, Crypto, Core Engine | 5/5 | Complete   | 2026-06-27 |
-| 2. Auth + SMTP Onboarding | 5/7 | In Progress|  |
+| 2. Auth + SMTP Onboarding | 6/7 | In Progress|  |
 | 3. CSV Upload + Parsing + Recipient Mapping | 0/TBD | Not started | - |
 | 4. Editor + Preview + Template Save | 0/TBD | Not started | - |
 | 5. Test-Send + Confirmation Gate | 0/TBD | Not started | - |
