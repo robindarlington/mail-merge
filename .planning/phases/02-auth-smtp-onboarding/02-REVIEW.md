@@ -1,6 +1,6 @@
 ---
 phase: 02-auth-smtp-onboarding
-reviewed: 2026-07-11T10:30:00Z
+reviewed: 2026-07-13T00:00:00Z
 depth: standard
 files_reviewed: 38
 files_reviewed_list:
@@ -43,62 +43,50 @@ files_reviewed_list:
   - Dockerfile
   - docker-compose.yml
 findings:
-  critical: 1
-  warning: 7
-  info: 9
-  total: 17
+  critical: 0
+  warning: 9
+  info: 11
+  total: 20
 status: issues_found
 ---
 
-# Phase 02: Code Review Report
+# Phase 02: Code Review Report (Revision 2 — 02-08 delta re-review)
 
-**Reviewed:** 2026-07-11T10:30:00Z
+**Reviewed:** 2026-07-13T00:00:00Z
 **Depth:** standard
-**Files Reviewed:** 38
+**Files Reviewed:** 38 (this revision re-reviewed only the 4-file 02-08 delta)
 **Status:** issues_found
 
 ## Summary
 
-Reviewed the Phase 02 auth + SMTP onboarding surface: Clerk middleware (proxy.ts), the userId-scoped DAL and DTO redaction boundary, the verify engine and error classifier, the three "use server" actions plus their testable seams, the three-step wizard UI, and the Docker/Coolify deploy artifacts.
+This is a delta re-review following the 02-08 gap-closure plan for CR-01 (blank-password edit flow). The full 38-file phase review ran on 2026-07-11; this revision freshly re-reviewed only the four files 02-08 changed — `lib/smtp/schema.ts`, `lib/smtp/actions-core.ts`, `components/smtp/smtp-wizard.tsx`, `lib/smtp/actions.test.ts` (diff base `dcfbb68`) — plus the surrounding call chain (`lib/smtp/actions.ts`, `lib/crypto/index.ts`, `lib/data/smtp.ts`, `components/smtp/step-verify.tsx`, `components/smtp/step-details.tsx`) read for context. The other 34 files were not re-reviewed; their findings are carried forward verbatim.
 
-The headline security invariants hold up well under scrutiny: the encrypted password triple never crosses the server→client boundary (DTO is enumerated, not filtered, and tests prove it with a marker password); every DAL path is userId-scoped; only the three auth-guarded actions are runtime exports of the `"use server"` module; `transport.verify()` runs before every send; no `rejectUnauthorized: false` exists in lib code; and `CLERK_SECRET_KEY` / `CREDENTIAL_ENC_KEY` are runtime-only in compose while only `NEXT_PUBLIC_*` values are build ARGs.
+**CR-01 is RESOLVED** (see Resolved section below for the verification detail). The fix is correct on its stated security invariants: the merge is userId-scoped, the decrypted plaintext never reaches the client, a log line, or the DB unencrypted, and the blank-without-stored-row case fails safely as a validation error without persisting anything.
 
-However, the review found one blocker: the edit flow's advertised "leave blank to keep your current password" behavior (D-07) is promised by the UI in two places but implemented nowhere — the shared schema unconditionally requires a password and the server has no merge-with-stored-password path, so any connection-field edit dead-ends in a contradictory validation error. Several warnings follow: a substring-based error classifier that misfires on real-world hostnames containing "ssl"/"tls", client pending-state lockups when a Server Action rejects at the network layer, unvalidated recipient input on `sendTestEmail`, SSRF-literal bypasses, a compose image-tag collision that can strip the Clerk publishable key from the web bundle, and a CSS cascade conflict that defeats both the loaded Geist font and the dark-mode tokens.
+However, the delta introduces two new warnings: an uncaught `decrypt()` throw in the merge path that violates the seam's "never rejects" contract and feeds the WR-02 client lockup (WR-08), and a credential-exfiltration escalation — the blank-keep merge now lets a session-holding attacker who does *not* know the SMTP password redirect it, via SMTP AUTH, to a host they control (WR-09). Two new info items cover a dead type export and a discarded server-side validation issue path.
+
+Prior warnings WR-01–WR-07 and info items IN-01–IN-09 were checked against the delta: none were resolved or invalidated by 02-08 (WR-02's missing try/catch in `step-verify.tsx` was re-confirmed during this pass and now also gates WR-08's failure mode). Line references into the two delta-shifted files were updated; finding text is otherwise verbatim.
+
+## Resolved
+
+### CR-01 (RESOLVED by plan 02-08): Edit mode's "leave blank to keep your current password" is now implemented end to end
+
+Original finding: the UI promised "leave blank to keep your current password" in two places, but the schema unconditionally required a password, the wizard used the base resolver in edit mode, and the server had no merge-with-stored-password path — any connection-field edit dead-ended in a contradictory validation error.
+
+Verified resolved in this re-review, against the specific concerns raised:
+
+1. **Schema** — `smtpEditFormSchema` (`lib/smtp/schema.ts:89-91`) relaxes only `password` to `z.string()`; the base create schema keeps `min(1)`.
+2. **Client** — `smtp-wizard.tsx:92-94` selects the edit schema only when `isEdit`, so the create flow still requires a password client-side; the password default stays blank and is never prefilled (`:102`).
+3. **Server merge is userId-scoped** — `applyVerifiedConfig` (`lib/smtp/actions-core.ts:97-115`) looks up `getSmtpConfigForUser(userId)` where `userId` comes exclusively from Clerk `auth()` in the `verifyAndSave` wrapper (`lib/smtp/actions.ts:68`). No client-supplied id exists anywhere on the path; a caller can only ever merge their own stored credential.
+4. **Plaintext containment** — the decrypted password is assigned into the local `parsed.data.password` only; it flows to `verifyFn` and `encrypt()` and appears in no `ActionResult` branch, no log statement, and is re-persisted only as a fresh AES-256-GCM triple (`:134-145`). (But see WR-08 for an uncaught throw on the decrypt itself, and WR-09 for where the plaintext is *sent*.)
+5. **Blank + no stored row fails safely** — returns `{ kind: "validation" }` with a `path: ["password"]` issue and persists nothing (`:99-109`), re-imposing the create-flow rule.
+6. **Tests prove the seam** — `actions.test.ts:190-255` proves the stored password is substituted *before* verify (captured verifyFn input equals the marker), the persisted row still round-trips to the original password after a host change, the no-row blank case rejects without persisting, and no result JSON contains the marker.
+
+Confirmed by human UAT against a live SMTP server per the 02-08 plan record.
 
 ## Critical Issues
 
-### CR-01: Edit mode's "leave blank to keep your current password" is promised by the UI but not implemented anywhere
-
-**File:** `lib/smtp/schema.ts:72-74`, `components/smtp/step-details.tsx:156-163`, `lib/smtp/actions-core.ts:83-116`, `components/smtp/smtp-wizard.tsx:29`
-**Issue:** The password field's UI copy in edit mode explicitly promises "Leave blank to keep your current password" (both as the input placeholder and as a `FormDescription`), and the schema comment at `lib/smtp/schema.ts:72-73` claims "Edit flow makes this optional ('leave blank to keep', D-07)". Nothing implements this:
-
-1. `smtpFormSchema.password` is `z.string().min(1, "Password is required")` unconditionally — there is no edit-mode variant.
-2. The wizard uses `zodResolver(smtpFormSchema)` regardless of `isEdit`, so a blank password fails client validation.
-3. `applyVerifiedConfig` parses with the same schema server-side and unconditionally encrypts `parsed.data.password` — there is no "fetch the stored password when blank" merge path, so even relaxing the schema alone would verify with (and persist) an empty password, destroying the stored credential.
-
-Concrete broken flow: a user in edit mode changes only the port (or host, secure, or username). `connectionDirty` is true, so the primary action is "Verify & continue" → `form.handleSubmit` → zod fails on the blank password → the field shows "Password is required" directly beneath the placeholder that says "Leave blank to keep your current password". The user cannot proceed without re-typing a password the UI told them they could omit. The advertised D-07 contract is broken and the UX is self-contradictory.
-
-**Fix:** Implement the keep-on-blank path end to end:
-
-```ts
-// lib/smtp/schema.ts — add an edit variant
-export const smtpEditFormSchema = smtpFormSchema.extend({
-  password: z.string(), // blank allowed in edit mode = keep stored
-});
-```
-
-```ts
-// lib/smtp/actions.ts — verifyAndSave: when the caller has a stored config and
-// the submitted password is blank, decrypt and substitute the stored password
-// BEFORE verify/persist (server-side only; never returned):
-if (parsed.data.password === "") {
-  const row = await getSmtpConfigForUser(userId);
-  if (!row) return { ok: false, error: { kind: "validation", issues: [...] } };
-  parsed.data.password = decrypt({ enc: row.password_enc, iv: row.password_iv, tag: row.password_tag });
-}
-```
-
-And switch the wizard's resolver to the edit schema when `isEdit` is true. Alternatively, if keep-on-blank is intentionally out of scope, remove the placeholder, the `FormDescription`, and the stale schema comment so the UI stops promising it — but the D-07 references throughout the codebase indicate the behavior is required.
+None open. (CR-01 resolved above.)
 
 ## Warnings
 
@@ -122,7 +110,7 @@ Add classifier test fixtures whose messages contain "ssl"/"tls" hostnames.
 ### WR-02: A rejected Server Action call permanently locks the wizard in its pending/sending state
 
 **File:** `components/smtp/step-verify.tsx:124-137,140-155`, `components/smtp/step-test-send.tsx:66-78`
-**Issue:** All three client call sites assume the Server Action promise always resolves: `onPendingChange(true); const res = await verifyAndSave(values); onPendingChange(false);` (and the same shape in `runFromOnly` and `send()`). Server Action invocations reject on network failure, a mid-deploy stale action id, or a thrown server error (e.g. `decrypt()` throwing on a bad `CREDENTIAL_ENC_KEY` in `sendTestEmail` — that throw is not caught server-side and surfaces as a client-side rejection). When that happens, the line resetting `pending`/`sending` never runs: the button stays disabled with a perpetual "Verifying…"/"Sending…" spinner, step 1's whole fieldset stays disabled (it's bound to `pending`), and no error is shown. The only escape is a full page reload.
+**Issue:** All three client call sites assume the Server Action promise always resolves: `onPendingChange(true); const res = await verifyAndSave(values); onPendingChange(false);` (and the same shape in `runFromOnly` and `send()`). Server Action invocations reject on network failure, a mid-deploy stale action id, or a thrown server error (e.g. `decrypt()` throwing on a bad `CREDENTIAL_ENC_KEY` in `sendTestEmail` — that throw is not caught server-side and surfaces as a client-side rejection). When that happens, the line resetting `pending`/`sending` never runs: the button stays disabled with a perpetual "Verifying…"/"Sending…" spinner, step 1's whole fieldset stays disabled (it's bound to `pending`), and no error is shown. The only escape is a full page reload. *(Re-confirmed unresolved in this delta pass; the new WR-08 decrypt path in `applyVerifiedConfig` adds another server-side throw that lands here.)*
 **Fix:** Wrap each call in try/catch/finally:
 
 ```ts
@@ -142,7 +130,7 @@ Apply the same pattern in `runFromOnly` and `StepTestSend.send`.
 
 ### WR-03: `sendTestEmail` accepts a completely unvalidated client-supplied recipient string
 
-**File:** `lib/smtp/actions.ts:109-135`, `lib/smtp/actions-core.ts:153-158`
+**File:** `lib/smtp/actions.ts:109-135`, `lib/smtp/actions-core.ts:156-196`
 **Issue:** `sendTestEmail(toAddress?: string)` is a client-invocable endpoint, and `toAddress` flows into nodemailer's `to` field with no validation whatsoever — no `z.email()` parse, no length cap. Nodemailer interprets a comma-separated string as **multiple recipients**, so a single call with `"a@x.com, b@x.com, c@x.com, ..."` fans out one call into arbitrarily many deliveries. The client UI's `type="email"` input is not a control (the action is directly wire-callable), and notably the wizard's own `failureFor` maps a `validation` error kind to "the recipient address is invalid" (`step-test-send.tsx:39`) — a branch the server can never produce for this action, confirming the intended validation was never written. Impact is bounded (the mail goes through the caller's own SMTP with a fixed subject/body), but this is a missing input validation at a trust boundary and breaks the "one test email to one address" contract.
 **Fix:** Validate before use:
 
@@ -203,6 +191,54 @@ worker:
 3. `:root { color-scheme: light dark }` (line 15) tells the UA it may render dark-styled form controls and scrollbars for dark-preference users — on a page whose body is hard-pinned white, producing mismatched dark inputs on a light page today, with no theme toggle to correct it.
 **Fix:** Delete the unlayered `body` block entirely (the `@layer base` rules at 140-149 already cover background/text/font), and either drop `color-scheme: light dark` until a theme toggle ships or scope it: `:root { color-scheme: light; } .dark { color-scheme: dark; }`. Remove the now-redundant static `--color-background/--color-foreground` pair from the first `@theme` block.
 
+### WR-08: Uncaught `decrypt()` throw in the blank-password merge violates the seam's "never rejects" contract and triggers the WR-02 client lockup
+
+**File:** `lib/smtp/actions-core.ts:110-114` (new in 02-08)
+**Issue:** The blank-password merge calls `decrypt()` on the stored triple with no try/catch. `decrypt` throws on a GCM auth-tag mismatch (`lib/crypto/index.ts:74`) — which happens whenever `CREDENTIAL_ENC_KEY` has changed since the row was stored (rotation, misconfigured deploy, restored DB with the wrong key) or the blob is corrupted. The throw propagates through `applyVerifiedConfig` and `verifyAndSave` (no catch anywhere on the path, `lib/smtp/actions.ts:63-74`) to the wire as a Server Action rejection. This directly contradicts the module's own contract — "The uniform result every Server Action here resolves to (never rejects)" (`actions-core.ts:40`) — and, because the client's `runVerify` has no try/catch (WR-02), the user who hits it gets a permanently disabled form with a perpetual "Verifying…" spinner and no error message. The exact user in this scenario (stored credential undecryptable) is the one who most needs the actionable "re-enter your password" signal. `sendTestEmail` has the same latent decrypt throw (noted under WR-02), but 02-08 added a second, more likely-to-be-hit instance: an edit-with-blank submit is the natural first action after any key rotation.
+**Fix:** Catch and convert to the existing validation shape so the user is told to re-enter the credential:
+
+```ts
+try {
+  parsed.data.password = decrypt({
+    enc: existing.password_enc as Buffer,
+    iv: existing.password_iv as Buffer,
+    tag: existing.password_tag as Buffer,
+  });
+} catch {
+  return {
+    ok: false,
+    error: {
+      kind: "validation",
+      issues: [{ code: "custom", path: ["password"],
+                 message: "Your saved password can't be read — enter it again." }],
+    },
+  };
+}
+```
+
+Add a seam test that stores a row, swaps `CREDENTIAL_ENC_KEY`, and asserts the blank-edit resolves (not rejects) with a validation error.
+
+### WR-09: Blank-password keep combined with a changed host lets a session-holding attacker exfiltrate the stored SMTP password
+
+**File:** `lib/smtp/actions-core.ts:97-117` (new in 02-08), `lib/smtp/schema.ts:89-91`
+**Issue:** The merge substitutes the stored plaintext password and then dials whatever `host:port` the *submitted* form specifies (`verifyFn(parsed.data)` → real SMTP AUTH). Before 02-08, changing the host required re-typing the password — an attacker holding a hijacked session but not the credential could not point the config anywhere useful. After 02-08, that attacker can submit an edit with `host` set to a server they control, `password` blank, and valid-looking other fields; the server decrypts the victim's stored SMTP password and performs SMTP AUTH (PLAIN/LOGIN — the password, base64-encoded, on the wire) against the attacker's host, which simply accepts the AUTH and records it. Verify even "succeeds," persisting the hijacked config. This escalates a transient session compromise into persistent plaintext SMTP-credential capture — credentials that outlive session revocation and are frequently reused. The precondition (an authenticated session) is real but is exactly the boundary the D-07 "never re-send the secret to the client" design exists to defend; the merge quietly re-sends it to an arbitrary *server* instead.
+**Fix:** Require an explicit password whenever the connection identity changes — only allow the blank-keep merge when the submitted `host` (and ideally `port`/`username`) matches the stored row:
+
+```ts
+if (parsed.data.password === "") {
+  const existing = await getSmtpConfigForUser(userId);
+  if (!existing || existing.host !== parsed.data.host || existing.username !== parsed.data.username) {
+    return { ok: false, error: { kind: "validation", issues: [{
+      code: "custom", path: ["password"],
+      message: "Enter your password to change the server or username.",
+    }]}};
+  }
+  // ...decrypt + merge
+}
+```
+
+Mirror the constraint in the edit UI copy. If instead the team decides same-account host migration with a kept password is a supported flow, record that risk acceptance explicitly in the plan — it is currently unstated. Note the seam test at `actions.test.ts:190-241` deliberately exercises a *changed host* with a kept password, so the current behavior is load-bearing in tests; the test would need updating alongside the fix.
+
 ## Info
 
 ### IN-01: Dashboard's "Re-verify required" state (state 3) is unreachable dead code
@@ -219,13 +255,13 @@ worker:
 
 ### IN-03: Empty `from_name` is persisted as `""` instead of `NULL`
 
-**File:** `components/smtp/smtp-wizard.tsx:96`, `lib/smtp/actions-core.ts:115`, `lib/smtp/actions.ts:97`
+**File:** `components/smtp/smtp-wizard.tsx:104`, `lib/smtp/actions-core.ts:144`, `lib/smtp/actions.ts:97` *(line refs updated for the 02-08 diff; finding unchanged)*
 **Issue:** The wizard defaults `from_name` to `""`; `z.string().trim().optional()` passes `""` through; `parsed.data.from_name ?? null` only maps `undefined` to null, so a blank name is stored as an empty string. All current consumers use truthiness so display is unaffected, but the column's null semantics are inconsistent (some rows `NULL`, some `""`).
 **Fix:** Normalize in the schema: `from_name: z.string().trim().optional().transform((v) => (v ? v : undefined))` or map `parsed.data.from_name || null` at the persistence sites.
 
 ### IN-04: Verify rate limiter grows without bound and charges budget for validation failures
 
-**File:** `lib/smtp/actions-core.ts:49-67`, `lib/smtp/actions.ts:70-73`
+**File:** `lib/smtp/actions-core.ts:47-67`, `lib/smtp/actions.ts:70-73`
 **Issue:** (a) `verifyAttempts` keeps one entry per userId forever — stale users' arrays are pruned only if that same user calls again, so the Map grows monotonically for the process lifetime. (b) `verifyAndSave` checks the limiter *before* parsing, so a request that fails zod validation (no dial ever happens) still consumes one of the five per-minute attempts.
 **Fix:** Sweep empty/stale entries during `underVerifyRateLimit` (delete keys whose filtered array is empty), and move the rate-limit check after `safeParse` (or refund on validation failure) so only actual dials are budgeted.
 
@@ -259,8 +295,20 @@ worker:
 **Issue:** Both RSCs handle `userId == null` by rendering the empty/no-config UI rather than redirecting. Protection currently rests entirely on proxy.ts; if the matcher ever regresses (see IN-05's extension list, or the Next 16 proxy.ts rename pitfall the file itself documents), these pages render for anonymous visitors instead of bouncing them.
 **Fix:** Fail closed in the pages: `const { userId } = await auth(); if (!userId) redirect("/sign-in");` — one line each, and the `userId ? ... : undefined` ternaries disappear.
 
+### IN-10: `SmtpEditFormValues` is exported but never used anywhere
+
+**File:** `lib/smtp/schema.ts:93` (new in 02-08)
+**Issue:** The `SmtpEditFormValues` type alias is exported but has zero importers (grep-confirmed across `lib/`, `components/`, `app/`). The wizard drives its `useForm` with `SmtpFormValues` even in edit mode (the shapes are structurally identical, so this works), and `applyVerifiedConfig` types its `verifyFn` parameter with `SmtpFormValues` too. Dead export.
+**Fix:** Either delete the export, or use it where edit-mode values are actually in play (e.g. the wizard's resolver cast) so the type earns its keep.
+
+### IN-11: Server-side validation issues are discarded by the client — the new blank-no-row error shows "Check the highlighted fields" with nothing highlighted
+
+**File:** `lib/smtp/actions-core.ts:99-109` (new in 02-08), `components/smtp/step-verify.tsx:93-97`
+**Issue:** The blank-without-stored-row branch carefully constructs a zod-shaped issue with `path: ["password"]` and message "Password is required", but `applyError`'s `validation` branch never maps `issues` onto form controls — it shows the generic "Some details are invalid. Check the highlighted fields." while highlighting nothing. Unreachable through the normal UI (edit mode implies a stored row exists), but reachable by wire callers and by any future server-only validation divergence; the copy is actively misleading when it fires. Pre-existing for all server-side validation failures; 02-08 added the first hand-built issue that the client then throws away.
+**Fix:** In `applyError`'s validation case, walk `error.issues` and `form.setError(issue.path[0], { message: issue.message })` for paths that match form fields, falling back to the generic alert otherwise.
+
 ---
 
-_Reviewed: 2026-07-11T10:30:00Z_
+_Reviewed: 2026-07-13T00:00:00Z (revision 2 — 02-08 delta re-review; original full review 2026-07-11T10:30:00Z)_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
