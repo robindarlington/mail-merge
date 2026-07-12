@@ -101,7 +101,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [ ] 02-09-PLAN.md — [CHECKPOINT] live blank-password edit walkthrough against a real SMTP server
+- [x] 02-09-PLAN.md — [CHECKPOINT] live blank-password edit walkthrough against a real SMTP server
 **UI hint**: yes
 
 ### Phase 3: CSV Upload + Parsing + Recipient Mapping
@@ -232,7 +232,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — DB, Crypto, Core Engine | 5/5 | Complete   | 2026-06-27 |
-| 2. Auth + SMTP Onboarding | 8/9 | In Progress|  |
+| 2. Auth + SMTP Onboarding | 9/9 | Complete   | 2026-07-12 |
 | 3. CSV Upload + Parsing + Recipient Mapping | 0/TBD | Not started | - |
 | 4. Editor + Preview + Template Save | 0/TBD | Not started | - |
 | 5. Test-Send + Confirmation Gate | 0/TBD | Not started | - |
