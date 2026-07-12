@@ -85,3 +85,6 @@ None — plan executed exactly as written. The plan named the upload guard gener
 
 ## Known Stubs
 None.
+
+## Self-Check: PASSED
+All 7 source/config files and the SUMMARY exist on disk; all 5 commits (87bc439, 52cc158, d147bb9, e97eea8, 61d6596) are present in git history.
