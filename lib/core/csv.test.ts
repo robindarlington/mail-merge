@@ -5,7 +5,9 @@ import assert from "node:assert/strict";
 // CLI's naive split-at-first-comma (CSV-02). Must handle header mode, BOM
 // stripping (PITFALLS #12), quoted fields with embedded commas, CRLF line
 // endings, and validate recipient emails (CONCERNS.md gap, CSV-04 foundation).
-const { parseCsv } = await import("./csv");
+const { parseCsv, detectEmailColumn, countInvalidEmails } = await import(
+  "./csv"
+);
 
 test("parses a header row into row objects keyed by header names + ordered columns", () => {
   const out = parseCsv("email,name\na@x.com,Ada\nb@x.com,Bo\n");
@@ -63,4 +65,55 @@ test("surfaces papaparse structural errors for a malformed CSV (WR-01)", () => {
   const fieldErrors = out.parseErrors.filter((e) => e.type === "FieldMismatch");
   assert.ok(fieldErrors.length > 0, "expected at least one FieldMismatch error");
   assert.equal(fieldErrors[0].code, "TooFewFields");
+});
+
+// --- detectEmailColumn (CSV-03) --------------------------------------------
+// Two-stage heuristic: normalized header-name match first, content-sampling
+// fallback second, with human confirmation as the ultimate gate downstream.
+
+test("detectEmailColumn matches an exact `Email` header by name", () => {
+  const out = parseCsv("Email,Name\na@x.com,Ada\n");
+  assert.equal(detectEmailColumn(out.columns, out.rows), "Email");
+});
+
+test("detectEmailColumn matches a normalized `Work Email` header (includes 'email')", () => {
+  const out = parseCsv("Work Email,Name\na@x.com,Ada\n");
+  assert.equal(detectEmailColumn(out.columns, out.rows), "Work Email");
+});
+
+test("detectEmailColumn does NOT pick `mailing_city` (substring 'mail' but non-email content)", () => {
+  const out = parseCsv(
+    "mailing_city,name\nLondon,Ada\nParis,Bo\nBerlin,Cy\n",
+  );
+  // `mailing_city` contains 'mail' but not 'email'; its content is not email-like.
+  assert.equal(detectEmailColumn(out.columns, out.rows), null);
+});
+
+test("detectEmailColumn falls back to content sampling when no header hints (>0.7 hit-rate)", () => {
+  // No email-like header; the `contact` column is >70% valid emails.
+  const out = parseCsv(
+    "contact,name\na@b.com,Ada\nc@d.com,Bo\ne@f.com,Cy\nnot-an-email,Di\n",
+  );
+  assert.equal(detectEmailColumn(out.columns, out.rows), "contact");
+});
+
+test("detectEmailColumn returns null when no column looks like email", () => {
+  const out = parseCsv("city,name\nLondon,Ada\nParis,Bo\n");
+  assert.equal(detectEmailColumn(out.columns, out.rows), null);
+});
+
+// --- countInvalidEmails (CSV-04) -------------------------------------------
+// Counts invalid rows in an ARBITRARY confirmed column (not the literal 'email').
+
+test("countInvalidEmails counts invalid values in an arbitrary column (blank counts as invalid)", () => {
+  const out = parseCsv(
+    "contact,name\na@b.com,Ada\nnope,Bo\n,Cy\nc@d.com,Di\n",
+  );
+  // "nope" and "" are invalid; "a@b.com" and "c@d.com" are valid → 2.
+  assert.equal(countInvalidEmails(out.rows, "contact"), 2);
+});
+
+test("countInvalidEmails returns 0 for a fully-valid column", () => {
+  const out = parseCsv("contact,name\na@b.com,Ada\nc@d.com,Bo\n");
+  assert.equal(countInvalidEmails(out.rows, "contact"), 0);
 });
