@@ -6,7 +6,11 @@ import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CheckCircle2 } from "lucide-react";
 
-import { smtpFormSchema, type SmtpFormValues } from "@/lib/smtp/schema";
+import {
+  smtpEditFormSchema,
+  smtpFormSchema,
+  type SmtpFormValues,
+} from "@/lib/smtp/schema";
 import type { SmtpConfigDto } from "@/lib/data/smtp";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
@@ -83,7 +87,11 @@ export function SmtpWizard({
     // from its OUTPUT type (port: number). We drive the form with the clean
     // output type and cast the resolver — the port control renders/edits as a
     // string and the shared schema coerces it on submit (and again server-side).
-    resolver: zodResolver(smtpFormSchema) as unknown as Resolver<SmtpFormValues>,
+    // Edit mode relaxes the password to "leave blank to keep" (D-07); the create
+    // flow keeps the base schema where a password is always required.
+    resolver: zodResolver(
+      isEdit ? smtpEditFormSchema : smtpFormSchema,
+    ) as unknown as Resolver<SmtpFormValues>,
     defaultValues: {
       host: initial?.host ?? "",
       // The port control is a string until zod coerces it; empty for a new form.

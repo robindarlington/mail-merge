@@ -14,10 +14,10 @@
 
 import type { MailTransport } from "../core";
 import { sendOne, verifyTransport } from "../core";
-import { encrypt } from "../crypto";
-import { upsertSmtpConfig } from "../data/smtp";
+import { decrypt, encrypt } from "../crypto";
+import { getSmtpConfigForUser, upsertSmtpConfig } from "../data/smtp";
 import { classifyVerifyError, type VerifyErrorField } from "./errors";
-import { smtpFormSchema, type SmtpFormValues } from "./schema";
+import { smtpEditFormSchema, type SmtpFormValues } from "./schema";
 import { verifySmtp, type VerifyOutcome } from "./verify";
 
 /**
@@ -80,9 +80,38 @@ export async function applyVerifiedConfig(
   input: unknown,
   verifyFn: (values: SmtpFormValues) => Promise<VerifyOutcome> = verifySmtp,
 ): Promise<ActionResult> {
-  const parsed = smtpFormSchema.safeParse(input);
+  // Parse with the EDIT schema (blank password allowed): a blank is the D-07
+  // "leave blank to keep" signal, resolved server-side below. The create flow's
+  // "password required" rule is re-imposed by the blank-without-stored-row branch.
+  const parsed = smtpEditFormSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: { kind: "validation", issues: parsed.error.issues } };
+  }
+
+  // Blank-password edit merge (D-07 / SMTP-04): when the caller omits the password,
+  // substitute the STORED one BEFORE verify/persist. The lookup is userId-scoped
+  // (T-2-08-IDOR — no client-supplied id is ever trusted), and the decrypted
+  // plaintext lives ONLY in this local `parsed.data.password` and never reaches an
+  // ActionResult, a throw, or a log line (T-2-08-CRED). A blank with no stored row
+  // falls back to the create-flow rule: reject and save nothing (T-2-08-BLANK).
+  if (parsed.data.password === "") {
+    const existing = await getSmtpConfigForUser(userId);
+    if (!existing) {
+      return {
+        ok: false,
+        error: {
+          kind: "validation",
+          issues: [
+            { code: "custom", path: ["password"], message: "Password is required" },
+          ],
+        },
+      };
+    }
+    parsed.data.password = decrypt({
+      enc: existing.password_enc as Buffer,
+      iv: existing.password_iv as Buffer,
+      tag: existing.password_tag as Buffer,
+    });
   }
 
   const outcome = await verifyFn(parsed.data);
