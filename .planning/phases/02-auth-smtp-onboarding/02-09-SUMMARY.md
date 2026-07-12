@@ -44,8 +44,15 @@ storage at `/data`), SMTP verification fails with a connection-classified error
 ("can't connect to SMTP server") even with valid details. This is a
 `connection/hostPort` classification (DNS / TCP connect / timeout from inside the
 container) — an infrastructure/egress issue on the VPS, not a regression in the
-02-08 code path (which is confirmed working locally). Being diagnosed separately;
-tracked as an open deployment concern against the 02-07 staging-deploy criteria.
+02-08 code path (which is confirmed working locally).
+
+**RESOLVED (2026-07-13):** Diagnosis via TCP probes from inside the container showed
+the VPS blocks outbound port 465 while 587 is open. The user re-onboarded on
+production with port 587 / STARTTLS against the same o2switch server and confirmed
+"all good with 587" — verify, save, and the full wizard flow work on prod. No code
+change required. Product follow-up idea (future phase): on a connection-timeout
+verify failure, probe the alternate port and offer a one-click 465↔587 switch,
+mirroring the existing alternate-TLS-mode probe.
 
 ## Deviations from Plan
 

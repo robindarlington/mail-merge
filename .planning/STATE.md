@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 2 UI-SPEC approved
-last_updated: "2026-07-12T20:52:29.884Z"
+status: ready_to_plan
+stopped_at: Phase 02 complete (9/9) — ready to discuss Phase 3
+last_updated: 2026-07-12T22:18:22.958Z
 last_activity: 2026-07-12 -- Phase 02 execution started
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 14
-  completed_plans: 12
+  completed_plans: 14
   percent: 11
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-24)
 
 **Core value:** A signed-in user can reliably send a personalized email to every row of their CSV, using their own validated SMTP, with confidence (preview + test-send) and a record of exactly what was sent and to whom.
-**Current focus:** Phase 02 — auth-smtp-onboarding
+**Current focus:** Phase 3 — csv upload + parsing + recipient mapping
 
 ## Current Position
 
-Phase: 02 (auth-smtp-onboarding) — EXECUTING
-Plan: 1 of 9
-Status: Executing Phase 02
-Last activity: 2026-07-12 -- Phase 02 execution started
+Phase: 3
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-12
 
 Progress: [██████████] 100%
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 14
 - Average duration: — min
 - Total execution time: 0.0 hours
 
@@ -45,6 +45,7 @@ Progress: [██████████] 100%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 5 | - | - |
+| 02 | 9 | - | - |
 
 **Recent Trend:**
 

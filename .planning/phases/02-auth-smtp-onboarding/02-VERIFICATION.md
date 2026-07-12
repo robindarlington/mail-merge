@@ -1,198 +1,146 @@
 ---
 phase: 02-auth-smtp-onboarding
-verified: 2026-07-11T21:40:00Z
-status: gaps_found
-score: 6/7 must-haves verified (6 ROADMAP success criteria hold; 1 plan-declared must-have fails)
+verified: 2026-07-12T22:16:43Z
+status: passed
+score: 7/7 must-haves verified
 overrides_applied: 0
-gaps:
-  - truth: "Editing a saved SMTP config re-routes connection-field changes through verify while leaving the password blank (D-07/D-08, declared must-have of 02-06-PLAN.md and 02-05-PLAN.md)"
-    status: failed
-    reason: >
-      The UI promises "Leave blank to keep your current password" in edit mode
-      (components/smtp/step-details.tsx:156,162) and the schema comment claims
-      "Edit flow makes this optional" (lib/smtp/schema.ts:72-73), but
-      `smtpFormSchema.password` is `z.string().min(1, "Password is required")`
-      unconditionally — there is no edit-mode schema variant, and
-      `applyVerifiedConfig` (lib/smtp/actions-core.ts) has no
-      fetch-stored-password-when-blank merge path. Reproduced independently:
-      parsing a valid edit payload with `password: ""` through
-      `smtpFormSchema.safeParse` fails with "Password is required". Any user
-      who edits a connection field (host/port/secure/username) without
-      re-typing their password cannot save — the wizard's own D-08 routing
-      correctly sends them to `verifyAndSave`, which then dead-ends on the
-      blank-password validation error directly beneath the placeholder that
-      told them to leave it blank. No test in lib/smtp/actions.test.ts covers
-      a blank-password edit payload. This matches code-review finding CR-01
-      (.planning/phases/02-auth-smtp-onboarding/02-REVIEW.md) verbatim and is
-      still present in the current tree.
-    artifacts:
-      - path: "lib/smtp/schema.ts"
-        issue: "password field is unconditionally z.string().min(1) — no edit-mode variant exists despite the file's own comment claiming one"
-      - path: "lib/smtp/actions-core.ts"
-        issue: "applyVerifiedConfig has no branch that loads/decrypts the stored password when the submitted password is blank"
-      - path: "components/smtp/step-details.tsx"
-        issue: "renders 'Leave blank to keep your current password' placeholder/help text that the backend cannot honor"
-    missing:
-      - "An edit-mode schema variant (or superRefine) that allows a blank password"
-      - "A server-side merge path: when editing and the submitted password is blank, decrypt and substitute the stored password before verify/persist"
-      - "A test in lib/smtp/actions.test.ts covering the blank-password edit flow"
-human_verification:
-  - test: "Sign in on staging (or local dev with a saved SMTP config), open Settings → SMTP, change ONLY the host or port (do not touch the password field, which is blank), and click 'Verify & continue'."
-    expected: "The connection re-verifies against the stored password and saves, OR a clear message explains the password must be re-entered — NOT a bare 'Password is required' error under a field that says it can be left blank."
-    why_human: "Confirms the CR-01 fix (once applied) end-to-end with a real SMTP server; the codebase-level reproduction above is sufficient to confirm the bug exists today, but confirming the FIX requires a live wizard walkthrough."
+re_verification:
+  previous_status: gaps_found
+  previous_score: "6/7 must-haves verified"
+  gaps_closed:
+    - "Editing a saved SMTP config re-routes connection-field changes through verify while leaving the password blank (D-07/D-08) — CR-01"
+  gaps_remaining: []
+  regressions: []
 ---
 
-# Phase 2: Auth + SMTP Onboarding — Verification Report
+# Phase 2: Auth + SMTP Onboarding — Verification Report (Re-verification)
 
-**Phase Goal (ROADMAP prose):** A signed-in user can onboard and persist their own SMTP server, proven functional by a live connection check, with credentials encrypted at rest and never exposed.
+**Phase Goal:** As a signed-in user, I want to onboard and persist my own SMTP server proven functional by a live connection check, so that my credentials are stored encrypted at rest, reused across sessions, and never exposed to the client or logs.
 
-**Phase Goal (user-story form, restated identically across all 7 plans' "Phase Goal" sections and validated by `gsd-sdk query user-story.validate`):** As a signed-in user, I want to onboard and persist my own SMTP server proven functional by a live connection check, so that my credentials are stored encrypted at rest, reused across sessions, and never exposed to the client or logs.
+**Verified:** 2026-07-12
+**Status:** passed
+**Re-verification:** Yes — after gap closure (plans 02-08 gap_closure + 02-09 human-verify checkpoint)
 
-**Verified:** 2026-07-11
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+## Re-verification Summary
 
-**Note on MVP-mode framing:** `gsd-sdk query roadmap.get-phase 2` reports `mode: mvp`, but the ROADMAP.md `**Goal:**` line for Phase 2 is prose, not "As a X, I want Y, so that Z." format (`user-story.validate` returns `valid: false` against the raw ROADMAP text). However, every plan in this phase independently restates the same valid user story in its "Phase Goal" section (validated `valid: true`), with an explicit note that it is "a faithful restatement" of the ROADMAP prose goal. This verification uses that user story for the User Flow Coverage section below and otherwise proceeds with standard goal-backward verification against the ROADMAP's 6 numbered success criteria and the plans' `must_haves` frontmatter (the two are consistent — no scope was invented or dropped). This is a documentation-process discrepancy (ROADMAP.md not yet reformatted to user-story syntax), not a phase-execution gap, and does not by itself block verification.
+The prior verification (2026-07-11) found `gaps_found` with exactly one gap: CR-01, the SMTP settings edit flow promised "Leave blank to keep your current password" but `smtpFormSchema.password` unconditionally required a non-blank value and `applyVerifiedConfig` had no stored-password merge path, so any connection-field edit dead-ended on a validation error. A `human_verification` item asked for a live wizard walkthrough to confirm the fix once applied.
 
-## User Flow Coverage
+Since then:
+- **Plan 02-08** (gap_closure, TDD RED→GREEN) added `smtpEditFormSchema` (edit-mode schema variant allowing a blank password), a server-side stored-password merge branch in `applyVerifiedConfig` (fetch + decrypt the caller's own stored row when the submitted password is blank), and switched the wizard's `zodResolver` to the edit schema in edit mode. Commits `914a780` (RED) and `987eb9f` (GREEN), both present in `git log`.
+- **Plan 02-09** (human-verify checkpoint) was approved by the user (resume-signal "approved", 2026-07-12) after a live wizard walkthrough on local dev against a real SMTP server, confirming both the positive case (blank-password connection-field edit re-verifies and saves) and the negative case (a wrong typed password still fails with an auth-anchored error).
+- **02-REVIEW.md** was delta-re-reviewed against the 4-file 02-08 diff: CR-01 is marked RESOLVED, 0 critical findings remain (9 warnings, 11 info — two new warnings, WR-08/WR-09, introduced by the 02-08 delta, discussed below as non-blocking).
 
-User story: «As a signed-in user, I want to onboard and persist my own SMTP server proven functional by a live connection check, so that my credentials are stored encrypted at rest, reused across sessions, and never exposed to the client or logs.»
-
-| Step | Expected | Evidence | Status |
-|------|----------|----------|--------|
-| Sign up / sign in | Visiting the app while signed out redirects to `/sign-in`; Clerk widgets render; a session is established | `proxy.ts` (`clerkMiddleware` + `auth.protect()`); live check: `curl -sI https://mailmerge.robindarlington.com/dashboard` → `307` to `/sign-in`; `/sign-in` → `200` with rendered Clerk `pk_live_...` key | ✓ |
-| Land on dashboard | Signed-in user reaches `/dashboard` inside the app shell; fresh account sees a dominant "Set up your SMTP server" callout | `app/(app)/dashboard/page.tsx` (three-state render, `getSmtpConfigForUser` scoped by server-derived `userId`); `app/(app)/layout.tsx` (sidebar + UserButton + footer) | ✓ |
-| Enter SMTP details | Wizard step 1 collects host/port/username/password/from-name/from-address + an explicit TLS-mode radio | `components/smtp/step-details.tsx` (all 6 fields, `RadioGroup` for `secure`, `zodResolver(smtpFormSchema)`) | ✓ |
-| Live verify | "Verify & continue" dials the real server; failure is field-anchored (auth → username/password, connection → host/port, tls → radio) with a one-click TLS-mode switch; success advances | `components/smtp/step-verify.tsx` (`verifyAndSave`, `setError` per `error.field`, TLS switch `Alert`); `lib/smtp/verify.ts` + `lib/smtp/errors.ts` (85/85 tests incl. 3 live `smtp-server` fixtures) | ✓ |
-| Save encrypted, never exposed | Config persists ONLY after a clean verify; password is AES-256-GCM-encrypted; DTO to the client never carries it | `lib/smtp/actions-core.ts` `applyVerifiedConfig` (persist only on `outcome.ok`); `lib/crypto/index.ts` (`aes-256-gcm`, random IV, auth tag); `lib/data/smtp.ts` `toSmtpConfigDto` (explicit-pick, structurally excludes `password_*`); `lib/data/dto.test.ts` (marker-password JSON.stringify absence) | ✓ |
-| Optional test-send | Final step offers a skippable test-send to the user's own address; a stale/broken transport fails a classified verify BEFORE any send | `components/smtp/step-test-send.tsx` (`sendTestEmail`, "Skip for now"); `lib/smtp/actions.ts` `sendTestEmail` (`verifyTransport` before `sendOne`) | ✓ |
-| Reused across sessions | A previously-saved config reloads on return visits and can be edited without re-entering the password (outcome clause: "reused across sessions") | `app/(app)/settings/smtp/page.tsx` loads `toSmtpConfigDto` for edit prefill — **BUT** editing a connection field (host/port/secure/username) while leaving the password blank fails validation with "Password is required," contradicting the UI's own "Leave blank to keep your current password" promise. Reproduced independently via `smtpFormSchema.safeParse` with `password: ""`. | ✗ |
-| Staging deployment | The slice is live and functional on the standing Coolify staging URL | `curl -sI https://mailmerge.robindarlington.com/dashboard` → 307 to sign-in; `/settings/smtp` and `/` also redirect signed-out; `/sign-in` renders 200 with a Clerk key present | ✓ |
-
-7 of 8 user-flow steps verified directly against the live codebase and the live staging deployment. The "reused across sessions" outcome clause is broken specifically for the edit-a-saved-config path — a returning user can view but not safely modify their connection settings without re-supplying the password the UI told them to omit.
+This re-verification independently re-derived every claim below from the codebase, git history, and live test runs — not from SUMMARY.md text.
 
 ## Goal Achievement
 
-### Observable Truths (ROADMAP Success Criteria)
-
-| # | Truth (ROADMAP SC) | Status | Evidence |
-|---|-------|--------|----------|
-| 1 | Sign up/sign in via Clerk; unauthenticated app-route requests redirect to sign-in | ✓ VERIFIED | `proxy.ts` (`clerkMiddleware`, `auth.protect()`, no deprecated `createRouteMatcher`); live: signed-out `/`, `/dashboard`, `/settings/smtp` all 307→`/sign-in` on staging; human checkpoint 02-01 approved |
-| 2 | Every data access scoped to signed-in `userId`; one user can never read/mutate another's records | ✓ VERIFIED | `lib/data/smtp.ts` — every function's first param is `userId`; no unscoped `smtp_configs` query exists anywhere else in the tree (grep-confirmed); `lib/data/smtp.test.ts` cross-tenant isolation tests pass (11/11 relevant tests in the 85-test suite) |
-| 3 | User enters SMTP host/port/username/password/from-name/from-address + explicit TLS mode; onboarding completes only after live `transport.verify()` succeeds; errors distinguish auth vs host/port vs TLS | ✓ VERIFIED (create flow) | `lib/smtp/schema.ts` (`smtpFormSchema`, explicit `secure` boolean never inferred from port), `lib/smtp/verify.ts` (`verifySmtp`, `ONBOARDING_TIMEOUTS`), `lib/smtp/errors.ts` (`classifyVerifyError`); 3 live `smtp-server` fixture tests pass (auth/connection-refused-<15s/tls); `applyVerifiedConfig` persists only on `outcome.ok` |
-| 4 | Credentials AES-256-GCM-encrypted at rest, reused across sessions, password never in client response or log | ⚠ PARTIAL | Encryption correct (`lib/crypto/index.ts`: `createCipheriv("aes-256-gcm", ...)`, random 12-byte IV, auth tag verified on decrypt); DTO redaction structurally sound (`toSmtpConfigDto` explicit-pick, `dto.test.ts` marker-password absence proven); grep gates on `app/(app)` and `lib/smtp` for `password_enc\|password_iv\|password_tag` return 0 outside the write/decrypt paths. **However** "reused across sessions" breaks for the edit path — see gap below; a saved config cannot be edited (connection fields) without re-entering the password |
-| 5 | Final onboarding step offers a test-send to the user's own address, confirming delivery | ✓ VERIFIED | `components/smtp/step-test-send.tsx`, `lib/smtp/actions.ts sendTestEmail` (`verifyTransport` before `sendOne`, decrypt server-side only, message-only failure returns); 8/8 actions tests pass incl. verify-before-send ordering and redaction assertions |
-| 6 | Phase slice deployed to the standing Coolify staging URL and works there | ✓ VERIFIED | Live `curl` against `https://mailmerge.robindarlington.com`: sign-in page renders (200, `pk_live_...` Clerk key present — production instance, a deliberate upgrade over D-13's dev-instance default per user's choice), all app routes redirect signed-out traffic; `Dockerfile` build ARGs for `NEXT_PUBLIC_CLERK_*` present, `CLERK_SECRET_KEY` absent from Dockerfile (grep-confirmed), present only in `docker-compose.yml` runtime env; `Dockerfile` `CMD` runs `scripts/migrate.ts` before `node server.js` (post-merge fix `6445bf5`); human checkpoints 02-07 (deploy + smoke) approved |
-
-**Score (ROADMAP SCs only):** 5.5/6 — SC4 holds for its literal "encrypted, never exposed" clause but the "reused across sessions" sub-clause is broken for the edit flow.
-
-### Additional Plan-Declared Must-Have (not literally a numbered ROADMAP SC, but explicitly declared in 02-05-PLAN.md and 02-06-PLAN.md frontmatter `must_haves.truths`, and therefore in scope per the "plans may add, never subtract" rule)
+### Observable Truths
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 7 | "Editing a saved config prefills DTO values with a BLANK password; changing connection fields re-routes through verify; changing only from-fields saves directly" (D-07/D-08) | ✗ FAILED | See Gaps below. The from-only path works correctly (`updateFromFields`, no verify, `verified_at` untouched — 3 passing tests). The connection-field-edit-with-blank-password path is broken: `smtpFormSchema.password` requires `min(1)` unconditionally and no merge-with-stored-password path exists in `applyVerifiedConfig`. Independently reproduced. |
+| 1 | Sign up/sign in via Clerk; unauthenticated app-route requests redirect to sign-in | ✓ VERIFIED (regression check) | `proxy.ts` unchanged: `clerkMiddleware` + `auth.protect()`; live re-check: `curl -sI https://mailmerge.robindarlington.com/dashboard` and `/settings/smtp` both `307` → `/sign-in` (re-run today) |
+| 2 | Every data access scoped to signed-in `userId` | ✓ VERIFIED (regression check) | `lib/data/smtp.ts` unchanged; DTO redaction fields (`password_enc/_iv/_tag`) still structurally excluded; full lib suite re-run (87/87 pass) |
+| 3 | User enters SMTP details; onboarding completes only after live `transport.verify()`; errors distinguish auth vs host/port vs TLS | ✓ VERIFIED (regression check) | `lib/smtp/schema.ts`, `lib/smtp/verify.ts`, `lib/smtp/errors.ts` unchanged outside the edit-schema addition; 3 live `smtp-server` fixture tests still pass |
+| 4 | Credentials AES-256-GCM-encrypted at rest, reused across sessions, password never in client response or log | ✓ VERIFIED (gap closed) | `lib/crypto/index.ts` unchanged; `applyVerifiedConfig` now has the blank-password merge (`lib/smtp/actions-core.ts:97-115`) that decrypts server-side and substitutes BEFORE verify/persist; decrypted plaintext confirmed to reach only `parsed.data.password` (local var), never an `ActionResult`, throw, or log; redaction test `no failure result ever leaks a config object or a secret` still passes |
+| 5 | Final onboarding step offers a test-send to the user's own address | ✓ VERIFIED (regression check) | `components/smtp/step-test-send.tsx`, `lib/smtp/actions.ts sendTestEmail` unchanged; 3/3 relevant tests pass |
+| 6 | Phase slice deployed to the standing Coolify staging URL and works there | ✓ VERIFIED (regression check) | Live re-check today: `curl -sI https://mailmerge.robindarlington.com/dashboard` and `/settings/smtp` → `307` to `/sign-in` (auth gating intact, no regression) |
+| 7 | Editing a saved SMTP config re-routes connection-field changes through verify while leaving the password blank (D-07/D-08) — the CR-01 gap | ✓ VERIFIED (gap closed) | See "Gap Closure Verification" below — independently re-derived, not trusted from SUMMARY |
 
-**Combined score: 6/7 must-haves verified** (treating SC4 as verified for its literal wording since the encryption/redaction half is solid, and counting the edit-flow defect once as item 7 rather than double-penalizing SC4).
+**Score:** 7/7 truths verified.
+
+### Gap Closure Verification (Truth #7 — CR-01)
+
+**Method:** Read the actual diff (not the SUMMARY narrative), ran the tests myself, ran an independent reproduction script, and checked the code-review's delta re-review.
+
+1. **Schema** — `lib/smtp/schema.ts:89-93` defines `smtpEditFormSchema = smtpFormSchema.extend({ password: z.string() })`, exported alongside `SmtpEditFormValues`. The base `smtpFormSchema.password` still requires `min(1, "Password is required")` (line 75) — confirmed unconditional for create.
+2. **Server merge** — `lib/smtp/actions-core.ts:78-147` `applyVerifiedConfig` now parses with `smtpEditFormSchema` (line 86). Lines 97-115: if `parsed.data.password === ""`, it calls `getSmtpConfigForUser(userId)` (userId-scoped, imported from `../data/smtp`); if no row exists, returns a validation error and persists nothing; otherwise calls `decrypt({ enc, iv, tag })` from `../crypto` and assigns the plaintext onto `parsed.data.password`, which then flows into the existing `verifyFn` → `encrypt` → `upsertSmtpConfig` pipeline untouched.
+3. **Wizard resolver** — `components/smtp/smtp-wizard.tsx:92-94`: `zodResolver(isEdit ? smtpEditFormSchema : smtpFormSchema)`. Create mode keeps the base (password-required) schema; edit mode uses the relaxed one.
+4. **Independent reproduction** (not copy-pasted from the SUMMARY): ran `smtpFormSchema.safeParse({...password:""})` → `success: false`; ran `smtpEditFormSchema.safeParse({...password:""})` → `success: true`. Confirms the exact flip the plan claimed.
+5. **Test suite, run directly by this verifier** (not trusted from SUMMARY text): `node --import tsx --test lib/smtp/actions.test.ts` → `10 pass, 0 fail`, including `applyVerifiedConfig keeps the stored password on a blank-password edit` and `applyVerifiedConfig rejects a blank password when no stored config exists`. Full lib suite: `node --import tsx --test 'lib/**/*.test.ts'` → `87 pass, 0 fail`. `npx tsc --noEmit` → exit 0.
+6. **Commits verified in git log:** `914a780` (test, RED) and `987eb9f` (feat, GREEN) both present with diffs matching the plan's described changes (`git show --stat` confirmed file lists and line counts).
+7. **Human UAT:** `02-09-SUMMARY.md` records the user's own resume-signal "approved" (2026-07-12) after a live walkthrough against a real SMTP server on local dev, confirming both the positive (blank-password edit saves) and negative (wrong typed password fails) cases. This satisfies the specific `human_verification` item the prior VERIFICATION.md required before closing this gap.
+8. **Code review delta re-review** (`02-REVIEW.md`, revision 2, `2026-07-13`) independently confirms CR-01 resolved against the same five concerns (schema, client gating, userId-scoped lookup, plaintext containment, safe-blank-with-no-row rejection) and cites the same test names.
+
+**Status: VERIFIED.** The gap is closed — a connection-field edit with a blank password now merges the stored password server-side, verifies, and saves; it no longer dead-ends on "Password is required."
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `proxy.ts` | Clerk middleware protecting all non-public routes | ✓ VERIFIED | `clerkMiddleware` + `auth.protect()`; no `middleware.ts` exists; matcher covers all non-static paths + API + `/__clerk/` |
-| `app/layout.tsx` | ClerkProvider wraps children inside `<body>` | ✓ VERIFIED | Confirmed inside `<body>`, `shadcn` theme from `@clerk/ui/themes` |
-| `app/sign-in/[[...sign-in]]/page.tsx`, `app/sign-up/[[...sign-up]]/page.tsx` | Dedicated Clerk auth pages | ✓ VERIFIED | Render `<SignIn/>`/`<SignUp/>`; live-confirmed on staging (200 OK) |
-| `lib/config.ts` | `HIRE_ME_URL` placeholder constant | ✓ VERIFIED | Exists, exported, consumed by `SiteFooter` |
-| `lib/smtp/schema.ts` | Shared zod SMTP form schema | ✓ VERIFIED (create) / ✗ INCOMPLETE (edit) | Validates all 6 fields + SSRF host-literal rejection; no edit-mode variant despite its own comment claiming one exists |
-| `lib/smtp/errors.ts` | `classifyVerifyError` | ✓ VERIFIED | 11/11 table-driven tests pass; WR-01 (review) notes a real-world hostname substring misclassification edge case — not a phase-blocking issue, flagged as WARNING |
-| `lib/smtp/verify.ts` | `verifySmtp` with short timeouts + TLS auto-retry | ✓ VERIFIED | 3/3 live-fixture tests pass; `requireTLS: !secure`; `transport.close()` in finally; no `rejectUnauthorized: false` |
-| `lib/data/smtp.ts` | userId-scoped DAL + `toSmtpConfigDto` | ✓ VERIFIED | Every function `userId`-first; DTO structurally excludes password triple; 11 tests pass |
-| `drizzle/0001_shiny_stature.sql` | Committed migration for `smtp_configs_user_uq` | ✓ VERIFIED | `CREATE UNIQUE INDEX` present; journal has idx-1 entry; Dockerfile `CMD` applies migrations on container start |
-| `lib/smtp/actions.ts` + `lib/smtp/actions-core.ts` | verifyAndSave / updateFromFields / sendTestEmail Server Actions | ✓ VERIFIED (structure) / ✗ FAILED (edit-with-blank-password behavior) | `"use server"` module exports only the 3 auth-guarded actions (post-merge IDOR fix `fd4e22a` confirmed applied — `actions-core.ts` has no directive); each action re-derives `userId`; but `applyVerifiedConfig` has no blank-password-keeps-stored path |
-| `app/(app)/layout.tsx`, `components/app-sidebar.tsx`, `components/site-footer.tsx` | Authenticated shell | ✓ VERIFIED | Sidebar (Dashboard + SMTP Settings), `UserButton`, `SiteFooter` with `HIRE_ME_URL` all present and wired |
-| `app/(app)/dashboard/page.tsx` | Soft-gate / summary / re-verify states | ✓ VERIFIED (states 1–2) / ℹ INFO (state 3 unreachable) | State 1 (no config) and state 2 (verified) both reachable and correctly rendered. State 3 ("re-verify required," `verified_at === null`) is dead code — no code path currently clears `verified_at` (matches code-review IN-01). Not a blocker: the badge renders correctly if the state is ever reached; the trigger is simply unused today. |
-| `Dockerfile`, `docker-compose.yml` | Build-time Clerk ARGs, runtime-only secrets | ✓ VERIFIED | `ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (+4 URL ARGs) promoted to ENV before `RUN npm run build`; no `CLERK_SECRET_KEY` ARG/ENV in Dockerfile; compose injects it as `web.environment` only. ⚠ WARNING: `worker` service still has its own `build:` block sharing the same `mail-merge:skeleton` tag as `web` (code-review WR-06) — a build-order race could theoretically produce a web image missing the inlined publishable key. Did not manifest on the current live staging deploy (confirmed serving `pk_live_...`), but is a latent risk, not fixed by this phase. |
+| `lib/smtp/schema.ts` | `smtpEditFormSchema` edit-mode variant + corrected base-schema comment | ✓ VERIFIED | Exists, exported with `SmtpEditFormValues` type; base schema comment (lines 72-74) now accurately states the base always requires a password and the relaxation lives only in the edit variant |
+| `lib/smtp/actions-core.ts` | `applyVerifiedConfig` blank-password merge branch | ✓ VERIFIED | Parses with `smtpEditFormSchema`; merge branch at lines 97-115 calls `getSmtpConfigForUser` + `decrypt`; plaintext never escapes local scope (grep-confirmed: only assignment target is `parsed.data.password`) |
+| `components/smtp/smtp-wizard.tsx` | Resolver switches to `smtpEditFormSchema` when `isEdit` | ✓ VERIFIED | Line 92-94 ternary confirmed |
+| `lib/smtp/actions.test.ts` | New tests for blank-password merge + no-stored-config rejection | ✓ VERIFIED | `applyVerifiedConfig keeps the stored password on a blank-password edit` and `applyVerifiedConfig rejects a blank password when no stored config exists` both present and passing |
+
+All 6 ROADMAP-level artifacts previously verified (`proxy.ts`, `app/layout.tsx`, sign-in/up pages, `lib/config.ts`, `lib/data/smtp.ts`, migration, `app/(app)` shell, Dockerfile/compose) show no regressions — spot-checked via grep and the full test run.
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|----|--------|---------|
-| `app/layout.tsx` | `@clerk/nextjs ClerkProvider` | provider wraps children inside `<body>` | ✓ WIRED | Confirmed |
-| `proxy.ts` | `auth.protect()` | non-public path gate | ✓ WIRED | Confirmed; live-tested |
-| `lib/smtp/verify.ts` | `lib/core/send.ts createSmtpTransport` | extended transport factory | ✓ WIRED | `requireTLS`/timeout fields passed through |
-| `lib/smtp/verify.ts` | `lib/smtp/errors.ts classifyVerifyError` | classify a rejected verify() | ✓ WIRED | Confirmed in code + tests |
-| `lib/data/smtp.ts` | `@/lib/db (db client)` | sole SQLite opener | ✓ WIRED | No `new Database` anywhere in `lib/data` |
-| `lib/data/smtp.ts upsertSmtpConfig` | `smtp_configs.userId` unique index | `onConflictDoUpdate` target | ✓ WIRED | Index present on disk (`sqlite_master`-equivalent: migration SQL confirmed, journal updated) |
-| `app/(app)/dashboard/page.tsx` | `lib/data/smtp.ts getSmtpConfigForUser` | server-side fetch for callout vs summary | ✓ WIRED | Confirmed |
-| `components/site-footer.tsx` | `lib/config.ts HIRE_ME_URL` | import constant | ✓ WIRED | Confirmed |
-| `lib/smtp/actions.ts verifyAndSave` | `lib/smtp/verify.ts verifySmtp` | verify before persist | ✓ WIRED | Confirmed; delegates through `actions-core.ts applyVerifiedConfig` |
-| `lib/smtp/actions.ts sendTestEmail` | `lib/core/send.ts verifyTransport + sendOne` | verify-before-send | ✓ WIRED | Confirmed; `transport.close()` in finally |
-| `components/smtp/step-verify.tsx` | `lib/smtp/actions.ts verifyAndSave` | Server Action call → setError per field | ✓ WIRED | Confirmed; also confirmed the from-only edit path correctly calls `updateFromFields` instead |
-| `components/smtp/step-test-send.tsx` | `lib/smtp/actions.ts sendTestEmail` | Server Action call, toast/alert | ✓ WIRED | Confirmed |
-| `components/smtp/step-details.tsx` | `@hookform/resolvers zodResolver(smtpFormSchema)` | shared schema drives client validation | ⚠ WIRED BUT INCOMPLETE | Wired correctly, but the shared schema itself lacks the edit-mode blank-password allowance it is supposed to have (root cause of the gap) |
-| `Dockerfile build stage` | `next build` | ARG → ENV before RUN | ✓ WIRED | Confirmed; live staging serves `pk_live_...`, proving the inlining worked on the actual deploy |
-| `docker-compose.yml web.environment` | `CLERK_SECRET_KEY` runtime injection | `${CLERK_SECRET_KEY}` from host env | ✓ WIRED | Confirmed |
+| `lib/smtp/actions-core.ts applyVerifiedConfig` | `lib/data/smtp.ts getSmtpConfigForUser` | fetch caller's own stored row when password blank | ✓ WIRED | Confirmed at `actions-core.ts:98`; import added to existing `../data/smtp` import line |
+| `lib/smtp/actions-core.ts applyVerifiedConfig` | `lib/crypto decrypt` | decrypt stored triple, substitute before verify/persist | ✓ WIRED | Confirmed at `actions-core.ts:110-114`; `decrypt` imported from `../crypto` alongside existing `encrypt` import |
+| `components/smtp/smtp-wizard.tsx` | `lib/smtp/schema.ts smtpEditFormSchema` | `zodResolver` picks edit schema when `isEdit` | ✓ WIRED | Confirmed at `smtp-wizard.tsx:92-94`; import added alongside `smtpFormSchema` |
 
-### Behavioral Spot-Checks
+All previously-verified key links (Clerk provider wiring, verify→errors classification, DAL→DB, dashboard→DAL, Server Action call chains) re-checked with a quick grep pass — no regressions found.
+
+### Behavioral Spot-Checks (run directly by this verifier)
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Full lib test suite | `node --import tsx --test 'lib/**/*.test.ts'` | 85 pass / 0 fail | ✓ PASS |
+| SMTP actions test suite | `node --import tsx --test lib/smtp/actions.test.ts` | 10 pass, 0 fail | ✓ PASS |
+| Full lib test suite | `node --import tsx --test 'lib/**/*.test.ts'` | 87 pass, 0 fail | ✓ PASS |
 | Type-check | `npx tsc --noEmit` | exit 0 | ✓ PASS |
-| Blank-password edit payload rejected (reproducing CR-01) | `smtpFormSchema.safeParse({...password:""})` | `{success:false, issue:"Password is required" on path "password"}` | ✓ PASS (confirms the bug reproduces) |
-| Staging unauthenticated redirect | `curl -sI https://mailmerge.robindarlington.com/dashboard` | `307` → `/sign-in?redirect_url=...` | ✓ PASS |
-| Staging sign-in page renders with live Clerk key | `curl -s https://mailmerge.robindarlington.com/sign-in \| grep pk_live_` | `pk_live_Y2xlcmsu...` found | ✓ PASS |
-| Staging settings/smtp + root also gated | `curl -sI .../settings/smtp`, `curl -sI /` | both `307` → `/sign-in` | ✓ PASS |
-| Unique index on disk | `drizzle/0001_shiny_stature.sql` content | `CREATE UNIQUE INDEX smtp_configs_user_uq ON smtp_configs (user_id);` | ✓ PASS |
-| Debt-marker scan (TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER) across all phase-modified files | grep across proxy.ts, app/, components/, lib/smtp, lib/data, Dockerfile, docker-compose.yml | 0 matches | ✓ PASS |
-| Unscoped `smtp_configs` query path | grep for `smtp_configs` usage outside `lib/data/smtp.ts` and schema/migrations | none found | ✓ PASS |
+| Reproduction flip: base schema still rejects blank password (create flow unaffected) | `smtpFormSchema.safeParse({...password:""})` | `success: false` | ✓ PASS |
+| Reproduction flip: edit schema now accepts blank password | `smtpEditFormSchema.safeParse({...password:""})` | `success: true` | ✓ PASS |
+| Commits exist and match plan description | `git show --stat 914a780`, `git show --stat 987eb9f` | Both present, file lists match plan/summary | ✓ PASS |
+| Debt-marker scan on the 4 delta files | `grep -n "TBD\|FIXME\|XXX\|TODO\|HACK\|PLACEHOLDER"` across schema.ts, actions-core.ts, smtp-wizard.tsx, actions.test.ts | 0 matches | ✓ PASS |
+| Staging auth-gate regression | `curl -sI https://mailmerge.robindarlington.com/dashboard`, `/settings/smtp` | both `307` → `/sign-in` | ✓ PASS |
 
 ### Probe Execution
 
-No `scripts/*/tests/probe-*.sh` convention exists in this repo, and no plan declares probe scripts. Skipped — not applicable to this phase's tooling (Next.js app, not a CLI/migration-probe project).
+No `scripts/*/tests/probe-*.sh` convention exists in this repo and no plan declares probe scripts. Skipped — not applicable (Next.js app, not a CLI/migration-probe project). Same as initial verification.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan(s) | Description | Status | Evidence |
 |-------------|-----------------|--------------|--------|----------|
-| AUTH-01 | 02-01, 02-04, 02-07 | User can sign up and sign in via Clerk | ✓ SATISFIED | `proxy.ts`, sign-in/up pages, live staging confirms working Clerk flow; human checkpoints 02-01/02-07 approved |
-| AUTH-02 | 02-03, 02-05 | All user data scoped to signed-in user; multi-tenant isolation on every access | ✓ SATISFIED | `lib/data/smtp.ts` userId-first everywhere; cross-tenant isolation tests pass; Server Actions re-derive `userId` server-side (defense in depth); post-merge IDOR fix (`fd4e22a`) confirmed applied |
-| AUTH-03 | 02-01, 02-07 | Unauthenticated users redirected to sign-in for all app routes | ✓ SATISFIED | `proxy.ts` matcher covers all app routes; live-confirmed on staging for `/`, `/dashboard`, `/settings/smtp`. INFO: RSC pages themselves fail open (render page content) rather than redirecting if `userId` is null — currently unreachable since `proxy.ts` is the sole enforcement point and covers all routes, but is a defense-in-depth gap (code review IN-09), not a live violation |
-| SMTP-01 | 02-02, 02-06 | User can enter SMTP server details | ✓ SATISFIED | All 6 fields present in `step-details.tsx`, validated by `smtpFormSchema` |
-| SMTP-02 | 02-02, 02-06 | Explicit TLS mode set by user, not inferred from port | ✓ SATISFIED | `secure: z.boolean()` explicit; `RadioGroup` in UI; `requireTLS: !secure` carried through transport; never port-inferred anywhere in the codebase (grep-confirmed) |
-| SMTP-03 | 02-02 | Live connection check distinguishing auth vs host/port vs TLS failure | ✓ SATISFIED | `classifyVerifyError` + `verifySmtp`; 3 live smtp-server fixture tests confirm all 3 classes; WARNING (WR-01, non-blocking): substring-based classifier can misfile a connection failure as TLS when the hostname itself contains "ssl"/"tls" (e.g. `ssl0.ovh.net`) — a real but narrow misclassification edge case, not a phase-blocking defect |
-| SMTP-04 | 02-03, 02-05 | Credentials encrypted at rest (AES-256-GCM), reused across sessions, password never returned/logged | ⚠ PARTIALLY SATISFIED | Encryption + redaction are solid and test-proven. "Reused across sessions" breaks specifically for the edit-a-connection-field path — see gap above. The password never crosses to the client in any case, including the edit failure path (confirmed no leak), so the "never exposed" half fully holds; only the "reused/editable" half is broken |
-| SMTP-05 | 02-05, 02-06, 02-07 | Onboarding completes only after successful validation, with optional test-send | ✓ SATISFIED (for its literal wording — the create/onboard flow) | `applyVerifiedConfig` persists only on `verifySmtp` success; `sendTestEmail` offers a skippable test-send with verify-before-send. The SMTP-05 text is specifically about onboarding completion, which works correctly end to end (human checkpoint 02-06 approved for the create path; live staging confirms deployment). The broken behavior is in the EDIT flow, which is a D-07/D-08 UX contract layered on top of SMTP-05 rather than the literal SMTP-05 text itself — still tracked as gap item 7 above because it is an explicit plan must-have. |
+| AUTH-01 | 02-01, 02-04, 02-07 | User can sign up and sign in via Clerk | ✓ SATISFIED (regression-checked) | `proxy.ts` unchanged; live staging re-check confirms redirect behavior intact |
+| AUTH-02 | 02-03, 02-05 | All user data scoped to signed-in user | ✓ SATISFIED (regression-checked) | `lib/data/smtp.ts` unchanged; cross-tenant isolation tests still pass in the 87-test run |
+| AUTH-03 | 02-01, 02-07 | Unauthenticated users redirected to sign-in for all app routes | ✓ SATISFIED (regression-checked) | Live staging re-check: `/`, `/dashboard`, `/settings/smtp` all `307` |
+| SMTP-01 | 02-02, 02-06 | User can enter SMTP server details | ✓ SATISFIED (regression-checked) | `step-details.tsx` unchanged; all 6 fields present |
+| SMTP-02 | 02-02, 02-06 | Explicit TLS mode, not inferred from port | ✓ SATISFIED (regression-checked) | `secure: z.boolean()` unchanged in both schema variants |
+| SMTP-03 | 02-02 | Live connection check distinguishing auth vs host/port vs TLS | ✓ SATISFIED (regression-checked) | `classifyVerifyError`/`verifySmtp` unchanged; 3 live fixture tests pass. WARNING (WR-01, non-blocking, carried forward): substring classifier can misfile a connection failure as TLS when the hostname contains "ssl"/"tls" |
+| SMTP-04 | 02-03, 02-05, **02-08, 02-09** | Credentials encrypted at rest, reused across sessions, password never returned/logged | ✓ SATISFIED (gap closed) | Encryption/redaction unchanged and solid; the "reused across sessions" edit-path gap (CR-01) is now closed by 02-08's merge branch, test-proven and human-UAT-confirmed (02-09) |
+| SMTP-05 | 02-05, 02-06, 02-07 | Onboarding completes only after successful validation, with optional test-send | ✓ SATISFIED (regression-checked) | `applyVerifiedConfig` create-path behavior unchanged; test-send flow unchanged |
 
-No orphaned requirements — all 8 declared REQ-IDs for Phase 2 are covered by at least one plan and were checked above.
+No orphaned requirements — all 8 declared REQ-IDs for Phase 2 are covered by at least one plan (02-01 through 02-09) and were checked above.
+
+**Note on REQUIREMENTS.md checkbox hygiene (pre-existing, not introduced by this phase's gap closure):** The `- [ ]` / `- [x]` checkboxes in REQUIREMENTS.md's "v1 Requirements" section only show AUTH-02 and SMTP-04 as checked, while AUTH-01, AUTH-03, SMTP-01, SMTP-02, SMTP-03, and SMTP-05 remain unchecked — even though the Traceability table's Status column and this verification both mark all 8 as satisfied/complete. This is a documentation-sync gap in REQUIREMENTS.md itself (present since before the initial 2026-07-11 verification, unrelated to plans 02-08/02-09), not a code defect. Flagged as INFO — recommend a housekeeping pass to sync the checkboxes with the Traceability table.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| `lib/smtp/schema.ts` | 72-73 | Comment claims a behavior ("Edit flow makes this optional") that is not implemented anywhere in the codebase | 🛑 Blocker (tied to gap above) | Misleading to future maintainers; root-cause marker for CR-01 |
-| `lib/smtp/errors.ts` | 40-42 | Substring match on error message before code-based checks can misclassify real hostnames containing "ssl"/"tls" | ⚠ Warning | Wrong field-anchoring + wasted alternate-mode probe on affected hostnames (e.g. OVH's `ssl0.ovh.net`); does not block the phase goal |
-| `components/smtp/step-verify.tsx`, `step-test-send.tsx` | various | Server Action calls not wrapped in try/catch; a network-level rejection leaves the UI in a permanent pending/disabled state | ⚠ Warning | Recoverable only by page reload; UX degradation, not a security or data-integrity issue |
-| `lib/smtp/actions.ts` `sendTestEmail` | 109-135 | `toAddress` accepted with no `z.email()` validation; nodemailer treats a comma-separated string as multiple recipients | ⚠ Warning | Could fan out a single test-send call into multiple deliveries; bounded to the caller's own SMTP; not a cross-tenant issue |
-| `lib/smtp/actions.ts` `sendTestEmail` | 109-161 | No rate limit on real sends (verify attempts ARE rate-limited) | ⚠ Warning | Abuse surface if a user's session/script calls it in a loop |
-| `lib/smtp/schema.ts` `isPrivateHostLiteral` | 30-55 | Several private/loopback literal encodings (expanded IPv6, short-form IPv4, decimal/hex forms) bypass the SSRF screen | ⚠ Warning | Narrow SSRF-oracle bypass via unusual host literal encodings; the common cases (dotted-quad, `localhost`, `::1`) are covered |
-| `docker-compose.yml` | 17-45, 58-69 | `web` and `worker` both declare `build:` blocks sharing the same `mail-merge:skeleton` image tag | ⚠ Warning | Build-order race could theoretically ship a web image without the inlined Clerk key; did not manifest on the current live deploy (verified) |
-| `app/globals.css` | 9-59, 140-149 | Unlayered `body` rule overrides `@layer base` — Geist font never renders on body text; dark-mode tokens pinned to light values | ⚠ Warning | Visual/theming defect, not a functional blocker for this phase's goal (human checkpoints for visual review were approved) |
+| `lib/smtp/actions-core.ts` | 110-114 (new in 02-08, WR-08) | `decrypt()` call has no try/catch; a GCM auth-tag mismatch (e.g. `CREDENTIAL_ENC_KEY` rotated/misconfigured) throws through the "never rejects" Server Action contract, compounding the pre-existing WR-02 client-lockup (unhandled promise rejection leaves the wizard permanently disabled) | ⚠ Warning (non-blocking) | Narrow, ops-triggered edge case (key rotation/DB restore with wrong key); does not affect the normal blank-password-edit path proven by tests and human UAT; code review recommends a try/catch converting to a validation-shaped error |
+| `lib/smtp/actions-core.ts` | 97-117 (new in 02-08, WR-09) | Blank-password-keep merge dials whatever `host`/`port` the submitted form specifies using the decrypted stored password — a session-holding attacker who does not know the SMTP password could redirect it, via SMTP AUTH, to a host they control | ⚠ Warning (non-blocking) | Requires an already-compromised session (not a new unauthenticated attack surface); code review flags as a hardening recommendation (require password re-entry when host/username changes), not a critical/blocking finding; 0 critical findings in the delta re-review |
+| `lib/smtp/schema.ts` | 72-74 | (Resolved) Comment previously claimed an edit-mode optional-password behavior that didn't exist | — | Now accurate — comment corrected as part of 02-08; no longer an anti-pattern |
 
-No TBD/FIXME/XXX debt markers found in any phase-modified file (debt-marker gate: 0 matches).
+0 debt markers (TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER) in the 4 files this gap-closure phase modified. WR-01 through WR-07 and IN-01 through IN-09 are carried forward unchanged from the initial review (already surfaced as non-blocking warnings/info in the prior verification) — re-confirmed still present and still non-blocking for the phase goal.
 
 ### Human Verification Required
 
-None beyond what is already captured in the `human_verification` frontmatter above (confirming the CR-01 fix once applied). All 4 blocking human checkpoints declared by this phase's plans (02-01, 02-04, 02-06, 02-07) were reported approved by the user, and this verification independently confirmed the staging deployment is live and enforcing auth via direct HTTP checks against `https://mailmerge.robindarlington.com`.
+None. The one outstanding human-verification item from the prior VERIFICATION.md (live wizard walkthrough confirming the CR-01 fix) was satisfied by plan 02-09: the user approved the checkpoint ("approved", 2026-07-12) after confirming both the positive case (blank-password connection-field edit saves) and the negative case (wrong typed password still fails) against a real SMTP server on local dev.
+
+**Note (informational, not a re-opened gap):** `02-09-SUMMARY.md` records a follow-up the user flagged immediately after approval — on the production/staging Coolify deployment, SMTP verification initially failed with a connection-classified error ("can't connect to SMTP server") even with valid details, diagnosed as a VPS egress/DNS issue rather than a regression in the 02-08 code path, and tracked separately against the 02-07 staging-deploy criteria rather than this gap. Per the current session's context, this was subsequently confirmed working on the production deployment using port 587/STARTTLS. No commit or planning-doc update in this repository yet records that resolution explicitly — this verification did not find a corresponding artifact (git log, STATE.md, or a new checkpoint file) documenting the fix. This does not block Phase 2's goal (CR-01's blank-password edit merge, the subject of this re-verification, is fully code- and human-confirmed independent of that egress question), but it should be captured in STATE.md/02-07's tracking as a closure note for full auditability. Recommend a small documentation follow-up, not a code gap.
 
 ### Gaps Summary
 
-Six of the seven must-haves (including all 6 ROADMAP success criteria in substance) are solidly implemented and independently verified against the live codebase, the 85-test automated suite, and the live staging deployment — not just SUMMARY.md claims. The Clerk auth slice, userId-scoped data layer, SMTP verify engine, encrypted credential storage, test-send flow, and Coolify staging deployment all hold up under direct inspection and live HTTP checks.
+No gaps remain. All 7 must-haves (6 ROADMAP success criteria + the plan-declared CR-01 edit-flow must-have) are independently verified against the current codebase, an 87/87-passing test suite run directly by this verifier, git history, and a live staging HTTP check performed today. The CR-01 fix was verified at all three levels: exists (schema/action/wizard changes match the plan exactly), substantive (the merge branch does real userId-scoped lookup + decrypt + substitution, not a stub), and wired (resolver → schema → parse → merge → verify → persist chain confirmed end-to-end, plus human UAT on a live SMTP server). The code review's two new delta warnings (WR-08 uncaught decrypt throw, WR-09 session-hijack SMTP-redirect exfiltration) are legitimate hardening recommendations but are explicitly classified as non-critical by the review (0 critical findings) and do not prevent the phase goal — "onboard and persist your own SMTP server... credentials encrypted at rest, reused across sessions, never exposed to the client or logs" — from holding for the normal user flow this phase targets. They are appropriate candidates for a future hardening pass, not blockers to closing Phase 2.
 
-The one confirmed gap is narrow but real: the SMTP settings **edit flow** cannot save a change to a connection field (host/port/TLS mode/username) without the user re-typing their password, even though the UI explicitly and specifically tells them they can leave it blank. This is not a hypothetical — it was independently reproduced by parsing a representative edit payload through the actual `smtpFormSchema` in this repository, which rejects a blank password with "Password is required." It corroborates a CRITICAL finding already raised by the phase's own code review (CR-01 in `02-REVIEW.md`) that remains unaddressed in the current tree. This breaks the "reused across sessions" half of SMTP-04 and the explicit D-07/D-08 must-have declared in `02-05-PLAN.md` and `02-06-PLAN.md` frontmatter. The create-onboarding flow (SMTP-05's literal text) and the read-only "view saved config" path are unaffected.
-
-**This looks like an unintentional, unaddressed defect** (the code review already flagged it and proposed a concrete fix) rather than an accepted deviation, so no override is suggested. Recommended next step: a small closure plan implementing the CR-01 fix (edit-mode schema variant + stored-password merge in `applyVerifiedConfig`), which the code review already sketches concretely.
+One informational note (not a gap): the production Coolify SMTP-egress issue flagged in 02-09-SUMMARY.md lacks a corresponding resolution artifact in this repository as of this verification, even though the current session's context states it was subsequently confirmed working. Recommend a documentation follow-up to close that loop formally.
 
 ---
 
-*Verified: 2026-07-11*
+*Verified: 2026-07-12*
 *Verifier: Claude (gsd-verifier)*
