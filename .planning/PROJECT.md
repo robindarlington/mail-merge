@@ -46,14 +46,14 @@ maintaining internal tools that replace manual spreadsheet+email processes.
 - ✓ Three-tier safety: dry-run preview, send-whole-batch-to-one test, live send — existing (CLI)
 - ✓ Throttle between sends to stay friendly with the SMTP server — existing (CLI)
 - ✓ Per-recipient send failures logged without aborting the batch — existing (CLI)
+- ✓ User can sign up / sign in via Clerk — Validated in Phase 2: Auth + SMTP Onboarding
+- ✓ User onboards their SMTP server + sender details, validated live during onboarding — Validated in Phase 2 (live staging + prod, port 587/STARTTLS)
+- ✓ User's SMTP credentials are stored encrypted at rest and reused across sessions — Validated in Phase 2 (AES-256-GCM at rest; blank-password edit flow confirmed by human UAT)
 
 ### Active
 
 <!-- The web-app build. Hypotheses until shipped and validated. -->
 
-- [ ] User can sign up / sign in via Clerk
-- [ ] User onboards their SMTP server + sender details, validated live during onboarding
-- [ ] User's SMTP credentials are stored encrypted at rest and reused across sessions
 - [ ] User can upload a CSV file through the browser
 - [ ] Editor offers autocomplete / drop-in merge-fields derived from the uploaded CSV's columns
 - [ ] User composes a plain-text email body with merge-fields
@@ -125,4 +125,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-10 (go-to-market planning updates applied)*
+*Last updated: 2026-07-13 (Phase 2 complete — Clerk auth + SMTP onboarding validated on staging/prod)*
