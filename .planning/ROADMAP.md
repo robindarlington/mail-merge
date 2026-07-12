@@ -118,7 +118,24 @@ Plans:
   4. Parsed recipients and detected columns are saved as a per-user recipient set (with `columns_json`, row count, storage path) that later phases read for merge fields.
   5. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
-**Plans**: TBD
+**Plans**: 5 plans
+Plans:
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Core email-column detection + invalid-count pure fns, upload zod guard, traversal-proof storage writer, test script (TDD)
+- [ ] 03-02-PLAN.md — userId-first recipient_sets DAL + two-tenant IDOR isolation tests + barrel (TDD)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 03-03-PLAN.md — Server-Action seam: parse/save actions + actions-core (auth-gated, override honored, orphan-safe) + bodySizeLimit
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 03-04-PLAN.md — UI slice: /recipients route + csv-uploader (parse → confirm column → save) + shadcn select/table + sidebar nav
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 03-05-PLAN.md — [CHECKPOINT] UPLOADS_PATH volume wiring + Coolify staging redeploy + upload-survives-restart smoke
 **UI hint**: yes
 
 ### Phase 4: Editor + Preview + Template Save
@@ -233,7 +250,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Foundation — DB, Crypto, Core Engine | 5/5 | Complete   | 2026-06-27 |
 | 2. Auth + SMTP Onboarding | 9/9 | Complete   | 2026-07-12 |
-| 3. CSV Upload + Parsing + Recipient Mapping | 0/TBD | Not started | - |
+| 3. CSV Upload + Parsing + Recipient Mapping | 0/5 | Not started | - |
 | 4. Editor + Preview + Template Save | 0/TBD | Not started | - |
 | 5. Test-Send + Confirmation Gate | 0/TBD | Not started | - |
 | 6. Background Worker + Live Send + Progress + History | 0/TBD | Not started | - |
