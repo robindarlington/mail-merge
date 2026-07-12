@@ -11,6 +11,7 @@
     "build": "next build",
     "start": "next start",
     "worker": "tsx worker/index.ts",
+    "test": "node --import tsx --test \"lib/**/*.test.ts\"",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "cli:dry": "node --env-file=.env send-credentials.ts",
