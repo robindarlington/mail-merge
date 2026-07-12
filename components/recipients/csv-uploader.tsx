@@ -326,8 +326,7 @@ export function CsvUploader() {
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <AlertCircle className="size-4 shrink-0" />
                 <span>
-                  {invalidForColumn} of {data.rowCount} rows don&apos;t have a
-                  valid email address. They&apos;ll be skipped when you send.
+                  {`${invalidForColumn} of ${data.rowCount} rows don't have a valid email address. They'll be skipped when you send.`}
                 </span>
               </div>
             ) : (
