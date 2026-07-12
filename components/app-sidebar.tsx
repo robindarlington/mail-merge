@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Settings } from "lucide-react";
+import { LayoutDashboard, Settings, Users } from "lucide-react";
 
 import {
   Sidebar,
@@ -29,6 +29,7 @@ import {
  */
 const NAV_ITEMS = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { title: "Recipients", href: "/recipients", icon: Users },
   { title: "SMTP Settings", href: "/settings/smtp", icon: Settings },
 ] as const;
 
