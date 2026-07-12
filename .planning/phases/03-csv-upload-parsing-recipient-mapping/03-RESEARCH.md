@@ -332,19 +332,21 @@ No CONTEXT.md exists for this phase (user opted out of discuss-phase). The follo
 | A6 | **The uploaded CSV file persists on the volume** until a later cleanup phase. The "Out of Scope: long-term storage of sensitive cell values" note creates mild tension; MVP follows ARCHITECTURE.md (file on disk, DB holds path). | Pitfall 5 | If sensitive-data retention is a hard constraint, may need at-rest handling / TTL sooner. |
 | A7 | **Row cap ≈ 5000, per-file cap ≈ 4 MB.** Chosen to bound DoS while covering the stated 100–1000 target with headroom. | Code Examples | If users legitimately exceed these, uploads reject; easy to tune. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does "encoding handled" (success criterion #1) require non-UTF-8 transcoding?**
-   - What we know: parser handles UTF-8/BOM/CRLF/quoting (tested).
-   - What's unclear: whether Windows-1252 exports must render accents correctly for this phase to pass.
-   - Recommendation: ship UTF-8 + clear parse-error warning (A1); add `iconv-lite`+`chardet` in a follow-up only if verification flags it. Confirm with user.
+All three questions were answered during planning by the Assumptions Log recommendations and are locked into the phase plans below.
 
-2. **Is a parsed-row preview table in scope, or just the summary (columns + counts + email-column picker)?**
-   - What we know: PITFALLS #12 argues the preview is the human safety net; full row-stepping preview is a Phase 4 (PREV-01) requirement.
-   - Recommendation: Phase 3 shows columns + detected email column + row/invalid counts + a few sample rows; defer full stepping to Phase 4. (Avoids installing shadcn `table` unless wanted.)
+1. **Does "encoding handled" (success criterion #1) require non-UTF-8 transcoding?** **(RESOLVED — per A1)**
+   - What we knew: parser handles UTF-8/BOM/CRLF/quoting (tested).
+   - What was unclear: whether Windows-1252 exports must render accents correctly for this phase to pass.
+   - **Resolution:** Ship UTF-8 + a clear parse-error warning (A1); a non-empty papaparse `parseErrors` surfaces as a `parse_error` kind rather than silently persisting a misparse. `iconv-lite`+`chardet` are deferred (non-breaking to add later). Locked in 03-01 (`lib/csv/schema.ts` / `lib/core/csv.ts`) and 03-03 (`parse_error` handling).
 
-3. **Where does the "Recipients" flow live in the IA** — standalone, or the first step of campaign creation? (A3)
-   - Recommendation: standalone `recipients` page this phase; Phase 5 wires selection into campaign creation.
+2. **Is a parsed-row preview table in scope, or just the summary (columns + counts + email-column picker)?** **(RESOLVED — per Open-Question-2 recommendation / A4 / U4)**
+   - What we knew: PITFALLS #12 argues the preview is the human safety net; full row-stepping preview is a Phase 4 (PREV-01) requirement.
+   - **Resolution:** Phase 3 shows columns + detected email column + row/invalid counts + up to 5 client-read sample rows (cosmetic aid only); full row-stepping deferred to Phase 4. shadcn `table` IS added this phase (03-04). Note: the invalid COUNT is server-computed per-column (`invalidCounts`), not derived from the 5 sample rows.
+
+3. **Where does the "Recipients" flow live in the IA** — standalone, or the first step of campaign creation? (A3) **(RESOLVED — per A3)**
+   - **Resolution:** Standalone `/recipients` page + a new "Recipients" sidebar nav slot this phase (03-04); Phase 5 wires recipient-set selection into campaign creation.
 
 ## Environment Availability
 
