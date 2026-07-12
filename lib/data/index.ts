@@ -16,3 +16,10 @@ export {
   type PersistableConfig,
   type SmtpConfigDto,
 } from "./smtp";
+
+export {
+  createRecipientSet,
+  listRecipientSetsForUser,
+  getRecipientSetForUser,
+  type PersistableRecipientSet,
+} from "./recipients";
