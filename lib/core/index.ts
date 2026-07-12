@@ -9,7 +9,7 @@
 export { fill, fillMessage } from "./fill";
 export type { Row as FillRow, MessageTemplate } from "./fill";
 
-export { parseCsv } from "./csv";
+export { parseCsv, detectEmailColumn, countInvalidEmails } from "./csv";
 export type { ParsedCsv, Row as CsvRow } from "./csv";
 
 export {
