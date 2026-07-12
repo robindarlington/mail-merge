@@ -117,6 +117,10 @@ None - no external service configuration required.
 - 03-03 (CSV Server-Action seam) can import `createRecipientSet`, `listRecipientSetsForUser`, `getRecipientSetForUser` from `@/lib/data`.
 - No blockers.
 
+## Self-Check: PASSED
+
+All created files exist on disk and all task commits (`f6d30d0`, `ca6c8dc`, `7343fe5`) are present in git history.
+
 ---
 *Phase: 03-csv-upload-parsing-recipient-mapping*
 *Completed: 2026-07-13*
