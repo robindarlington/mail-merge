@@ -32,12 +32,15 @@ process.env.CREDENTIAL_ENC_KEY = Buffer.from(
 const { db, connection } = await import("@/lib/db");
 const { applyVerifiedConfig, sendTestVia } = await import("./actions-core");
 const { getSmtpConfigForUser, updateFromFields } = await import("../data/smtp");
+const { decrypt } = await import("../crypto");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 type VerifyOutcome = import("./verify").VerifyOutcome;
 type MailTransport = import("../core").MailTransport;
 
 const USER_SAVE = "user_save_aaaaaaaaaaaaaaaa";
 const USER_SUGGEST = "user_suggest_bbbbbbbbbbbb";
+const USER_BLANK_EDIT = "user_blank_edit_dddddddd";
+const USER_BLANK_NOROW = "user_blank_norow_eeeeeeee";
 
 // A distinctive marker so a redaction assertion can grep for a leak.
 const MARKER_PASSWORD = "MARKER-SECRET-PASSWORD-9f2c";
@@ -180,6 +183,75 @@ test("a from-only update leaves verified_at (and connection fields) unchanged (D
   // The proven connection is preserved — no re-verify was required (D-08 / Pitfall 6).
   assert.equal(after.verified_at, priorVerifiedAt);
   assert.equal(after.host, priorHost);
+});
+
+// --- 02-08: blank-password edit merge (SMTP-04 / D-07) -----------------------
+
+test("applyVerifiedConfig keeps the stored password on a blank-password edit", async () => {
+  // Seed a verified config carrying MARKER_PASSWORD for this fresh user.
+  const seed = await applyVerifiedConfig(
+    USER_BLANK_EDIT,
+    validInput(),
+    fakeVerifyOk,
+  );
+  assert.equal(seed.ok, true);
+
+  // A verifyFn that CAPTURES the values it is handed, so we can prove the stored
+  // password was substituted BEFORE verify runs.
+  let capturedPassword: string | undefined;
+  const capturingVerify = async (
+    values: import("./schema").SmtpFormValues,
+  ): Promise<VerifyOutcome> => {
+    capturedPassword = values.password;
+    return { ok: true };
+  };
+
+  // Edit a connection field AND leave the password blank ("leave blank to keep").
+  const result = await applyVerifiedConfig(
+    USER_BLANK_EDIT,
+    validInput({ host: "smtp.changed.example.com", password: "" }),
+    capturingVerify,
+  );
+  assert.equal(result.ok, true);
+
+  // The stored password was merged in before verify saw it.
+  assert.equal(
+    capturedPassword,
+    MARKER_PASSWORD,
+    "verify must receive the stored password, not the blank",
+  );
+
+  // The connection change persisted AND the stored password still round-trips.
+  const row = await getSmtpConfigForUser(USER_BLANK_EDIT);
+  assert.ok(row, "the edited config should still exist");
+  assert.equal(row.host, "smtp.changed.example.com");
+  const roundTripped = decrypt({
+    enc: row.password_enc as Buffer,
+    iv: row.password_iv as Buffer,
+    tag: row.password_tag as Buffer,
+  });
+  assert.equal(
+    roundTripped,
+    MARKER_PASSWORD,
+    "the persisted row must still decrypt to the stored password",
+  );
+
+  // Redaction: nothing secret leaks onto the ok result.
+  assert.ok(!JSON.stringify(result).includes(MARKER_PASSWORD));
+});
+
+test("applyVerifiedConfig rejects a blank password when no stored config exists", async () => {
+  const result = await applyVerifiedConfig(
+    USER_BLANK_NOROW,
+    validInput({ password: "" }),
+    fakeVerifyOk,
+  );
+  assert.equal(result.ok, false);
+  assert.ok(!result.ok && result.error.kind === "validation");
+
+  // Nothing was saved for a blank password with no prior row (the create flow).
+  const row = await getSmtpConfigForUser(USER_BLANK_NOROW);
+  assert.equal(row, undefined, "a blank create must persist nothing");
 });
 
 // --- Task 2: sendTestVia (verify-then-send) ----------------------------------

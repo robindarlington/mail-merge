@@ -69,11 +69,25 @@ export const smtpFormSchema = z.object({
   // Explicit TLS mode (SMTP-02) — radio: "Implicit SSL (465)" | "STARTTLS (587)".
   secure: z.boolean(),
   username: z.string().min(1, "Username is required"),
-  // Edit flow makes this optional ("leave blank to keep", D-07); the create flow
-  // uses this schema as-is where a password is always required.
+  // The BASE schema ALWAYS requires a password — this is the create flow, where a
+  // real credential must be supplied. The edit "leave blank to keep" relaxation
+  // (D-07) lives ONLY in `smtpEditFormSchema` below, never here.
   password: z.string().min(1, "Password is required"),
   from_addr: z.email("Enter a valid from address"),
   from_name: z.string().trim().optional(),
 });
 
 export type SmtpFormValues = z.infer<typeof smtpFormSchema>;
+
+/**
+ * Edit-mode variant of {@link smtpFormSchema} that ALLOWS a blank password
+ * ("leave blank to keep your current password", D-07). Every other field keeps
+ * the base validation; only `password` is relaxed to permit "". A blank here is a
+ * signal to the server (`applyVerifiedConfig`) to merge the STORED password before
+ * verify/persist — the client never sees or re-sends the stored secret.
+ */
+export const smtpEditFormSchema = smtpFormSchema.extend({
+  password: z.string(),
+});
+
+export type SmtpEditFormValues = z.infer<typeof smtpEditFormSchema>;
