@@ -117,3 +117,26 @@ None — no security surface beyond the plan's threat model was introduced.
 Automated gates cannot exercise Clerk auth or real browser interaction. A human should: sign in on local dev, visit `/recipients`, confirm the empty-state callout, upload a fixture CSV, confirm the review card + detected column render, override the column and confirm the invalid count changes to the new column's server-computed value, save, and confirm the success toast + the set appearing in the list.
 
 ## Self-Check: PASSED
+
+## Browser Verification (autonomous, 2026-07-13)
+
+Performed headless-browser UAT on local dev (agent-browser + Clerk dev-instance
+test user `uat+clerk_test@example.com` via Backend-API sign-in ticket — no
+password flow). Results, all PASS:
+
+1. Unauthenticated `/recipients` redirects to `/sign-in` (auth gate).
+2. Upload of a 4-row fixture (quoted comma field, one invalid email) parses:
+   "Found 4 rows and 4 columns", quoted field survives as one cell.
+3. Email column auto-detected as `Work Email`; count line reads "1 of 4 rows".
+4. Override to `Name` recomputes to "4 of 4 rows" (CR-blocker fix proven live);
+   switching back restores "1 of 4 rows".
+5. Save persists: userId-scoped `recipient_sets` row (row_count=4, correct
+   columns_json, UUID storage_path — user filename absent from path), file on
+   disk under data/uploads/, saved set listed as "test-recipients.csv — 4
+   recipients".
+6. Screenshot review caught one rendering bug: SWC/Turbopack drops the JSX space
+   before a text node containing `&apos;` → "4rows". Fixed in `a869186` via
+   template literal; re-verified live ("1 of 4 rows").
+
+Remaining manual item: staging deploy verification (03-05 checkpoint — requires
+user's Coolify dashboard).
