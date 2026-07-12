@@ -97,7 +97,7 @@ Plans:
 
 **Wave 6** *(gap closure — CR-01 / 02-VERIFICATION.md)*
 
-- [ ] 02-08-PLAN.md — Blank-password SMTP edit: smtpEditFormSchema variant + applyVerifiedConfig stored-password merge + wizard resolver switch + tests (SMTP-04 / D-07 / D-08)
+- [x] 02-08-PLAN.md — Blank-password SMTP edit: smtpEditFormSchema variant + applyVerifiedConfig stored-password merge + wizard resolver switch + tests (SMTP-04 / D-07 / D-08)
 
 **Wave 7** *(blocked on Wave 6)*
 
@@ -232,7 +232,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — DB, Crypto, Core Engine | 5/5 | Complete   | 2026-06-27 |
-| 2. Auth + SMTP Onboarding | 7/7 | Complete   | 2026-07-11 |
+| 2. Auth + SMTP Onboarding | 8/9 | In Progress|  |
 | 3. CSV Upload + Parsing + Recipient Mapping | 0/TBD | Not started | - |
 | 4. Editor + Preview + Template Save | 0/TBD | Not started | - |
 | 5. Test-Send + Confirmation Gate | 0/TBD | Not started | - |
