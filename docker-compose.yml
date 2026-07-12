@@ -40,6 +40,11 @@ services:
       NODE_ENV: production
       # Single SQLite file on the shared /data volume.
       DATABASE_PATH: /data/app.db
+      # Uploaded CSVs land under the SAME shared /data volume (durable across
+      # restarts, reachable by the Phase-6 worker) — never the ephemeral
+      # container FS. lib/csv/storage.ts creates /data/uploads on demand via
+      # mkdirSync, so no extra volume/mount is needed (only this env var).
+      UPLOADS_PATH: /data/uploads
       # AES-256-GCM master key — injected from the host env / Coolify secret at
       # runtime, NEVER inlined here or baked into the image (PITFALLS #1/#2).
       CREDENTIAL_ENC_KEY: ${CREDENTIAL_ENC_KEY}
