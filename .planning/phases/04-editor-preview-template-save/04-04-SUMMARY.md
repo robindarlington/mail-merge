@@ -124,3 +124,21 @@ None — no new security surface beyond the plan's threat model.
 ---
 *Phase: 04-editor-preview-template-save*
 *Completed: 2026-07-13*
+
+## Browser Verification (autonomous, 2026-07-13)
+
+Headless-browser UAT on local dev (agent-browser + Clerk test user via sign-in
+ticket). All PASS:
+
+1. `/compose` renders: recipient list pre-selected ("test-recipients.csv — 4
+   recipients"), chips = actual CSV columns (Name / Work Email / Company / Notes).
+2. Click-to-insert chip → `Hello {{Name}}` at caret in SUBJECT (EDIT-02).
+3. Typing `{{` in the body opened the suggestion popover; selecting completed to
+   `{{Company}}`; partial `{{No` filtered the list to exactly "Notes" and
+   completed to `{{Notes}}` (EDIT-01).
+4. Save template → "Template saved." toast; `templates` row persisted with the
+   exact subject/body and correct userId scoping (EDIT-04).
+
+Note (minor, expected radix behavior): a click on "Save template" while the
+suggestion popover is open dismisses the popover instead of submitting — second
+click saves. Not a defect; noted for potential polish.
