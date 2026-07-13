@@ -225,8 +225,24 @@ Plans:
   6. User can download a CSV of per-recipient results for a completed campaign (HIST-03).
   7. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
-**Plans**: TBD
-**Research flag**: NEEDS phase-specific research before planning. Atomic `BEGIN IMMEDIATE` claim, lease/heartbeat sizing, SIGTERM + Docker init interaction, SSE-vs-polling under WAL multi-process contention, plainjob API maturity, and 4xx/5xx SMTP backoff all have non-obvious failure modes. Run `/gsd:plan-phase --research-phase 6`.
+**Plans**: 7 plans
+Plans:
+**Wave 1** *(foundation seams — parallel, exclusive file ownership)*
+
+- [ ] 06-01-PLAN.md — Worker campaign-lifecycle seams: atomic claim + orphan-recovery sweep + finalize (TDD)
+- [ ] 06-02-PLAN.md — Worker send-path seams: idempotent materialize + pending-row send loop with per-row commit (TDD)
+- [ ] 06-03-PLAN.md — userId-scoped read/service layer: campaigns list + drill-down + live-progress action (TDD)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 06-04-PLAN.md — Worker composition: tick() lifecycle + worker/index.ts (pino, poll interval, SIGTERM, env config)
+- [ ] 06-05-PLAN.md — History + live-progress UI: Campaigns nav + list + detail + results table + polling progress panel
+- [ ] 06-06-PLAN.md — Downloadable results CSV: formula-injection-safe toResultsCsv + userId-scoped GET export route
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 06-07-PLAN.md — [CHECKPOINT] Coolify staging redeploy + real live-send + crash-resume no-double-send walkthrough
+**Research flag**: research complete (see 06-RESEARCH.md — plainjob rejected, DB-as-queue + polling chosen, no new packages)
 **UI hint**: yes
 
 ### Phase 7: Per-Row Attachments
