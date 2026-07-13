@@ -12,7 +12,7 @@
  *    can never read User B's template.
  *
  *  - Server-set ownership (T-4-TAMPER-OWNER): `createTemplate` types its `values`
- *    param as a `Pick<>` that OMITS `userId`, then spreads `{ userId, ...values }`
+ *    param as a `Pick<>` that OMITS `userId`, then spreads `{ ...values, userId }` — userId LAST — 
  *    so ownership is injected by the server and can never be spoofed through the
  *    caller's values object.
  *
@@ -34,13 +34,13 @@ export type PersistableTemplate = Pick<NewTemplate, "subject" | "body">;
 
 /**
  * Insert a template owned by `userId` and return the created row (with its
- * generated id). `userId` is spread in server-side; the `values` type cannot carry
+ * generated id). `userId` is spread in LAST server-side; the `values` type cannot carry
  * it, so a caller cannot spoof ownership (T-4-TAMPER-OWNER).
  */
 export function createTemplate(userId: string, values: PersistableTemplate) {
   return db
     .insert(templates)
-    .values({ userId, ...values })
+    .values({ ...values, userId })
     .returning();
 }
 

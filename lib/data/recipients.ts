@@ -11,8 +11,8 @@
  *
  *  - Server-set ownership (T-3-TAMPER-OWNER): `createRecipientSet` types its
  *    `values` param as a `Pick<>` that OMITS `userId`, then spreads
- *    `{ userId, ...values }` so ownership is injected by the server and can never
- *    be spoofed through the caller's values object.
+ *    `{ ...values, userId }` — userId LAST — so server-injected ownership wins even
+ *    if a runtime values object smuggles a userId key.
  *
  * This module imports the shared `db` from `@/lib/db` (the SOLE SQLite opener,
  * D-04); it never constructs a Database.
@@ -36,7 +36,7 @@ export type PersistableRecipientSet = Pick<
 
 /**
  * Insert a recipient set owned by `userId` and return the created row (with its
- * generated id). `userId` is spread in server-side; the `values` type cannot
+ * generated id). `userId` is spread in LAST server-side; the `values` type cannot
  * carry it, so a caller cannot spoof ownership (T-3-TAMPER-OWNER).
  */
 export function createRecipientSet(
@@ -45,7 +45,7 @@ export function createRecipientSet(
 ) {
   return db
     .insert(recipient_sets)
-    .values({ userId, ...values })
+    .values({ ...values, userId })
     .returning();
 }
 
