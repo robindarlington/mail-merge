@@ -198,7 +198,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 05-03-PLAN.md — Prepare-draft + server-authoritative confirm summary + enqueue seams (TDD, TEST-02/03)
+- [x] 05-03-PLAN.md — Prepare-draft + server-authoritative confirm summary + enqueue seams (TDD, TEST-02/03)
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -290,7 +290,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Auth + SMTP Onboarding | 9/9 | Complete   | 2026-07-12 |
 | 3. CSV Upload + Parsing + Recipient Mapping | 5/5 | Complete   | 2026-07-13 |
 | 4. Editor + Preview + Template Save | 5/6 | In Progress|  |
-| 5. Test-Send + Confirmation Gate | 2/5 | In Progress|  |
+| 5. Test-Send + Confirmation Gate | 3/5 | In Progress|  |
 | 6. Background Worker + Live Send + Progress + History | 0/TBD | Not started | - |
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
 | 8. Docker / Coolify Packaging + Operational Hardening | 0/TBD | Not started | - |
