@@ -128,6 +128,7 @@ Sentence case everywhere. No exclamation marks. Errors state the problem + what 
 | Modal — sender identity row | "From: {from_name} <{from_addr}>" or "From: {from_addr}" (from the redacted SMTP DTO — never the password) |
 | Modal — sample-recipient heading | "Sample — how row 1 will look" |
 | Modal — sample To/Subject | "To: {email}" and "Subject: {merged subject}" above the merged body |
+| Modal — summary load failed | "We couldn't load the send details. Try again, and if it keeps failing, refresh the page." (destructive `Alert` inside the modal; confirm stays disabled) |
 | Modal — invalid emails, some | "{invalidCount} of {N} rows don't have a valid email address. They'll be skipped." (`AlertCircle`, muted) |
 | Modal — invalid emails, none | "All {N} rows have a valid email address." (`CheckCircle2`, `text-success`) |
 | Modal — missing merge values, some | "{rowsWithGaps} of {N} rows are missing a value for at least one merge field. Those spots will be blank." (`AlertCircle`, muted) |
@@ -184,7 +185,7 @@ Every state must be implemented by the executor and checked by the auditor.
 | Review — summary loaded | Recipient count, sender identity, one merged sample (row 1), and the warning block; confirm enabled (unless the no-sendable-recipients hard block applies) |
 | Review — warnings present | `AlertTriangle` unknown-token line at top (if any), `AlertCircle` invalid-email / missing-value lines, `CheckCircle2` all-clear lines — same classification as Phase 4; warnings inform but do NOT disable confirm (Assumption U4) |
 | Review — no sendable recipients | All rows invalid: `AlertCircle` explanation + confirm DISABLED (Assumption U6); only Cancel is actionable |
-| Review — summary load failed | Destructive `Alert` inside the modal; confirm disabled; Cancel closes; the user can reopen to retry |
+| Review — summary load failed | Destructive `Alert` inside the modal with the "summary load failed" copy from the Copywriting Contract; confirm disabled; Cancel closes; the user can reopen to retry |
 | Confirm — in-flight | "Queuing…" + `Loader2`; both footer buttons disabled; the gate stays undismissable |
 | Confirm — queued | Modal closes; success toast "Your send is queued — {N} recipients."; the page reflects a queued state (Phase 6 renders live progress) |
 | Confirm — already queued | Benign neutral toast "This send is already queued." (the atomic guard's second caller); modal closes; NOT a destructive Alert |
@@ -213,6 +214,8 @@ Third-party registries: **none** (`components.json` `registries: {}` — confirm
 ---
 
 ## Assumptions (auto-mode)
+
+- **U-CANCEL (checker-flagged, deliberate):** The confirmation modal keeps the bare "Cancel" secondary label — consistent with the 03-UI-SPEC precedent, unambiguous next to the consequence line + "Send to {N} recipients" confirm label. Revisit only if user testing shows dismiss confusion.
 
 No 05-CONTEXT.md exists (fully autonomous run — user unavailable). Where a discussion would normally lock a preference, the option most consistent with the existing Phase 2–4 system and the orchestrator's autonomous brief was chosen and recorded here for planner/user confirmation. A1/A2 below mirror the 05-RESEARCH.md Assumptions Log; the orchestrator brief resolved A2's open direction (whole batch, no cap).
 
