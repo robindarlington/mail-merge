@@ -1,8 +1,8 @@
 ---
 phase: 5
 slug: test-send-confirmation-gate
-status: draft
-nyquist_compliant: false
+status: planned
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-07-13
 ---
@@ -41,7 +41,12 @@ created: 2026-07-13
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| — | — | — | TEST-01..03 | T-5-* | see plans | unit | see quick command | ❌ W0 | ⬜ pending |
+| 01-T1 | 05-01 | 1 | TEST-03 | T-5-IDOR | userId-first campaigns DAL, cross-tenant undefined | unit | `node --import tsx --test lib/data/campaigns.test.ts` | ❌ W0 | ⬜ pending |
+| 01-T2 | 05-01 | 1 | TEST-03 | T-5-DUPE | atomic draft→queued, affected-rows guard | unit | `node --import tsx --test lib/data/campaigns.test.ts` | ❌ W0 | ⬜ pending |
+| 02-T1/T2/T3 | 05-02 | 1 | TEST-01 | T-5-CRED, T-5-DOS | chunked whole-batch send seam, injected fake transport, verify on chunk 0, throttle between sends | unit | `node --import tsx --test lib/campaign/actions-core.test.ts` | ❌ W0 | ⬜ pending |
+| 03-T1/T2/T3 | 05-03 | 2 | TEST-02, TEST-03 | T-5-TAMPER, T-5-IDOR | prepare/summary/enqueue seams, server-recomputed counts, campaignId-only client chain | unit | `node --import tsx --test lib/campaign/actions-core.test.ts` | ❌ W0 | ⬜ pending |
+| 04-T1/T2/T3 | 05-04 | 3 | TEST-01/02/03 | T-5-XSS, T-5-DUPE | Send card + undismissable confirm modal, escaped sample render, stale-summary reset, disable-while-pending | build+human | `npm run build` + browser harness | ❌ UI | ⬜ pending |
+| 05-T1/T2 | 05-05 | 4 | all + SC4 | T-5-PERSIST | staging deploy + real test-send to user inbox + confirm-gate walkthrough | manual | Coolify + user inbox | manual-only | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -68,11 +73,11 @@ created: 2026-07-13
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 30s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved (orchestrator sync after plan-checker pass, 2026-07-13)

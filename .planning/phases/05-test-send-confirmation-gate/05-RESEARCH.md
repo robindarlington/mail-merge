@@ -324,20 +324,23 @@ const summary = {
 | A5 | A single test address is entered by the user at test-send time (validated as an email), defaulting to their Clerk primary email as `sendTestEmail` already does. | TEST-01 | Low — mirrors existing onboarding test-send behavior. |
 | A6 | The Phase-5 surface is reachable from the existing compose flow (or a thin new "review" route), not a full new top-level nav destination. | Project Structure | Low — routing detail; UI-SPEC/planner can place it. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **When is the `campaigns` draft row created, and does saving a template still create a standalone template row?** (A1)
    - What we know: schema requires all three FKs non-null; compose currently saves standalone templates.
    - What's unclear: whether Phase 5 introduces "create-or-reuse template + create draft campaign" as one action, or keeps template-save separate and creates the campaign at confirm.
    - Recommendation: One "prepare to send" action that ensures a template row and inserts the draft campaign, returning its id — resolve in discuss-phase.
+   - **RESOLVED (U7/A1):** `prepareCampaignCore` creates the draft at the review-and-send moment from the three chosen FKs; template save stays standalone. Implemented in plan 05-03.
 
 2. **Test-send throttle and row cap.** (A2)
    - What we know: CLI = all rows + 3s delay; self-hosted has proxy/browser timeouts.
    - What's unclear: acceptable wall-time and whether "whole batch" must be literal.
    - Recommendation: small/zero delay + configurable cap surfaced in UI; confirm the exact number with the user.
+   - **RESOLVED (U2/A2):** whole batch, NO hard cap, 500ms throttle between sends, client-driven chunking (TEST_SEND_CHUNK_SIZE=10) keeps each request under proxy timeouts. Implemented in plans 05-02/05-04.
 
 3. **Does the confirm summary need a new persisted column (e.g., `queued_at`)?**
    - What we know: `campaigns` has `created_at`, `started_at`, `finished_at` but no `queued_at`.
+   - **RESOLVED:** no new column — the status value itself records the transition; timestamps stay as-is (no schema migration in Phase 5 plans).
    - What's unclear: whether history/UX wants an explicit enqueue timestamp.
    - Recommendation: default to reusing existing columns; add `queued_at` only if history (Phase 6) needs it — additive migration if so.
 
