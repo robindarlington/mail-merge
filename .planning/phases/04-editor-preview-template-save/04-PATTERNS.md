@@ -233,7 +233,7 @@ export async function saveTemplate(formData: FormData): Promise<SaveResult> {
 
 **Analog:** `lib/csv/actions-core.ts` — the no-directive, userId-injected seam layer, plus its typed result union.
 
-**Typed result union** (`lib/csv/actions-core.ts` lines 54-75; extend for preview per RESEARCH lines 305-316):
+**Typed result union** (`lib/csv/actions-core.ts` lines 54-75; extend for preview per RESEARCH §"Server action seam" PreviewReport (updated for be94f9c)):
 ```typescript
 export type ActionError =
   | { kind: "unauthenticated" }

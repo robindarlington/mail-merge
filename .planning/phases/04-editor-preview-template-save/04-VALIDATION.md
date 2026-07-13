@@ -47,7 +47,7 @@ created: 2026-07-13
 | 03-T2 | 04-03 | 2 | EDIT-04, PREV-03 | T-4-ENDPOINT | only actions.ts is "use server" | unit+build | `npm test && npm run build` | ❌ W0 | ⬜ pending |
 | 04-T1 | 04-04 | 3 | EDIT-01 | T-4-SC | official-shadcn-only, no npm dep | build+human | `npm run build` + browser harness | ❌ UI | ⬜ pending |
 | 04-T2 | 04-04 | 3 | EDIT-01/02/04 | T-4-XSS-CHIP, T-4-CLIENTVAL | escaped chips, server re-validates | build+human | `npm run build` + browser harness | ❌ UI | ⬜ pending |
-| 05-T1 | 04-05 | 4 | PREV-01/02/03, EDIT-03 | T-4-XSS, T-4-DIVERGE | escaped merged render, server aggregates | build+human | `npm run build` + browser harness | ❌ UI | ⬜ pending |
+| 05-T1 | 04-05 | 4 | PREV-01/02/03, EDIT-03 | T-4-XSS, T-4-DIVERGE | escaped merged render; server-authoritative emailColumn/invalidEmailCount + client-computed reactive aggregates | build+human | `npm run build` + browser harness | ❌ UI | ⬜ pending |
 | 05-T2 | 04-05 | 4 | PREV-01/03 | T-4-IDOR | fetch-once, recipientSetId only | build+human | `npm run build` + browser harness | ❌ UI | ⬜ pending |
 | 06-T1 | 04-06 | 5 | SC5 | T-4-PERSIST | deploy config unchanged/complete | automated | `docker compose config && npm run build` | ✅ | ⬜ pending |
 | 06-T2 | 04-06 | 5 | EDIT/PREV all | T-4-AUTHZ, T-4-PERSIST | staging walkthrough + persistence | manual | Coolify redeploy + browser | ✅ | ⬜ pending |
@@ -74,7 +74,7 @@ Wave 0 scaffolds are authored RED-first inside their owning TDD tasks (Plans 04-
 |----------|-------------|------------|-------------------|
 | `{{`-triggered autocomplete popover + click-to-insert in a real browser | EDIT-01, EDIT-02 | Caret/keyboard interaction needs a live browser | Browser harness: compose against a saved set, type `{{`, confirm suggestions insert into subject AND body; click a chip inserts at caret |
 | Row stepping + empty-value highlight rendering | PREV-01, PREV-02 | Visual state | Step rows of the fixture set; a row with an empty column value shows the neutral highlight note; subject renders personalized |
-| Validation report counts + unknown-token warning | PREV-03 | Visual state | Confirm invalid-email + missing-value lines match server counts; a deliberate `{{typo}}` surfaces the AlertTriangle warning |
+| Validation report counts + unknown-token warning | PREV-03 | Visual state | Confirm the invalid-email line matches the server count; missing-value/unknown-token lines are client-computed and update reactively as you type; a deliberate `{{typo}}` surfaces the AlertTriangle warning |
 | Staging deploy works (success criterion 5) + persistence | SC5 | Requires user's Coolify dashboard | Redeploy on Coolify, repeat compose/preview/save on staging URL, restart container, confirm data survives |
 
 ---

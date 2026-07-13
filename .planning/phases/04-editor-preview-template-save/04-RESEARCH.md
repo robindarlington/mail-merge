@@ -302,13 +302,16 @@ export function analyzeMerge(
 ### Preview action contract (typed result union, mirrors ParseResult)
 ```typescript
 // Source: pattern from lib/csv/actions-core.ts ParseResult/ActionError [VERIFIED: read]
+// SUPERSEDED by revision be94f9c (see PATTERNS.md "Server vs client authority"):
+// PreviewReport carries ONLY template-independent fields. unknownTokens /
+// rowsWithEmptyValues are computed CLIENT-SIDE reactively (useMemo over all
+// report.rows via analyzeMerge) so the report tracks the template as typed.
 export type PreviewReport = {
   columns: string[];
   rows: Record<string, string>[];       // fetch-once; step client-side
   totalRows: number;
+  emailColumn: string | null;           // authoritative: persisted confirmed column ?? detectEmailColumn fallback
   invalidEmailCount: number;            // authoritative, server-computed (PREV-03)
-  unknownTokens: string[];              // template-level authoring errors (subject ∪ body)
-  rowsWithEmptyValues: number;          // aggregate for the report (PREV-02/03)
 };
 export type PreviewResult =
   | { ok: true; data: PreviewReport }
