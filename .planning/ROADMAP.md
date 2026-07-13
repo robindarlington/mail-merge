@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation — DB, Crypto, Core Engine** - Shared WAL'd SQLite layer, AES-256-GCM crypto, lifted CLI merge/send engine, Compose skeleton (completed 2026-06-27)
 - [x] **Phase 2: Auth + SMTP Onboarding** - Clerk auth, per-user isolation, and live-verified encrypted SMTP onboarding (completed 2026-07-11)
-- [ ] **Phase 3: CSV Upload + Parsing + Recipient Mapping** - Robust CSV upload, header/email-column detection, recipient set persistence
+- [x] **Phase 3: CSV Upload + Parsing + Recipient Mapping** - Robust CSV upload, header/email-column detection, recipient set persistence (completed 2026-07-13)
 - [ ] **Phase 4: Editor + Preview + Template Save** - Merge-field autocomplete editor, live merged preview, pre-send validation report
 - [ ] **Phase 5: Test-Send + Confirmation Gate** - Whole-batch test-send to one address and a hard confirm-before-live gate
 - [ ] **Phase 6: Background Worker + Live Send + Progress + History** - Idempotent background sending with live progress and campaign history
@@ -135,7 +135,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 03-05-PLAN.md — [CHECKPOINT] UPLOADS_PATH volume wiring + Coolify staging redeploy + upload-survives-restart smoke
+- [x] 03-05-PLAN.md — [CHECKPOINT] UPLOADS_PATH volume wiring + Coolify staging redeploy + upload-survives-restart smoke
 **UI hint**: yes
 
 ### Phase 4: Editor + Preview + Template Save
@@ -250,7 +250,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Foundation — DB, Crypto, Core Engine | 5/5 | Complete   | 2026-06-27 |
 | 2. Auth + SMTP Onboarding | 9/9 | Complete   | 2026-07-12 |
-| 3. CSV Upload + Parsing + Recipient Mapping | 4/5 | In Progress|  |
+| 3. CSV Upload + Parsing + Recipient Mapping | 5/5 | Complete   | 2026-07-13 |
 | 4. Editor + Preview + Template Save | 0/TBD | Not started | - |
 | 5. Test-Send + Confirmation Gate | 0/TBD | Not started | - |
 | 6. Background Worker + Live Send + Progress + History | 0/TBD | Not started | - |
