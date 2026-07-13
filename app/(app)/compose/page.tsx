@@ -1,7 +1,7 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
 
-import { listRecipientSetsForUser } from "@/lib/data";
+import { listRecipientSetsForUser, getSmtpConfigForUser } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -27,6 +27,17 @@ import { ComposeEditor } from "@/components/compose/compose-editor";
 export default async function ComposePage() {
   const { userId } = await auth();
   const sets = userId ? await listRecipientSetsForUser(userId) : [];
+
+  // Send-card gating: presence-only SMTP flag + the default test address. Only a
+  // boolean and the email string cross to the client — never the encrypted SMTP
+  // triple / password (T-5-CRED / SMTP-04).
+  const cfg = userId ? await getSmtpConfigForUser(userId) : undefined;
+  const hasSmtpConfig = !!cfg;
+  const user = userId ? await currentUser() : null;
+  const defaultTestEmail =
+    user?.primaryEmailAddress?.emailAddress ??
+    user?.emailAddresses?.[0]?.emailAddress ??
+    "";
 
   const editorSets = sets.map((set) => ({
     id: set.id,
@@ -57,7 +68,11 @@ export default async function ComposePage() {
           </CardContent>
         </Card>
       ) : (
-        <ComposeEditor sets={editorSets} />
+        <ComposeEditor
+          sets={editorSets}
+          hasSmtpConfig={hasSmtpConfig}
+          defaultTestEmail={defaultTestEmail}
+        />
       )}
     </div>
   );
