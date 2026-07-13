@@ -67,6 +67,12 @@ services:
       NODE_ENV: production
       # Same DB file as web — both processes open the one app.db on /data.
       DATABASE_PATH: /data/app.db
+      # Uploaded CSVs live on the SAME shared /data volume the web service wrote
+      # them to. lib/csv/storage.ts resolves UPLOADS_PATH ?? "./data/uploads" at
+      # module load, so without this the Phase-6 worker would resolve
+      # storage_path values against the ephemeral container FS and ENOENT on
+      # every read. Must mirror web's UPLOADS_PATH exactly (WR-08).
+      UPLOADS_PATH: /data/uploads
       CREDENTIAL_ENC_KEY: ${CREDENTIAL_ENC_KEY}
     volumes:
       - appdata:/data
