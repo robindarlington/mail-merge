@@ -23,11 +23,11 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### CSV & Recipients
 
-- [ ] **CSV-01**: User can upload a CSV file through the browser
+- [x] **CSV-01**: User can upload a CSV file through the browser
 - [x] **CSV-02**: App parses the CSV robustly (quoted fields, BOM, Windows line endings, encoding) and detects the header row
-- [ ] **CSV-03**: App auto-detects the recipient (email) column and lets the user confirm or override it
-- [ ] **CSV-04**: App validates recipient email addresses at upload and reports the count of invalid rows
-- [ ] **CSV-05**: Parsed recipients and detected columns are saved as a recipient set for the campaign
+- [x] **CSV-03**: App auto-detects the recipient (email) column and lets the user confirm or override it
+- [x] **CSV-04**: App validates recipient email addresses at upload and reports the count of invalid rows
+- [x] **CSV-05**: Parsed recipients and detected columns are saved as a recipient set for the campaign
 
 ### Compose & Editor
 
@@ -125,11 +125,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SMTP-03 | Phase 2 | Pending |
 | SMTP-04 | Phase 2 | Complete |
 | SMTP-05 | Phase 2 | Pending |
-| CSV-01 | Phase 3 | Pending |
+| CSV-01 | Phase 3 | Complete |
 | CSV-02 | Phase 3 | Complete |
-| CSV-03 | Phase 3 | Pending |
-| CSV-04 | Phase 3 | Pending |
-| CSV-05 | Phase 3 | Pending |
+| CSV-03 | Phase 3 | Complete |
+| CSV-04 | Phase 3 | Complete |
+| CSV-05 | Phase 3 | Complete |
 | EDIT-01 | Phase 4 | Pending |
 | EDIT-02 | Phase 4 | Pending |
 | EDIT-03 | Phase 4 | Complete |
