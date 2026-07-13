@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { MergeFieldMenu } from "@/components/compose/merge-field-menu";
+import { getCaretRect } from "@/components/compose/caret-coords";
 import { PreviewStepper } from "@/components/compose/preview-stepper";
 import { SendCard } from "@/components/campaign/send-card";
 
@@ -134,6 +135,29 @@ export function ComposeEditor({
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);
   const lastFocused = useRef<FieldName>("body");
 
+  // The caret's viewport rect, stored in a ref (not state — it feeds the virtual
+  // popover anchor and must not trigger extra renders). detectAutocomplete keeps
+  // it fresh; the virtual anchor below reads .current on each Radix measure.
+  const caretRect = useRef<{ top: number; left: number; height: number } | null>(
+    null,
+  );
+  const caretAnchorRef = useRef({
+    getBoundingClientRect() {
+      const c = caretRect.current ?? { top: 0, left: 0, height: 0 };
+      return {
+        top: c.top,
+        left: c.left,
+        bottom: c.top + c.height,
+        right: c.left,
+        width: 0,
+        height: c.height,
+        x: c.left,
+        y: c.top,
+        toJSON() {},
+      } as DOMRect;
+    },
+  });
+
   const activeSet = useMemo(
     () => sets.find((set) => String(set.id) === selectedId) ?? null,
     [sets, selectedId],
@@ -220,8 +244,12 @@ export function ComposeEditor({
   function detectAutocomplete(field: FieldName, el: HTMLInputElement | HTMLTextAreaElement) {
     const caret = el.selectionStart ?? el.value.length;
     const before = el.value.slice(0, caret);
-    const match = before.match(/\{\{\s*([\w.-]*)$/);
+    // Capture any non-brace partial after `{{`, so a spaced column name
+    // (e.g. `{{First N`) keeps the popover open and filtering — a space no
+    // longer closes it. `start` stays `caret - match[0].length`.
+    const match = before.match(/\{\{([^{}]*)$/);
     if (match) {
+      caretRect.current = getCaretRect(el, caret);
       setAutocomplete({ field, start: caret - match[0].length, filter: match[1] });
     } else {
       setAutocomplete(null);
@@ -378,6 +406,10 @@ export function ComposeEditor({
                         onClick={(e) => detectAutocomplete("subject", e.currentTarget)}
                         onKeyUp={(e) => detectAutocomplete("subject", e.currentTarget)}
                         onKeyDown={(e) => handleKeyDown("subject", e)}
+                        onScroll={(e) => {
+                          if (autocomplete?.field === "subject")
+                            detectAutocomplete("subject", e.currentTarget);
+                        }}
                         onBlur={field.onBlur}
                       />
                     </FormControl>
@@ -411,6 +443,10 @@ export function ComposeEditor({
                         onClick={(e) => detectAutocomplete("body", e.currentTarget)}
                         onKeyUp={(e) => detectAutocomplete("body", e.currentTarget)}
                         onKeyDown={(e) => handleKeyDown("body", e)}
+                        onScroll={(e) => {
+                          if (autocomplete?.field === "body")
+                            detectAutocomplete("body", e.currentTarget);
+                        }}
                         onBlur={field.onBlur}
                       />
                     </FormControl>
@@ -423,6 +459,7 @@ export function ComposeEditor({
                 columns={columns}
                 onInsertChip={insertChip}
                 open={autocomplete !== null && columns.length > 0}
+                caretAnchorRef={caretAnchorRef}
                 matches={matches}
                 onOpenChange={(next) => {
                   if (!next) setAutocomplete(null);

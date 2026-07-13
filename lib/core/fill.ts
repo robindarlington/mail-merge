@@ -19,9 +19,11 @@ export interface MessageTemplate {
   body: string;
 }
 
-// Matches `{{column}}` with optional inner whitespace, e.g. `{{name}}` or
-// `{{ name }}`. The captured group is the trimmed-around column key.
-const TOKEN = /\{\{\s*([\w.-]+)\s*\}\}/g;
+// Matches `{{column}}` capturing any non-brace inner content, so column keys
+// containing spaces (e.g. `{{First Name}}`), dots, or hyphens are supported.
+// Inner whitespace is tolerated: the captured group is trimmed to the column
+// key at lookup time (`{{ First Name }}` → `First Name`).
+const TOKEN = /\{\{([^{}]+)\}\}/g;
 
 /**
  * Replace every `{{column}}` token in `template` with the matching value from
@@ -34,9 +36,10 @@ const TOKEN = /\{\{\s*([\w.-]+)\s*\}\}/g;
  * replacement specials.
  */
 export function fill(template: string, row: Row): string {
-  return template.replace(TOKEN, (match, key: string) =>
-    Object.prototype.hasOwnProperty.call(row, key) ? row[key] : match,
-  );
+  return template.replace(TOKEN, (match, capture: string) => {
+    const key = capture.trim();
+    return Object.prototype.hasOwnProperty.call(row, key) ? row[key] : match;
+  });
 }
 
 /**

@@ -20,10 +20,12 @@ export interface MergeAnalysis {
   unknown: string[];
 }
 
-// Matches `{{column}}` with optional inner whitespace, e.g. `{{name}}` or
-// `{{ name }}`. The captured group is the trimmed-around column key. Kept
-// identical to lib/core/fill.ts (deliberately not shared — both stay pure).
-const TOKEN = /\{\{\s*([\w.-]+)\s*\}\}/g;
+// Matches `{{column}}` capturing any non-brace inner content, so column keys
+// containing spaces (e.g. `{{First Name}}`), dots, or hyphens are supported.
+// Inner whitespace is tolerated: the captured group is trimmed to the column
+// key by extractTokens. Kept identical to lib/core/fill.ts (deliberately not
+// shared — both stay pure).
+const TOKEN = /\{\{([^{}]+)\}\}/g;
 
 /**
  * Return the `{{column}}` token keys used in `template`, in first-seen order and
@@ -33,7 +35,7 @@ const TOKEN = /\{\{\s*([\w.-]+)\s*\}\}/g;
 export function extractTokens(template: string): string[] {
   const seen = new Set<string>();
   for (const m of template.matchAll(TOKEN)) {
-    seen.add(m[1]);
+    seen.add(m[1].trim());
   }
   return [...seen];
 }

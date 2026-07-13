@@ -33,6 +33,21 @@ test("fill tolerates inner whitespace in the token braces", () => {
   assert.equal(fill("Hi {{ name }}", { name: "Ada" }), "Hi Ada");
 });
 
+test("fill substitutes a column key containing spaces", () => {
+  assert.equal(fill("Hi {{First Name}}", { "First Name": "Ada" }), "Hi Ada");
+});
+
+test("fill trims inner whitespace around a spaced column key before lookup", () => {
+  assert.equal(fill("Hi {{ First Name }}", { "First Name": "Ada" }), "Hi Ada");
+});
+
+test("fill leaves an unknown spaced key intact (pass-through, full original text)", () => {
+  assert.equal(
+    fill("Hi {{Last Name}}", { "First Name": "Ada" }),
+    "Hi {{Last Name}}",
+  );
+});
+
 test("fill does not treat replacement text containing $ as a regex replacement special", () => {
   // A row value of "$1" must be inserted literally, not interpreted as a backref.
   assert.equal(fill("Price: {{amt}}", { amt: "$1,000" }), "Price: $1,000");

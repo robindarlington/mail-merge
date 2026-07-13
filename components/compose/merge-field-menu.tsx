@@ -1,11 +1,18 @@
 "use client";
 
+import type { RefObject } from "react";
+
 import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
+
+/** Minimal measurable the caret virtual anchor exposes to Radix. */
+interface Measurable {
+  getBoundingClientRect(): DOMRect;
+}
 
 /**
  * MergeFieldMenu — the zero-dependency merge-field affordance for the compose
@@ -15,15 +22,16 @@ import {
  *   1. Click-to-insert CHIPS — one `secondary` Button per CSV column; clicking
  *      calls `onInsertChip(column)` and the editor splices `{{column}}` at the
  *      last-focused field's caret.
- *   2. `{{`-triggered SUGGESTION LIST — a fixed-position `Popover` (anchored to
- *      the chip row, NOT to caret pixels) the editor opens when the text right
- *      before the caret matches `{{partial`. This component is presentational:
- *      it renders the pre-filtered `matches`, and selecting one (mousedown, so
- *      the field never blurs) calls `onSelect(column)`. An empty match set shows
+ *   2. `{{`-triggered SUGGESTION LIST — a `Popover` anchored to the caret PIXEL
+ *      position (via `caretAnchorRef`, a virtual measurable the editor updates
+ *      as the caret moves) the editor opens when the text right before the caret
+ *      matches `{{partial`. This component is presentational: it renders the
+ *      pre-filtered `matches`, and selecting one (mousedown, so the field never
+ *      blurs) calls `onSelect(column)`. An empty match set shows
  *      "No matching fields." (04-UI-SPEC line 121).
  *
- * NO command-palette dependency and NO caret-pixel geometry (04-RESEARCH.md A1 /
- * Don't-Hand-Roll): column names render as auto-escaped JSX text and are inserted
+ * Zero new dependency: caret geometry is measured by a hand-rolled mirror div in
+ * caret-coords.ts. Column names render as auto-escaped JSX text and are inserted
  * as literal `{{name}}` text, never as HTML (T-4-XSS-CHIP).
  */
 
@@ -34,6 +42,8 @@ interface MergeFieldMenuProps {
   onInsertChip: (column: string) => void;
   /** Whether the `{{`-triggered suggestion popover is open. */
   open: boolean;
+  /** Virtual anchor tracking the caret pixel position — positions the popover. */
+  caretAnchorRef: RefObject<Measurable>;
   /** The columns matching the partial token the user is typing after `{{`. */
   matches: string[];
   /** Radix open-change (outside click / escape) — the editor clears its state. */
@@ -46,33 +56,33 @@ export function MergeFieldMenu({
   columns,
   onInsertChip,
   open,
+  caretAnchorRef,
   matches,
   onOpenChange,
   onSelect,
 }: MergeFieldMenuProps) {
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverAnchor asChild>
-        <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium">Merge fields</span>
-          <p className="text-sm text-muted-foreground">
-            {`Click a field to insert it, or type {{ in the subject or message.`}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {columns.map((column) => (
-              <Button
-                key={column}
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => onInsertChip(column)}
-              >
-                {column}
-              </Button>
-            ))}
-          </div>
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-medium">Merge fields</span>
+        <p className="text-sm text-muted-foreground">
+          {`Click a field to insert it, or type {{ in the subject or message.`}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {columns.map((column) => (
+            <Button
+              key={column}
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => onInsertChip(column)}
+            >
+              {column}
+            </Button>
+          ))}
         </div>
-      </PopoverAnchor>
+      </div>
+      <PopoverAnchor virtualRef={caretAnchorRef} />
       <PopoverContent
         align="start"
         className="w-64 gap-1 p-1"
