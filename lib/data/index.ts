@@ -30,3 +30,10 @@ export {
   getTemplateForUser,
   type PersistableTemplate,
 } from "./templates";
+
+export {
+  createDraftCampaign,
+  getCampaignForUser,
+  enqueueCampaign,
+  type PersistableCampaign,
+} from "./campaigns";
