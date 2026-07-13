@@ -1,12 +1,16 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { AlertCircle, Loader2, Save } from "lucide-react";
 
-import { saveTemplate } from "@/lib/compose/actions";
+import {
+  previewCampaign,
+  saveTemplate,
+  type PreviewReport,
+} from "@/lib/compose/actions";
 import { composeFormSchema, type ComposeFormValues } from "@/lib/compose/schema";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -35,6 +39,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { MergeFieldMenu } from "@/components/compose/merge-field-menu";
+import { PreviewStepper } from "@/components/compose/preview-stepper";
 
 /**
  * ComposeEditor — the client shell for the compose slice (EDIT-01/02/04). It
@@ -99,6 +104,18 @@ export function ComposeEditor({ sets }: { sets: EditorSet[] }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Preview state — the rows/emailColumn/invalidEmailCount are fetched ONCE per
+  // recipient-list change via previewCampaign (server-authoritative,
+  // template-INDEPENDENT). The stepper walks the fetched rows client-side and
+  // computes the template-DEPENDENT aggregates itself — no per-step/per-keystroke
+  // round-trip.
+  const [report, setReport] = useState<PreviewReport | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<{
+    destructive: boolean;
+    message: string;
+  } | null>(null);
+
   // Field elements for caret-targeted insertion; the last-focused one is the
   // insert target after a chip click blurs the field.
   const subjectRef = useRef<HTMLInputElement | null>(null);
@@ -113,6 +130,59 @@ export function ComposeEditor({ sets }: { sets: EditorSet[] }) {
     () => (activeSet ? parseColumns(activeSet.columns_json) : []),
     [activeSet],
   );
+
+  // Fetch the preview rows + template-INDEPENDENT server fields ONCE per
+  // recipient-list change (never per stepper step, never per keystroke — the
+  // stepper walks report.rows client-side). The ignore flag drops a stale
+  // response if the user switches lists mid-flight.
+  useEffect(() => {
+    if (!selectedId) {
+      setReport(null);
+      setPreviewError(null);
+      return;
+    }
+    let ignore = false;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    const fd = new FormData();
+    fd.set("recipientSetId", selectedId);
+    previewCampaign(fd)
+      .then((res) => {
+        if (ignore) return;
+        if (res.ok) {
+          setReport(res.data);
+          return;
+        }
+        setReport(null);
+        switch (res.error.kind) {
+          case "unauthenticated":
+            setPreviewError({
+              destructive: true,
+              message:
+                "Your session has expired. Sign in again to preview your recipients.",
+            });
+            break;
+          case "not_found":
+            setPreviewError({
+              destructive: false,
+              message: "That list is no longer available.",
+            });
+            break;
+          default:
+            setPreviewError({
+              destructive: false,
+              message:
+                "We couldn't load a preview for that list. Try selecting it again.",
+            });
+        }
+      })
+      .finally(() => {
+        if (!ignore) setPreviewLoading(false);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [selectedId]);
 
   const matches = autocomplete ? filterColumns(columns, autocomplete.filter) : [];
 
@@ -374,6 +444,32 @@ export function ComposeEditor({ sets }: { sets: EditorSet[] }) {
           </Form>
         </CardContent>
       </Card>
+
+      {previewError ? (
+        previewError.destructive ? (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>Couldn&apos;t load preview</AlertTitle>
+            <AlertDescription>{previewError.message}</AlertDescription>
+          </Alert>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <AlertCircle className="size-4 shrink-0" />
+            <span>{previewError.message}</span>
+          </div>
+        )
+      ) : null}
+
+      <PreviewStepper
+        subject={subject}
+        body={body}
+        columns={columns}
+        rows={report?.rows ?? []}
+        totalRows={report?.totalRows ?? 0}
+        emailColumn={report?.emailColumn ?? null}
+        invalidEmailCount={report?.invalidEmailCount ?? 0}
+        loading={previewLoading}
+      />
     </div>
   );
 }

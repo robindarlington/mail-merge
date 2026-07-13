@@ -9,7 +9,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-import { analyzeMerge, fillMessage } from "@/lib/core";
+// Deep imports (NOT the @/lib/core barrel): the barrel re-exports send.ts, which
+// pulls nodemailer (child_process/dns/fs) into the client bundle. fill.ts +
+// merge.ts are import-free pure engines and are safe in a client component.
+import { fillMessage } from "@/lib/core/fill";
+import { analyzeMerge } from "@/lib/core/merge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
