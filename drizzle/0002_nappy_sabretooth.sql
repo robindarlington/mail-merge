@@ -1,0 +1,1 @@
+ALTER TABLE `recipient_sets` ADD `email_column` text;

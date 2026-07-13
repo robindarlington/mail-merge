@@ -31,7 +31,7 @@ import { recipient_sets, type NewRecipientSet } from "@/lib/db/schema";
  */
 export type PersistableRecipientSet = Pick<
   NewRecipientSet,
-  "filename" | "columns_json" | "row_count" | "storage_path"
+  "filename" | "columns_json" | "row_count" | "storage_path" | "email_column"
 >;
 
 /**

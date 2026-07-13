@@ -76,6 +76,12 @@ export const recipient_sets = sqliteTable("recipient_sets", {
   columns_json: text("columns_json").notNull(),
   row_count: integer("row_count").notNull(),
   storage_path: text("storage_path").notNull(),
+  // The user-confirmed email column (CSV-03/05). The save path ALWAYS writes
+  // this, so Phase 5/6 sends against the column the user chose — never a
+  // re-run of detectEmailColumn that would silently drop an override. Nullable
+  // (like from_name/verified_at) because it was added additively: the single
+  // pre-existing dev row predates the confirm step and has no known value.
+  email_column: text("email_column"),
   created_at: integer("created_at").notNull().default(unixNow),
 });
 

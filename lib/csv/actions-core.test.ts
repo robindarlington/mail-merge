@@ -176,6 +176,8 @@ test("saveRecipientSetCore persists ONE row for the injected userId (end-to-end)
   assert.equal(saved.row_count, 3);
   // columns_json round-trips back to the header array.
   assert.deepEqual(JSON.parse(saved.columns_json), ["Email", "Name"]);
+  // the confirmed email column is persisted on the row (CR-01).
+  assert.equal(saved.email_column, "Email");
   // a file was actually written under the uploads dir.
   assert.ok(readdirSync(join(TMP_DIR, "uploads")).length >= 1);
 });
@@ -196,6 +198,12 @@ test("saveRecipientSetCore counts invalid on the CONFIRMED column (override hono
   assert.equal(parsed.data.detectedEmailColumn, "Email");
   assert.equal(parsed.data.invalidCounts.Contact, 2);
 
+  // Capture existing ids so we can pinpoint the row THIS save inserts (created_at
+  // ties within one unixepoch second make newest-first ordering non-deterministic).
+  const beforeIds = new Set(
+    (await listRecipientSetsForUser(USER_A)).map((s) => s.id),
+  );
+
   const res = await saveRecipientSetCore(
     USER_A,
     fd(csv, { emailColumn: "Contact" }),
@@ -206,6 +214,15 @@ test("saveRecipientSetCore counts invalid on the CONFIRMED column (override hono
   assert.equal(res.data.invalidCount, 2);
   assert.equal(res.data.invalidCount, parsed.data.invalidCounts.Contact);
   assert.notEqual(res.data.invalidCount, parsed.data.invalidCounts.Email);
+
+  // The persisted row records the OVERRIDDEN column ("Contact"), not the
+  // auto-detected one ("Email") — the override survives to the DB (CR-01).
+  const saved = (await listRecipientSetsForUser(USER_A)).find(
+    (s) => !beforeIds.has(s.id),
+  );
+  assert.ok(saved, "the newly saved recipient set is found");
+  assert.equal(saved.email_column, "Contact");
+  assert.notEqual(saved.email_column, parsed.data.detectedEmailColumn);
 });
 
 test("saveRecipientSetCore rejects an invalid confirmed emailColumn", async () => {

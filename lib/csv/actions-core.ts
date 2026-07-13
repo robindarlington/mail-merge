@@ -223,6 +223,9 @@ export async function saveRecipientSetCore(
     columns_json: JSON.stringify(columns),
     row_count: rows.length,
     storage_path: storagePath,
+    // Persist the CONFIRMED column so Phase 5/6 sends against the user's chosen
+    // address column — honoring an override, not re-detecting at send time (CR-01).
+    email_column: emailColumn,
   });
 
   return {
