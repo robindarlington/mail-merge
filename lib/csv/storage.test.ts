@@ -22,7 +22,7 @@ const TMP_DIR = mkdtempSync(join(tmpdir(), "csv-storage-"));
 const UPLOADS_DIR = join(TMP_DIR, "uploads");
 process.env.UPLOADS_PATH = UPLOADS_DIR;
 
-const { writeUpload } = await import("./storage");
+const { writeUpload, readUpload } = await import("./storage");
 
 after(() => {
   rmSync(TMP_DIR, { recursive: true, force: true });
@@ -56,4 +56,22 @@ test("the written file round-trips to the original bytes", () => {
   const { storagePath } = writeUpload(bytes);
   const onDisk = readFileSync(resolve(UPLOADS_DIR, storagePath));
   assert.deepEqual(onDisk, bytes);
+});
+
+test("writeUpload then readUpload returns the exact original bytes", () => {
+  const bytes = Buffer.from("email,amount\nb@x.com,$1,000\n", "utf8");
+  const { storagePath } = writeUpload(bytes);
+  assert.deepEqual(readUpload(storagePath), bytes);
+});
+
+test("readUpload rejects a traversal path that escapes UPLOADS_DIR (V12 / T-4-TRAVERSAL)", () => {
+  assert.throws(
+    () => readUpload("../../etc/passwd"),
+    /resolved upload path escaped the uploads directory/,
+  );
+});
+
+test("readUpload accepts a relative name that stays inside UPLOADS_DIR", () => {
+  const { storagePath } = writeUpload(Buffer.from("email\nc@x.com\n", "utf8"));
+  assert.doesNotThrow(() => readUpload(storagePath));
 });
