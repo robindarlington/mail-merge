@@ -23,6 +23,13 @@ test("extractTokens tolerates inner whitespace in the braces", () => {
   assert.deepEqual(extractTokens("{{ name }} {{amount}}"), ["name", "amount"]);
 });
 
+test("extractTokens dedups a spaced column key across differing inner spacing", () => {
+  assert.deepEqual(
+    extractTokens("{{First Name}} {{ First Name }}"),
+    ["First Name"],
+  );
+});
+
 test("extractTokens over a token-free string returns []", () => {
   assert.deepEqual(extractTokens("no tokens here"), []);
 });
@@ -59,6 +66,22 @@ test("analyzeMerge never reports an unknown key as also empty (unknown wins)", (
   // `typo` is missing from row AND not a column → unknown only, never empty.
   const out = analyzeMerge("{{typo}}", {}, ["name"]);
   assert.deepEqual(out.unknown, ["typo"]);
+  assert.deepEqual(out.empty, []);
+});
+
+test("analyzeMerge classifies a blank-valued spaced column key as empty", () => {
+  const out = analyzeMerge("{{First Name}}", { "First Name": "" }, [
+    "First Name",
+  ]);
+  assert.deepEqual(out.empty, ["First Name"]);
+  assert.deepEqual(out.unknown, []);
+});
+
+test("analyzeMerge classifies an unknown spaced key as unknown", () => {
+  const out = analyzeMerge("{{Full Name}}", { "First Name": "Ada" }, [
+    "First Name",
+  ]);
+  assert.deepEqual(out.unknown, ["Full Name"]);
   assert.deepEqual(out.empty, []);
 });
 

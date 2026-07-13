@@ -220,7 +220,10 @@ export function ComposeEditor({
   function detectAutocomplete(field: FieldName, el: HTMLInputElement | HTMLTextAreaElement) {
     const caret = el.selectionStart ?? el.value.length;
     const before = el.value.slice(0, caret);
-    const match = before.match(/\{\{\s*([\w.-]*)$/);
+    // Capture any non-brace partial after `{{`, so a spaced column name
+    // (e.g. `{{First N`) keeps the popover open and filtering — a space no
+    // longer closes it. `start` stays `caret - match[0].length`.
+    const match = before.match(/\{\{([^{}]*)$/);
     if (match) {
       setAutocomplete({ field, start: caret - match[0].length, filter: match[1] });
     } else {
