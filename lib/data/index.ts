@@ -23,3 +23,10 @@ export {
   getRecipientSetForUser,
   type PersistableRecipientSet,
 } from "./recipients";
+
+export {
+  createTemplate,
+  listTemplatesForUser,
+  getTemplateForUser,
+  type PersistableTemplate,
+} from "./templates";
