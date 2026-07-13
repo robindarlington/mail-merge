@@ -139,3 +139,27 @@ None.
 ---
 *Phase: 05-test-send-confirmation-gate*
 *Completed: 2026-07-13*
+
+## Browser Verification (autonomous, 2026-07-13)
+
+Headless-browser UAT on local dev (Clerk test user + a seeded FIXTURE SMTP config
+— host `smtp.fixture.invalid`, encrypted via lib/crypto; no real send possible,
+none attempted). All PASS:
+
+1. **SMTP gate:** with no config, the whole send surface is disabled with the
+   correct help copy ("Add and verify an SMTP server in settings before you can
+   send."); enabling required only the seeded config.
+2. **Template gate:** "Review and send" stays disabled until a template is saved.
+3. **Confirm modal (TEST-02):** renders the server-authoritative summary — title
+   "Send to everyone?", consequence line, "Recipients: 3 — 1 skipped — invalid
+   email", redacted sender "From: UAT Fixture <uat@fixture.invalid>", row-1
+   sample, and both warning lines. Confirm label reads "Send to 2 recipients"
+   (sendableCount, not raw count).
+4. **Undismissable:** Escape does NOT close the modal.
+5. **Double-submit (TEST-03):** two rapid confirm clicks → one success toast
+   ("Your send is queued — 2 recipients.") + one benign "This send is already
+   queued." — and exactly ONE `campaigns` row, status `queued`, in the DB.
+
+Not exercised by automation (by design): a real SMTP test-send — reserved for
+the 05-05 human checkpoint. Housekeeping note: dev DB now contains campaign id 1
+(queued, fixture host) + the uat test user's fixture SMTP row.
