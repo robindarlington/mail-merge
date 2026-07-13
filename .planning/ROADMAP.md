@@ -152,7 +152,28 @@ Plans:
   4. The app produces a pre-send validation report aggregating invalid emails and missing merge values for the recipient set.
   5. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
-**Plans**: TBD
+**Plans**: 6 plans
+Plans:
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — Pure merge-gap engine (extractTokens/analyzeMerge) + traversal-safe readUpload read seam (TDD)
+- [ ] 04-02-PLAN.md — userId-first templates DAL (two-tenant IDOR) + shared compose subject/body zod schema (TDD)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 04-03-PLAN.md — Compose Server Actions: previewCampaign (server-authoritative validation aggregate) + saveTemplate, actions/core split (TDD)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 04-04-PLAN.md — Compose editor slice: /compose route + editor + {{-autocomplete/chips + save template (shadcn textarea/popover, sidebar nav)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 04-05-PLAN.md — Live merged preview stepper + per-row empty-value highlight + validation report (PREV-01/02/03, EDIT-03)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 04-06-PLAN.md — [CHECKPOINT] Coolify staging redeploy + compose/preview/save walkthrough + persistence smoke
 **UI hint**: yes
 
 ### Phase 5: Test-Send + Confirmation Gate
@@ -251,7 +272,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Foundation — DB, Crypto, Core Engine | 5/5 | Complete   | 2026-06-27 |
 | 2. Auth + SMTP Onboarding | 9/9 | Complete   | 2026-07-12 |
 | 3. CSV Upload + Parsing + Recipient Mapping | 5/5 | Complete   | 2026-07-13 |
-| 4. Editor + Preview + Template Save | 0/TBD | Not started | - |
+| 4. Editor + Preview + Template Save | 0/6 | Planned | - |
 | 5. Test-Send + Confirmation Gate | 0/TBD | Not started | - |
 | 6. Background Worker + Live Send + Progress + History | 0/TBD | Not started | - |
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
