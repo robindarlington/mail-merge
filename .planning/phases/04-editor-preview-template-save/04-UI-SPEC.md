@@ -169,6 +169,8 @@ Icons (lucide): `PenLine` (sidebar nav + page), `Users` (recipient-list picker a
 
 Every state must be implemented by the executor and checked by the auditor.
 
+**Focal point (Compose screen):** the Compose editor's Subject/Body fields are the primary visual anchor; the Preview stepper and Validation report are secondary, supporting surfaces. Visual weight (size, position, the single accent CTA) resolves to the editor first.
+
 | Screen / Area | States |
 |--------|--------|
 | Compose page (no recipient lists) | Empty-state callout dominant: "Upload a recipient list to start composing" + "Go to recipients" accent CTA. Compose editor is NOT shown until a list exists |
@@ -232,14 +234,14 @@ No 04-CONTEXT.md exists (this run is fully autonomous — user unavailable). Whe
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS (non-blocking FLAG — explicit focal-point line now declared under Screen States)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved (gsd-ui-checker, 2026-07-13 — 6/6 dimensions; Dimension 2 FLAG non-blocking)
 
 ---
 

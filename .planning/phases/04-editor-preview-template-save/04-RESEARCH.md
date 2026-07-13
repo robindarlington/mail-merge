@@ -345,22 +345,25 @@ const gaps = analyzeMerge(subject + "\n" + body, rows[i], columns); // highlight
 | A6 | PREV-03's "missing attachment files" clause is N/A this phase (attachments are Phase 7) | Requirements mapping | Low — the report is structured to add that dimension later |
 | A7 | Subject/body length caps enforced via a shared zod schema (values TBD, e.g. subject ≤ 998 chars per RFC 5322 line limit, body ≤ a sane cap) | Security V5 | Low — a copy/limit tweak |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Autocomplete richness (A1)**
    - What we know: A plain textarea + chips + Popover satisfies "click-to-insert / autocomplete triggered on `{{`" with zero new deps.
    - What's unclear: Whether the user wants keyboard-navigable fuzzy filtering (which points to `cmdk`).
    - Recommendation: Ship the zero-dep version; note `cmdk` as a low-cost future upgrade behind a vetting checkpoint.
+   - RESOLVED: Ship the zero-dep textarea + chips + `{{`-triggered fixed-position Popover (assumption A1). Carried into UI-SPEC U3 (chip/popover UX) and the 04-04 plan (merge-field-menu.tsx, "no cmdk" grep gate). `cmdk` deferred behind a future vetting checkpoint.
 
 2. **Preview row-fetch strategy (A4)**
    - What we know: Fetch-once + client stepping is simplest and fine at target scale.
    - What's unclear: Whether the planner wants a windowed contract now for headroom.
    - Recommendation: Fetch-once for MVP; document the windowed alternative in the action's typed contract.
+   - RESOLVED: Fetch-once, step client-side (assumption A4). Carried into UI-SPEC U5 (fetch-once preview) and the 04-03/04-05 plans (PreviewReport.rows returned once; stepper walks them with no per-step round-trip). Windowed contract documented as the later action-signature edit if scale grows.
 
 3. **Does "save a template" also create/associate a draft campaign (A2)?**
    - What we know: `campaigns` requires `recipient_set_id` + `template_id` + `smtp_config_id` — the SMTP part isn't chosen until send-time flows, so a full campaign row can't be completed in Phase 4.
    - What's unclear: Whether Phase 4 should stub a draft campaign.
    - Recommendation: No — persist a standalone template; leave campaign creation to Phase 5 where SMTP selection + the draft→queued transition live.
+   - RESOLVED: No draft campaign this phase — persist a STANDALONE userId-scoped template (assumption A2). Carried into UI-SPEC U8 (standalone template, no campaign/recipient-set FK) and the 04-03 plan (saveTemplateCore → createTemplate(userId, {subject, body}) only). Campaign creation is Phase 5's job.
 
 ## Environment Availability
 
