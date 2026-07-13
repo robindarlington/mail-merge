@@ -26,10 +26,10 @@ files_reviewed_list:
   - next.config.ts
   - docker-compose.yml
 findings:
-  critical: 1
-  warning: 10
+  critical: 0
+  warning: 9
   info: 4
-  total: 15
+  total: 13
 status: issues_found
 ---
 
@@ -239,3 +239,18 @@ if (!res.ok) {
 _Reviewed: 2026-07-13T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+
+---
+
+## Fix Pass (2026-07-13)
+
+Applied the critical finding plus the worker-config warning; the remaining
+warnings (WR-01…WR-07, WR-09, WR-10) and all Info findings are queued for a
+separate batch-hardening pass and are intentionally left open here.
+
+| Finding | Status | Commit | Notes |
+|---------|--------|--------|-------|
+| CR-01 | Fixed | `e669f36` | Added nullable `email_column` to `recipient_sets` (additive migration `0002_nappy_sabretooth.sql`), threaded it through `PersistableRecipientSet` and `saveRecipientSetCore`. The confirmed/overridden column now persists. Test-first: `actions-core.test.ts` asserts the saved row records the confirmed column, including the override case (Contact over auto-detected Email). Full suite (123 tests) and `tsc --noEmit` green. Dev DB migrated additively — the single pre-existing row keeps `email_column = NULL`. |
+| WR-08 | Fixed | `e4b5eb1` | Added `UPLOADS_PATH: /data/uploads` to the `worker` service in `docker-compose.yml`, mirroring `web`. Verified with `docker compose config`. |
+
+_Fix pass: 2026-07-13 — Robin Darlington_
