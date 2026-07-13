@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-24)
 Phase: 05 (test-send-confirmation-gate) — EXECUTING
 Plan: 1 of 5
 Status: Ready to execute
-Last activity: 2026-07-13 -- Phase 6 planning complete
+Last activity: 2026-07-13 -- Completed quick task 260713-v0t: compose-editor bug fixes (spaced merge fields + caret-anchored popover)
 
 Progress: [██████████] 100%
 
@@ -100,6 +100,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260710-dzc | Apply approved go-to-market planning updates (9 items) to .planning docs and add MIT LICENSE | 2026-07-10 | 5ab57ee | [260710-dzc-apply-approved-go-to-market-planning-upd](./quick/260710-dzc-apply-approved-go-to-market-planning-upd/) |
+| 260713-v0t | Fix compose-editor bugs: merge fields with spaces in column names + caret-following autocomplete popover | 2026-07-13 | 9d1ccf9 | [260713-v0t-fix-compose-editor-bugs-merge-fields-wit](./quick/260713-v0t-fix-compose-editor-bugs-merge-fields-wit/) |
 
 ## Deferred Items
 
