@@ -40,6 +40,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { MergeFieldMenu } from "@/components/compose/merge-field-menu";
 import { PreviewStepper } from "@/components/compose/preview-stepper";
+import { SendCard } from "@/components/campaign/send-card";
 
 /**
  * ComposeEditor — the client shell for the compose slice (EDIT-01/02/04). It
@@ -91,7 +92,15 @@ function parseColumns(columnsJson: string): string[] {
   }
 }
 
-export function ComposeEditor({ sets }: { sets: EditorSet[] }) {
+export function ComposeEditor({
+  sets,
+  hasSmtpConfig,
+  defaultTestEmail,
+}: {
+  sets: EditorSet[];
+  hasSmtpConfig: boolean;
+  defaultTestEmail: string;
+}) {
   const form = useForm<ComposeFormValues>({
     resolver: zodResolver(composeFormSchema),
     defaultValues: { subject: "", body: "" },
@@ -100,6 +109,9 @@ export function ComposeEditor({ sets }: { sets: EditorSet[] }) {
   const [selectedId, setSelectedId] = useState<string>(
     sets.length > 0 ? String(sets[0].id) : "",
   );
+  // The most-recently saved standalone template id (A1/U7 — template save stays
+  // standalone; re-saving creates a new row and updates this to the newest id).
+  const [savedTemplateId, setSavedTemplateId] = useState<number | null>(null);
   const [autocomplete, setAutocomplete] = useState<Autocomplete | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -267,6 +279,7 @@ export function ComposeEditor({ sets }: { sets: EditorSet[] }) {
     setSaving(false);
 
     if (res.ok) {
+      setSavedTemplateId(res.data.id);
       toast.success("Template saved.");
       return;
     }
@@ -469,6 +482,14 @@ export function ComposeEditor({ sets }: { sets: EditorSet[] }) {
         emailColumn={report?.emailColumn ?? null}
         invalidEmailCount={report?.invalidEmailCount ?? 0}
         loading={previewLoading}
+      />
+
+      <SendCard
+        recipientSetId={selectedId}
+        templateId={savedTemplateId}
+        recipientCount={activeSet?.row_count ?? 0}
+        hasSmtpConfig={hasSmtpConfig}
+        defaultTestEmail={defaultTestEmail}
       />
     </div>
   );
