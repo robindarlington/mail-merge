@@ -46,22 +46,69 @@ const ROW_COUNT = 12;
   writeFileSync(join(UPLOADS_DIR, CSV_NAME), lines.join("\n"), "utf8");
 }
 
+// A small, deliberately-non-trivial fixture for the confirm-summary aggregates
+// (TEST-02). Three rows:
+//   1) alice@example.com,Alice,C1  — valid email, all merge values present
+//   2) not-an-email,Bob,C2         — INVALID email (drives invalidEmailCount)
+//   3) carol@example.com,,C3        — valid email but BLANK name (drives rowsWithGaps)
+// Paired with a template referencing a {{typo}} token that is NOT a column, so the
+// unknown-token union is non-empty. Together: recipientCount 3, invalidEmailCount 1,
+// rowsWithGaps 1, unknownTokens ["typo"], sendableCount 2.
+const SUMMARY_CSV_NAME = "summary-fixture.csv";
+const SUMMARY_ROW_COUNT = 3;
+const SUMMARY_INVALID = 1;
+const SUMMARY_ROWS_WITH_GAPS = 1;
+const SUMMARY_ROW1_EMAIL = "alice@example.com";
+{
+  const lines = [
+    "email,name,code",
+    `${SUMMARY_ROW1_EMAIL},Alice,C1`,
+    "not-an-email,Bob,C2",
+    "carol@example.com,,C3",
+  ];
+  writeFileSync(join(UPLOADS_DIR, SUMMARY_CSV_NAME), lines.join("\n"), "utf8");
+}
+
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
-const { sendTestBatchChunkCore } = await import("./actions-core");
+const {
+  sendTestBatchChunkCore,
+  prepareCampaignCore,
+  buildConfirmSummaryCore,
+  enqueueCampaignCore,
+} = await import("./actions-core");
 const { TEST_SEND_CHUNK_SIZE } = await import("./schema");
 const { createRecipientSet } = await import("../data/recipients");
 const { createTemplate } = await import("../data/templates");
 const { upsertSmtpConfig } = await import("../data/smtp");
+const { getCampaignForUser } = await import("../data/campaigns");
 const { encrypt } = await import("../crypto");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 type MailTransport = import("../core").MailTransport;
 
 const USER = "user_campaign_aaaaaaaaaaaa";
+// A SECOND tenant used to prove IDOR isolation on prepare / summary / enqueue, and
+// (having NO saved SMTP config) the no_smtp_config path of prepareCampaignCore.
+const USER_B = "user_campaign_bbbbbbbbbbbb";
 const TEST_ADDRESS = "inbox@test.example.com";
 
 let recipientSetId: number;
 let templateId: number;
+// Confirm-summary fixture ids (owned by USER): the 3-row set + a {{typo}} template.
+let summarySetId: number;
+let summaryTemplateId: number;
+// USER_B's own set + template (USER_B deliberately has NO smtp config).
+let userBSetId: number;
+let userBTemplateId: number;
+
+// Count campaign rows owned by a user directly (bypasses the userId-scoped DAL) so
+// a test can assert prepareCampaignCore created NOTHING on a rejected path.
+function campaignCountFor(userId: string): number {
+  const row = connection
+    .prepare("SELECT COUNT(*) AS n FROM campaigns WHERE user_id = ?")
+    .get(userId) as { n: number };
+  return row.n;
+}
 
 /**
  * A stub transport that counts + records every verify/sendMail. It never dials a
@@ -150,8 +197,45 @@ test("seed: recipient set, template, and smtp config", async () => {
     from_name: "Example Sender",
   });
 
+  // Confirm-summary fixture (owned by USER): the 3-row set with a bad email + a
+  // blank merge value, and a template whose body references an unknown {{typo}}.
+  const [summarySet] = await createRecipientSet(USER, {
+    filename: "summary-fixture.csv",
+    columns_json: JSON.stringify(["email", "name", "code"]),
+    row_count: SUMMARY_ROW_COUNT,
+    storage_path: SUMMARY_CSV_NAME,
+    email_column: "email",
+  });
+  summarySetId = summarySet.id;
+
+  const [summaryTpl] = await createTemplate(USER, {
+    subject: "Hi {{name}}",
+    body: "Your code {{code}} {{typo}}",
+  });
+  summaryTemplateId = summaryTpl.id;
+
+  // USER_B's own set + template — but NO smtp config (drives no_smtp_config +
+  // proves cross-tenant isolation on prepare/summary/enqueue).
+  const [setB] = await createRecipientSet(USER_B, {
+    filename: "summary-fixture.csv",
+    columns_json: JSON.stringify(["email", "name", "code"]),
+    row_count: SUMMARY_ROW_COUNT,
+    storage_path: SUMMARY_CSV_NAME,
+    email_column: "email",
+  });
+  userBSetId = setB.id;
+  const [tplB] = await createTemplate(USER_B, {
+    subject: "Hi {{name}}",
+    body: "Your code {{code}}",
+  });
+  userBTemplateId = tplB.id;
+
   assert.ok(recipientSetId > 0);
   assert.ok(templateId > 0);
+  assert.ok(summarySetId > 0);
+  assert.ok(summaryTemplateId > 0);
+  assert.ok(userBSetId > 0);
+  assert.ok(userBTemplateId > 0);
 });
 
 after(() => {
@@ -303,4 +387,162 @@ test("a NaN/0/negative id fails as a validation error (never resolves a bogus ro
   );
   assert.equal(result.ok, false);
   assert.ok(!result.ok && result.error.kind === "validation");
+});
+
+// --- TEST-02 / TEST-03 confirmation-gate seam assertions ---------------------
+
+test("prepareCampaignCore creates a draft campaign from the caller's FKs (A1/U7 timing)", async () => {
+  const before = campaignCountFor(USER);
+  const result = await prepareCampaignCore(USER, { recipientSetId, templateId });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.ok(result.data.campaignId > 0, "returns the created campaign id");
+    // The row exists, is owned by the caller, wires the caller's FKs, and is draft.
+    const row = await getCampaignForUser(USER, result.data.campaignId);
+    assert.ok(row, "the draft campaign is readable by its owner");
+    assert.equal(row!.status, "draft", "a freshly prepared campaign is a draft");
+    assert.equal(row!.recipient_set_id, recipientSetId);
+    assert.equal(row!.template_id, templateId);
+    assert.ok(row!.smtp_config_id > 0, "the saved smtp config FK is wired server-side");
+  }
+  assert.equal(campaignCountFor(USER), before + 1, "exactly one draft was created");
+});
+
+test("prepareCampaignCore with NO saved SMTP config returns no_smtp_config and creates nothing", async () => {
+  const before = campaignCountFor(USER_B);
+  const result = await prepareCampaignCore(USER_B, {
+    recipientSetId: userBSetId,
+    templateId: userBTemplateId,
+  });
+  assert.equal(result.ok, false);
+  assert.ok(!result.ok && result.error.kind === "no_smtp_config");
+  assert.equal(campaignCountFor(USER_B), before, "no draft is created without an smtp config");
+});
+
+test("prepareCampaignCore is IDOR-safe: another tenant's ids return not_found, no row created", async () => {
+  const before = campaignCountFor(USER);
+  // USER tries to prepare against USER_B's recipient set → not_found (userId-scoped resolve).
+  const result = await prepareCampaignCore(USER, {
+    recipientSetId: userBSetId,
+    templateId,
+  });
+  assert.equal(result.ok, false);
+  assert.ok(!result.ok && result.error.kind === "not_found");
+  assert.equal(campaignCountFor(USER), before, "a cross-tenant prepare creates nothing");
+});
+
+test("buildConfirmSummaryCore recomputes every aggregate server-side from the campaign's FKs (TEST-02)", async () => {
+  const prepared = await prepareCampaignCore(USER, {
+    recipientSetId: summarySetId,
+    templateId: summaryTemplateId,
+  });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const campaignId = prepared.data.campaignId;
+
+  // The client passes ONLY the campaignId — no counts, no CSV, no template.
+  const result = await buildConfirmSummaryCore(USER, { campaignId });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const s = result.data;
+
+  assert.equal(s.campaignId, campaignId);
+  assert.equal(s.recipientCount, SUMMARY_ROW_COUNT, "count === rows.length");
+  assert.equal(s.invalidEmailCount, SUMMARY_INVALID, "server counts the one bad email");
+  assert.equal(s.rowsWithGaps, SUMMARY_ROWS_WITH_GAPS, "server counts the blank-merge row");
+  assert.deepEqual(s.unknownTokens, ["typo"], "the {{typo}} token is surfaced as unknown");
+  assert.equal(
+    s.sendableCount,
+    SUMMARY_ROW_COUNT - SUMMARY_INVALID,
+    "sendable === recipients − invalid",
+  );
+
+  // Sender identity comes from the REDACTED DTO (from_name <from_addr>).
+  assert.equal(s.senderIdentity, "Example Sender <noreply@example.com>");
+
+  // One merged sample for row 1: To is row1's email-column value; subject/body merged.
+  assert.equal(s.sample.to, SUMMARY_ROW1_EMAIL, "sample To is row 1's email");
+  assert.equal(s.sample.subject, "Hi Alice", "sample subject is merged for row 1");
+  assert.equal(
+    s.sample.body,
+    "Your code C1 {{typo}}",
+    "sample body is merged; the unknown token is left intact",
+  );
+});
+
+test("buildConfirmSummaryCore is server-authoritative: a known-bad email is counted even though the client sends only an id", async () => {
+  const prepared = await prepareCampaignCore(USER, {
+    recipientSetId: summarySetId,
+    templateId: summaryTemplateId,
+  });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const result = await buildConfirmSummaryCore(USER, {
+    campaignId: prepared.data.campaignId,
+  });
+  assert.equal(result.ok, true);
+  assert.ok(result.ok && result.data.invalidEmailCount >= 1, "the bad row is counted server-side");
+});
+
+test("buildConfirmSummaryCore redaction: the summary never carries the SMTP password (T-5-CRED)", async () => {
+  const prepared = await prepareCampaignCore(USER, {
+    recipientSetId: summarySetId,
+    templateId: summaryTemplateId,
+  });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const result = await buildConfirmSummaryCore(USER, {
+    campaignId: prepared.data.campaignId,
+  });
+  assert.ok(
+    !JSON.stringify(result).includes(MARKER_PASSWORD),
+    "the serialized summary must never contain the SMTP password",
+  );
+});
+
+test("buildConfirmSummaryCore IDOR: another tenant's campaignId returns not_found", async () => {
+  const prepared = await prepareCampaignCore(USER, {
+    recipientSetId: summarySetId,
+    templateId: summaryTemplateId,
+  });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  // USER_B (a different tenant) cannot summarize USER's campaign.
+  const result = await buildConfirmSummaryCore(USER_B, {
+    campaignId: prepared.data.campaignId,
+  });
+  assert.equal(result.ok, false);
+  assert.ok(!result.ok && result.error.kind === "not_found");
+});
+
+test("enqueueCampaignCore flips a draft to queued exactly once; a second confirm is already_queued (TEST-03)", async () => {
+  const prepared = await prepareCampaignCore(USER, { recipientSetId, templateId });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const campaignId = prepared.data.campaignId;
+
+  const first = await enqueueCampaignCore(USER, { campaignId });
+  assert.equal(first.ok, true, "the first confirm wins the transition");
+
+  const second = await enqueueCampaignCore(USER, { campaignId });
+  assert.equal(second.ok, false);
+  assert.ok(
+    !second.ok && second.error.kind === "already_queued",
+    "a second confirm is a benign already_queued, never a duplicate transition",
+  );
+});
+
+test("enqueueCampaignCore cross-tenant: another tenant's id is refused (already_queued) and the status is unchanged", async () => {
+  const prepared = await prepareCampaignCore(USER, { recipientSetId, templateId });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const campaignId = prepared.data.campaignId;
+
+  const result = await enqueueCampaignCore(USER_B, { campaignId });
+  assert.equal(result.ok, false);
+  assert.ok(!result.ok && result.error.kind === "already_queued", "0-row guard refuses the cross-tenant caller");
+
+  // The owner's campaign is still a draft — the cross-tenant call changed nothing.
+  const row = await getCampaignForUser(USER, campaignId);
+  assert.ok(row && row.status === "draft", "the cross-tenant enqueue left the status untouched");
 });

@@ -34,7 +34,11 @@
 
 import type { MailTransport } from "@/lib/core";
 import {
+  analyzeMerge,
+  countInvalidEmails,
   createSmtpTransport,
+  detectEmailColumn,
+  extractTokens,
   fillMessage,
   parseCsv,
   sendOne,
@@ -43,12 +47,17 @@ import {
 } from "@/lib/core";
 import { decrypt } from "@/lib/crypto";
 import {
+  createDraftCampaign,
+  enqueueCampaign as enqueueCampaignDal,
+  getCampaignForUser,
   getRecipientSetForUser,
   getSmtpConfigForUser,
   getTemplateForUser,
+  toSmtpConfigDto,
 } from "@/lib/data";
 import { readUpload } from "@/lib/csv";
 import {
+  campaignIdSchema,
   recipientSetIdSchema,
   templateIdSchema,
   testAddressSchema,
@@ -245,4 +254,235 @@ export async function sendTestBatchChunkCore(
     ok: true,
     data: { sent, failed, errors, nextOffset, done: nextOffset >= total, total },
   };
+}
+
+// --- Confirmation gate (TEST-02) + single draft→queued transition (TEST-03) ---
+//
+// Three seams wire the gate over the campaigns DAL (Plan 01):
+//   prepareCampaignCore     — creates the draft at the "review and send" moment
+//                             (decision A1/U7) from the caller's recipient set +
+//                             template + saved SMTP config (all three FKs).
+//   buildConfirmSummaryCore — the SERVER-AUTHORITATIVE review payload the modal
+//                             renders; every number is recomputed server-side from
+//                             the stored CSV + template, so a tampered client
+//                             payload can neither suppress a warning nor enqueue
+//                             past the guard. The client passes ONLY a campaignId.
+//   enqueueCampaignCore     — the atomic draft→queued transition; a 0-row result
+//                             (double-submit OR cross-tenant/not-draft) maps to the
+//                             benign already_queued, never a duplicate transition.
+
+/**
+ * The server-authoritative review payload the confirm modal renders (TEST-02).
+ * Every field is RECOMPUTED server-side from the campaign's own FKs (its stored
+ * CSV + template + redacted SMTP DTO) — the client supplies only a campaignId, so
+ * it cannot influence a single number here (T-5-TAMPER). `senderIdentity` comes
+ * from `toSmtpConfigDto`, which structurally cannot carry the password (T-5-CRED).
+ */
+export type ConfirmSummary = {
+  campaignId: number;
+  recipientCount: number;
+  senderIdentity: string;
+  sample: { to: string; subject: string; body: string };
+  invalidEmailCount: number;
+  rowsWithGaps: number;
+  unknownTokens: string[];
+  sendableCount: number;
+};
+
+/** The untrusted input for prepare (ids the client selected). */
+export type PrepareInput = { recipientSetId: unknown; templateId: unknown };
+/** The untrusted input for summary/enqueue — ONLY a campaignId after prepare. */
+export type ConfirmInput = { campaignId: unknown };
+
+/** Uniform results (never reject). */
+export type PrepareResult =
+  | { ok: true; data: { campaignId: number } }
+  | { ok: false; error: ActionError };
+export type SummaryResult =
+  | { ok: true; data: ConfirmSummary }
+  | { ok: false; error: ActionError };
+export type EnqueueResult =
+  | { ok: true; data: { campaignId: number } }
+  | { ok: false; error: ActionError };
+
+/**
+ * Prepare seam (testable): validate the selected ids → userId-scoped resolve of the
+ * recipient set + template (cross-tenant/bogus id → not_found) and the saved SMTP
+ * config (none → no_smtp_config) → create the draft campaign wiring all three FKs.
+ *
+ * This is the A1/U7 timing: the draft is created HERE (the "review and send"
+ * moment), NOT at template save — the three FKs are NOT NULL, so a draft can only
+ * exist once recipient set + template + SMTP config all do. Ownership is
+ * server-injected by the DAL (`createDraftCampaign` spreads userId LAST), so a
+ * caller can never spoof it (T-5-IDOR / T-5-TAMPER-OWNER).
+ */
+export async function prepareCampaignCore(
+  userId: string,
+  input: PrepareInput,
+): Promise<PrepareResult> {
+  const idParsed = recipientSetIdSchema.safeParse(input.recipientSetId);
+  const tplParsed = templateIdSchema.safeParse(input.templateId);
+  if (!idParsed.success || !tplParsed.success) {
+    const issues = [
+      ...(idParsed.success ? [] : idParsed.error.issues),
+      ...(tplParsed.success ? [] : tplParsed.error.issues),
+    ];
+    return { ok: false, error: { kind: "validation", issues } };
+  }
+
+  // Resolve every FK through the userId-scoped DAL — a cross-tenant (or bogus) id
+  // returns undefined → not_found, and NOTHING is created.
+  const set = await getRecipientSetForUser(userId, idParsed.data);
+  if (!set) return { ok: false, error: { kind: "not_found" } };
+  const template = await getTemplateForUser(userId, tplParsed.data);
+  if (!template) return { ok: false, error: { kind: "not_found" } };
+  const cfg = await getSmtpConfigForUser(userId);
+  if (!cfg) return { ok: false, error: { kind: "no_smtp_config" } };
+
+  try {
+    const [created] = await createDraftCampaign(userId, {
+      recipient_set_id: set.id,
+      template_id: template.id,
+      smtp_config_id: cfg.id,
+    });
+    return { ok: true, data: { campaignId: created.id } };
+  } catch (e) {
+    // raw is ALWAYS a string — never a raw Error (T-5-LOG / D-06).
+    return {
+      ok: false,
+      error: { kind: "unknown", raw: String((e as Error)?.message ?? e) },
+    };
+  }
+}
+
+/**
+ * Confirm-summary seam (testable): validate the campaignId → userId-scoped
+ * `getCampaignForUser` (cross-tenant/bogus id → not_found) → resolve the campaign's
+ * OWN recipient set / template / SMTP config off its stored FKs (never a client
+ * value) → read + parse the stored CSV server-side → recompute every gate
+ * aggregate. Returns the ConfirmSummary the modal renders.
+ *
+ * SERVER-AUTHORITATIVE (T-5-TAMPER): the client passes ONLY a campaignId; the
+ * recipient count, invalid-email count, missing-value row tally, unknown-token
+ * union, sendable count, and merged sample are ALL recomputed here from the stored
+ * CSV + template, so a tampered client payload can neither suppress a warning nor
+ * bypass the gate. `senderIdentity` is derived from `toSmtpConfigDto`, which
+ * structurally cannot carry the SMTP password (T-5-CRED).
+ */
+export async function buildConfirmSummaryCore(
+  userId: string,
+  input: ConfirmInput,
+): Promise<SummaryResult> {
+  const idParsed = campaignIdSchema.safeParse(input.campaignId);
+  if (!idParsed.success) {
+    return { ok: false, error: { kind: "validation", issues: idParsed.error.issues } };
+  }
+
+  // Owner-scoped campaign lookup — a cross-tenant/bogus id returns undefined.
+  const campaign = await getCampaignForUser(userId, idParsed.data);
+  if (!campaign) return { ok: false, error: { kind: "not_found" } };
+
+  // Resolve the campaign's OWN FKs through the userId-scoped DALs — never a client
+  // value. All three are NOT NULL, but resolve defensively.
+  const set = await getRecipientSetForUser(userId, campaign.recipient_set_id);
+  if (!set) return { ok: false, error: { kind: "not_found" } };
+  const template = await getTemplateForUser(userId, campaign.template_id);
+  if (!template) return { ok: false, error: { kind: "not_found" } };
+  const cfg = await getSmtpConfigForUser(userId);
+  if (!cfg) return { ok: false, error: { kind: "no_smtp_config" } };
+
+  // Read + parse the stored CSV server-side (storage_path came from the
+  // userId-scoped row; readUpload also enforces the traversal boundary).
+  let columns: string[];
+  let rows: Record<string, string>[];
+  try {
+    const parsed = parseCsv(readUpload(set.storage_path));
+    if (hasStructuralParseError(parsed.parseErrors)) {
+      return { ok: false, error: { kind: "parse_error" } };
+    }
+    columns = parsed.columns;
+    rows = parsed.rows;
+  } catch (e) {
+    return {
+      ok: false,
+      error: { kind: "unknown", raw: String((e as Error)?.message ?? e) },
+    };
+  }
+
+  // The confirmed column is BOTH the sample's "To" and the invalid-count column,
+  // so they can never diverge (T-4-DIVERGE parity).
+  const emailColumn = set.email_column ?? detectEmailColumn(columns, rows);
+  const invalidEmailCount = emailColumn ? countInvalidEmails(rows, emailColumn) : 0;
+
+  // Redacted sender identity — the DTO structurally omits the password triple.
+  const dto = toSmtpConfigDto(cfg);
+  const senderIdentity = dto.from_name
+    ? `${dto.from_name} <${dto.from_addr}>`
+    : dto.from_addr;
+
+  // One merged sample for row 1 (empty/zero-safe when the CSV has no rows). The
+  // merged fields are plain strings; the UI (Plan 04) renders them as escaped text.
+  const firstRow = rows[0] ?? {};
+  const merged = fillMessage(
+    { subject: template.subject, body: template.body },
+    firstRow,
+  );
+  const sample = {
+    to: emailColumn ? (firstRow[emailColumn] ?? "") : "",
+    subject: merged.subject,
+    body: merged.body,
+  };
+
+  // Merge-gap aggregates. rowsWithGaps counts rows with ≥1 blank merge value;
+  // unknownTokens is row-independent (a token is unknown iff it is not a column),
+  // so a single pass over the columns suffices and is cheaper than per-row union.
+  const mergeSource = `${template.subject}\n${template.body}`;
+  let rowsWithGaps = 0;
+  for (const row of rows) {
+    if (analyzeMerge(mergeSource, row, columns).empty.length > 0) rowsWithGaps++;
+  }
+  const columnSet = new Set(columns);
+  const unknownTokens = extractTokens(mergeSource).filter(
+    (token) => !columnSet.has(token),
+  );
+
+  const recipientCount = rows.length;
+  const sendableCount = recipientCount - invalidEmailCount;
+
+  return {
+    ok: true,
+    data: {
+      campaignId: idParsed.data,
+      recipientCount,
+      senderIdentity,
+      sample,
+      invalidEmailCount,
+      rowsWithGaps,
+      unknownTokens,
+      sendableCount,
+    },
+  };
+}
+
+/**
+ * Enqueue seam (testable): validate the campaignId → call the DAL's atomic
+ * `enqueueCampaign(userId, id)` (single `UPDATE ... WHERE status='draft' AND
+ * user_id=?`). The affected-row count IS the idempotency + IDOR signal: `!== 1`
+ * (a double-submit on an already-queued row OR a cross-tenant/not-draft caller)
+ * maps to the benign `already_queued`, never a second transition (TEST-03 /
+ * T-5-DUPE / T-5-IDOR).
+ */
+export async function enqueueCampaignCore(
+  userId: string,
+  input: ConfirmInput,
+): Promise<EnqueueResult> {
+  const idParsed = campaignIdSchema.safeParse(input.campaignId);
+  if (!idParsed.success) {
+    return { ok: false, error: { kind: "validation", issues: idParsed.error.issues } };
+  }
+  const flipped = await enqueueCampaignDal(userId, idParsed.data);
+  if (flipped.length !== 1) {
+    return { ok: false, error: { kind: "already_queued" } };
+  }
+  return { ok: true, data: { campaignId: idParsed.data } };
 }
