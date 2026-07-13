@@ -107,3 +107,23 @@ None — no new security surface beyond the plan's threat model.
 ---
 *Phase: 04-editor-preview-template-save*
 *Completed: 2026-07-13*
+
+## Browser Verification (autonomous, 2026-07-13)
+
+Headless-browser UAT on local dev against a purpose-built gap fixture
+(test-gaps.csv: 3 rows — one empty Company cell, one invalid email). All PASS:
+
+1. **PREV-01:** stepper renders "Recipient 1 of 3" with server-resolved
+   `To: eve@example.com`, merged Subject ("Welcome Eve Empty") and merged body
+   against the real row; Next steps to "Recipient 2 of 3 / frank@example.com".
+2. **PREV-02:** the empty-Company row shows "This recipient is missing a value
+   for Company. That spot will be blank in their email."
+3. **PREV-03 (reactive):** typing `{{typo}}` surfaced "Your template uses
+   {{typo}}, which isn't a column…" WHILE composing (select-then-type flow —
+   the exact scenario the plan-checker's second blocker was about); clearing the
+   token removed the warning without any refetch. Aggregates correct: server
+   "1 of 3 rows don't have a valid email address" + client "1 of 3 rows are
+   missing a value for at least one merge field."
+4. **EDIT-03:** subject AND body both personalized in the preview.
+
+Screenshot: compose-preview.png (session scratchpad).
