@@ -21,7 +21,7 @@ export {
 } from "./schema";
 export type { UploadFile, ConfirmColumnValues } from "./schema";
 
-export { writeUpload } from "./storage";
+export { writeUpload, readUpload } from "./storage";
 
 export type {
   ParseSummary,

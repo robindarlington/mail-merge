@@ -13,8 +13,8 @@
  * dev→container boundary).
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -33,4 +33,24 @@ export function writeUpload(bytes: Buffer): { storagePath: string } {
   const name = `${randomUUID()}.csv`; // opaque — user filename never in the path
   writeFileSync(resolve(UPLOADS_DIR, name), bytes);
   return { storagePath: name }; // store RELATIVE; resolve at read time (Pitfall 4)
+}
+
+/**
+ * Read a previously-stored CSV back off disk, returning its raw bytes.
+ *
+ * SECURITY (V12 / T-4-TRAVERSAL): `storagePath` is resolved against UPLOADS_DIR
+ * and the result is prefix-checked, so a traversal name like `../../etc/passwd`
+ * (which would resolve outside the dir) is rejected before any read.
+ *
+ * IDOR (Pitfall 3 / T-4-IDOR-READ): `storagePath` MUST originate from a
+ * userId-scoped `getRecipientSetForUser` row — NEVER from the client. This
+ * function trusts its caller to have already tenant-scoped the path; it only
+ * enforces the traversal boundary, not ownership.
+ */
+export function readUpload(storagePath: string): Buffer {
+  const full = resolve(UPLOADS_DIR, storagePath);
+  if (full !== UPLOADS_DIR && !full.startsWith(UPLOADS_DIR + sep)) {
+    throw new Error("resolved upload path escaped the uploads directory");
+  }
+  return readFileSync(full);
 }
