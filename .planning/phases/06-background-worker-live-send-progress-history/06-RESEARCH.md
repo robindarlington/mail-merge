@@ -365,20 +365,23 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 | A8 | Phase 6 worker sends **text-only, no attachments** (attachments are Phase 7); `attachments` table untouched here | scope | Low — matches roadmap (ATCH-* = Phase 7). |
 | A9 | New nav slots **"Campaigns"/"History"** added to `components/app-sidebar.tsx` (the file already documents these as future slots) | structure | Low — cosmetic/navigation. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Duplicate-address policy (ties to A3).**
    - What we know: `UNIQUE(campaign_id, to_addr)` de-duplicates; target use case (credential delivery) is one-per-address.
    - What's unclear: whether any real campaign needs two emails to the same address with different merge data.
    - Recommendation: keep the constraint, reconcile `total`, surface a duplicate count in the confirm/summary; revisit only if a use case appears.
+   - RESOLVED: adopted as recommended — 06-02-PLAN.md Task 1 (`materializeSendRecords`: ON CONFLICT DO NOTHING dedup + `total` reconciliation).
 
 2. **Whole-campaign `verify()` on resume.**
    - What we know: Phase 5 test-send runs `verify()` once on chunk 0. The worker should `verify()` before the first send of a run.
    - What's unclear: on a *resumed* run (re-claim after crash) should it re-`verify()`? 
    - Recommendation: `verify()` once per worker *run* of a campaign (i.e. after each claim), before processing pending rows — cheap and catches a now-broken SMTP config. A verify failure → campaign `failed` (A5), no rows sent this run.
+   - RESOLVED: adopted as recommended — 06-02-PLAN.md Task 2 (`runCampaign`: verify-once-per-run after each claim; verify failure → campaign `failed`, no rows sent).
 
 3. **Poll interval + stop condition tuning (ties to A1).**
    - Recommendation: 2s while `running`/`queued`; stop polling on `completed`/`failed`. Confirm acceptable UI latency.
+   - RESOLVED: adopted as recommended — 06-05-PLAN.md Task 3 (`progress-panel.tsx`: 2s poll, stops on terminal status); UI latency acceptance confirmed at the 06-07 staging checkpoint.
 
 ## Environment Availability
 
