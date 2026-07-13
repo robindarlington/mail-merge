@@ -161,7 +161,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 04-03-PLAN.md — Compose Server Actions: previewCampaign (server-authoritative validation aggregate) + saveTemplate, actions/core split (TDD)
+- [x] 04-03-PLAN.md — Compose Server Actions: previewCampaign (server-authoritative validation aggregate) + saveTemplate, actions/core split (TDD)
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -272,7 +272,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Foundation — DB, Crypto, Core Engine | 5/5 | Complete   | 2026-06-27 |
 | 2. Auth + SMTP Onboarding | 9/9 | Complete   | 2026-07-12 |
 | 3. CSV Upload + Parsing + Recipient Mapping | 5/5 | Complete   | 2026-07-13 |
-| 4. Editor + Preview + Template Save | 2/6 | In Progress|  |
+| 4. Editor + Preview + Template Save | 3/6 | In Progress|  |
 | 5. Test-Send + Confirmation Gate | 0/TBD | Not started | - |
 | 6. Background Worker + Live Send + Progress + History | 0/TBD | Not started | - |
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
