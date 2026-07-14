@@ -28,6 +28,7 @@ import {
   text,
   blob,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 /** unixepoch-seconds default for INTEGER timestamp columns. */
@@ -56,12 +57,26 @@ export const smtp_configs = sqliteTable(
     from_name: text("from_name"),
     // Set when transport.verify() succeeded during onboarding.
     verified_at: integer("verified_at"),
+    // User-facing name for this server (many-per-user, 06.1). Nullable until the
+    // 0004 backfill stamps surviving pre-06.1 rows with 'Default'.
+    label: text("label"),
+    // Exactly one default server per user — the partial unique index below is the
+    // structural backstop. Integer-backed boolean (copies the `secure` idiom).
+    is_default: integer("is_default", { mode: "boolean" }).notNull().default(false),
+    // Soft-delete tombstone: set on delete so the row survives for campaign
+    // history while disappearing from list/by-id reads. Nullable timestamp idiom
+    // (copies `verified_at`).
+    deleted_at: integer("deleted_at"),
     created_at: integer("created_at").notNull().default(unixNow),
   },
-  // One SMTP config per user (D-09). This UNIQUE index is the on-disk conflict
-  // target that makes `upsertSmtpConfig`'s onConflictDoUpdate(target userId)
-  // atomic instead of a read-then-insert race (Pattern 5 / T-2-DUPE).
-  (t) => [unique("smtp_configs_user_uq").on(t.userId)],
+  // Many named SMTP configs per user (06.1) — the old single-row unique index is
+  // gone. A PARTIAL unique index enforces at most one is_default=1 row per user;
+  // non-default rows are unconstrained, so a user can hold arbitrarily many.
+  (t) => [
+    uniqueIndex("smtp_configs_user_default_uq")
+      .on(t.userId)
+      .where(sql`${t.is_default} = 1`),
+  ],
 );
 
 /**
