@@ -9,8 +9,13 @@
  */
 
 export {
-  getSmtpConfigForUser,
-  upsertSmtpConfig,
+  listSmtpConfigsForUser,
+  getSmtpConfigByIdForUser,
+  createSmtpConfig,
+  updateSmtpConfigById,
+  setDefaultSmtpConfig,
+  softDeleteSmtpConfig,
+  countActiveSendsForConfig,
   updateFromFields,
   toSmtpConfigDto,
   type PersistableConfig,

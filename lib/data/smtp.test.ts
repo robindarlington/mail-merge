@@ -1,14 +1,18 @@
 /**
- * Cross-tenant isolation tests for the SMTP DAL (AUTH-02 / T-2-IDOR).
+ * Behavioral + cross-tenant isolation tests for the id-scoped SMTP DAL
+ * (AUTH-02 / T-061-01 IDOR, T-061-02 DTO redaction, T-061-04 one-default,
+ * 06.1 multi-server + soft-delete).
  *
- * These prove the tenancy invariant structurally: User A can never read User B's
- * config, and an upsert performed as User A never mutates User B's row.
+ * These prove the tenancy + safety invariants structurally: a config is fetchable
+ * ONLY when owner-scoped and not soft-deleted, multiple configs per user coexist,
+ * exactly one default per user survives a setDefault, a soft-deleted row vanishes
+ * from reads while its row persists, and the DTO never carries the ciphertext.
  *
  * Pattern (mirrors lib/crypto/crypto.test.ts): set a temp `DATABASE_PATH` and a
  * deterministic `CREDENTIAL_ENC_KEY` BEFORE dynamically importing anything that
  * transitively opens the DB (lib/db/client.ts resolves DATABASE_PATH at module
  * load), then build the schema on that throwaway file via the committed
- * migrations.
+ * migrations (0000–0004, which now yield the new columns + partial unique index).
  */
 
 import { test, before, after } from "node:test";
@@ -29,8 +33,13 @@ process.env.CREDENTIAL_ENC_KEY = Buffer.from(
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
 const {
-  getSmtpConfigForUser,
-  upsertSmtpConfig,
+  listSmtpConfigsForUser,
+  getSmtpConfigByIdForUser,
+  createSmtpConfig,
+  updateSmtpConfigById,
+  setDefaultSmtpConfig,
+  softDeleteSmtpConfig,
+  countActiveSendsForConfig,
   updateFromFields,
   toSmtpConfigDto,
 } = await import("./smtp");
@@ -41,9 +50,10 @@ const USER_A = "user_aaaaaaaaaaaaaaaaaaaaaa";
 const USER_B = "user_bbbbbbbbbbbbbbbbbbbbbb";
 
 /** Build a PersistableConfig with an encrypted marker password for `host`. */
-function persistable(host: string, password: string) {
+function persistable(host: string, password: string, label = host) {
   const { enc, iv, tag } = encrypt(password);
   return {
+    label,
     host,
     port: 587,
     secure: false,
@@ -56,21 +66,11 @@ function persistable(host: string, password: string) {
   };
 }
 
-before(async () => {
+before(() => {
   // Build all six tables (and indexes) on the temp DB from committed migrations.
+  // The 0003/0004 migrations supply label/is_default/deleted_at + the partial
+  // one-default-per-user unique index — no manual index creation needed.
   migrate(db, { migrationsFolder: "./drizzle" });
-  // The single-row-per-user UNIQUE index is what makes onConflictDoUpdate(target
-  // userId) a valid conflict target. It is authored as a committed migration in
-  // this same plan (Task 2); ensure it idempotently so this test is order- and
-  // migration-generation-independent.
-  connection
-    .prepare(
-      "CREATE UNIQUE INDEX IF NOT EXISTS smtp_configs_user_uq ON smtp_configs(user_id)",
-    )
-    .run();
-
-  await upsertSmtpConfig(USER_A, persistable("host-a.example", "A-secret"));
-  await upsertSmtpConfig(USER_B, persistable("host-b.example", "B-secret"));
 });
 
 after(() => {
@@ -78,90 +78,167 @@ after(() => {
   rmSync(TMP_DIR, { recursive: true, force: true });
 });
 
-test("getSmtpConfigForUser returns only the caller's own row", async () => {
-  const a = await getSmtpConfigForUser(USER_A);
-  const b = await getSmtpConfigForUser(USER_B);
-  assert.ok(a, "User A should have a config");
-  assert.ok(b, "User B should have a config");
-  assert.equal(a.host, "host-a.example");
-  assert.equal(b.host, "host-b.example");
-  // Structural isolation: A's row is never B's row.
-  assert.notEqual(a.userId, b.userId);
+test("createSmtpConfig sets userId server-side, stamps verified_at, and allows multiple rows", async () => {
+  const [first] = await createSmtpConfig(USER_A, persistable("host-a.example", "A-secret", "Primary"));
+  assert.equal(first.userId, USER_A);
+  assert.equal(first.label, "Primary");
+  assert.ok(first.verified_at, "verified_at should be stamped on create");
+  assert.equal(first.is_default, false, "is_default defaults to false");
+
+  // A SECOND config for the SAME user succeeds — multi-row model.
+  const [second] = await createSmtpConfig(USER_A, persistable("host-a2.example", "A2-secret", "Secondary"));
+  assert.notEqual(second.id, first.id);
+
+  const list = await listSmtpConfigsForUser(USER_A);
+  assert.equal(list.length, 2, "both configs belong to USER_A");
 });
 
-test("a user with no config gets undefined, never another tenant's row", async () => {
-  const none = await getSmtpConfigForUser("user_nonexistent_zzzzzzzzzz");
-  assert.equal(none, undefined);
+test("getSmtpConfigByIdForUser refuses a cross-tenant id (IDOR → undefined)", async () => {
+  const [bRow] = await createSmtpConfig(USER_B, persistable("host-b.example", "B-secret", "B-Primary"));
+
+  // User A asking for User B's id gets nothing back.
+  const stolen = await getSmtpConfigByIdForUser(USER_A, bRow.id);
+  assert.equal(stolen, undefined);
+
+  // The owner still resolves their own row.
+  const own = await getSmtpConfigByIdForUser(USER_B, bRow.id);
+  assert.ok(own);
+  assert.equal(own.host, "host-b.example");
 });
 
-test("upsert as User A leaves User B's row completely unchanged", async () => {
-  const before = await getSmtpConfigForUser(USER_B);
-  assert.ok(before);
-
-  // Mutate A repeatedly with new values.
-  await upsertSmtpConfig(USER_A, persistable("host-a2.example", "A-rotated"));
-
-  const a = await getSmtpConfigForUser(USER_A);
-  const after = await getSmtpConfigForUser(USER_B);
-  assert.ok(a);
-  assert.ok(after);
-
-  // A changed...
-  assert.equal(a.host, "host-a2.example");
-  // ...B did not: same row id, same host, same encrypted password bytes.
-  assert.equal(after.id, before.id);
-  assert.equal(after.host, before.host);
-  assert.deepEqual(
-    Buffer.from(after.password_enc as Uint8Array),
-    Buffer.from(before.password_enc as Uint8Array),
-  );
+test("listSmtpConfigsForUser returns default row first, only for the owner", async () => {
+  const list = await listSmtpConfigsForUser(USER_A);
+  // Make the second config the default, then re-list.
+  await setDefaultSmtpConfig(USER_A, list[1].id);
+  const ordered = await listSmtpConfigsForUser(USER_A);
+  assert.equal(ordered[0].id, list[1].id, "default row sorts first");
+  assert.ok(ordered[0].is_default, "first row is the default");
+  assert.ok(!ordered[1].is_default, "non-default row follows");
+  // No USER_B rows leak into USER_A's list.
+  assert.ok(ordered.every((r) => r.userId === USER_A));
 });
 
-test("upsert is single-row-per-user (no duplicate row created)", async () => {
-  const rows = connection
-    .prepare("SELECT COUNT(*) AS n FROM smtp_configs WHERE user_id = ?")
-    .get(USER_A) as { n: number };
-  assert.equal(rows.n, 1, "exactly one row per user");
+test("setDefaultSmtpConfig keeps exactly one default and is a no-op cross-tenant", async () => {
+  const list = await listSmtpConfigsForUser(USER_A);
+  // Flip the default to the OTHER row.
+  const target = list.find((r) => !r.is_default)!;
+  const won = await setDefaultSmtpConfig(USER_A, target.id);
+  assert.equal(won.length, 1, "setDefault reports the winning row");
+
+  const after = await listSmtpConfigsForUser(USER_A);
+  const defaults = after.filter((r) => r.is_default);
+  assert.equal(defaults.length, 1, "exactly one default per user");
+  assert.equal(defaults[0].id, target.id);
+
+  // Cross-tenant setDefault changes nothing and returns length 0.
+  const bList = await listSmtpConfigsForUser(USER_B);
+  const noop = await setDefaultSmtpConfig(USER_A, bList[0].id);
+  assert.equal(noop.length, 0, "cross-tenant setDefault is a no-op");
+  const bAfter = await getSmtpConfigByIdForUser(USER_B, bList[0].id);
+  assert.equal(bAfter!.is_default, bList[0].is_default, "USER_B row untouched");
+});
+
+test("updateSmtpConfigById updates only the owner's row and re-stamps verified_at", async () => {
+  const list = await listSmtpConfigsForUser(USER_A);
+  const row = list[0];
+  const won = await updateSmtpConfigById(USER_A, row.id, persistable("host-a-updated.example", "rotated", "Renamed"));
+  assert.equal(won.length, 1);
+  const reread = await getSmtpConfigByIdForUser(USER_A, row.id);
+  assert.equal(reread!.host, "host-a-updated.example");
+  assert.equal(reread!.label, "Renamed");
+
+  // Cross-tenant update is refused (length 0).
+  const bList = await listSmtpConfigsForUser(USER_B);
+  const refused = await updateSmtpConfigById(USER_A, bList[0].id, persistable("hax.example", "hax", "hax"));
+  assert.equal(refused.length, 0);
+});
+
+test("softDeleteSmtpConfig hides the row from reads but preserves it for history", async () => {
+  const [victim] = await createSmtpConfig(USER_A, persistable("host-a-del.example", "del-secret", "Disposable"));
+  const won = await softDeleteSmtpConfig(USER_A, victim.id);
+  assert.equal(won.length, 1);
+
+  // Invisible to owner-scoped reads.
+  assert.equal(await getSmtpConfigByIdForUser(USER_A, victim.id), undefined);
+  const list = await listSmtpConfigsForUser(USER_A);
+  assert.ok(!list.some((r) => r.id === victim.id), "deleted row absent from list");
+
+  // But the row SURVIVES on disk (history) with deleted_at set and is_default cleared.
+  const raw = connection
+    .prepare("SELECT deleted_at, is_default FROM smtp_configs WHERE id = ?")
+    .get(victim.id) as { deleted_at: number | null; is_default: number };
+  assert.ok(raw.deleted_at, "deleted_at stamped, row persists");
+  assert.equal(raw.is_default, 0, "is_default cleared on soft-delete");
+
+  // A second soft-delete of the same id is a no-op (already deleted).
+  const again = await softDeleteSmtpConfig(USER_A, victim.id);
+  assert.equal(again.length, 0);
+});
+
+test("countActiveSendsForConfig counts only the owner's queued/running campaigns", async () => {
+  const [cfg] = await createSmtpConfig(USER_A, persistable("host-a-inuse.example", "inuse", "InUse"));
+
+  // Seed the FK prerequisites (recipient_set + template) for a campaign.
+  const rsId = (
+    connection
+      .prepare(
+        "INSERT INTO recipient_sets (user_id, filename, columns_json, row_count, storage_path) VALUES (?, ?, ?, ?, ?) RETURNING id",
+      )
+      .get(USER_A, "r.csv", "[]", 1, "/tmp/r.csv") as { id: number }
+  ).id;
+  const tplId = (
+    connection
+      .prepare(
+        "INSERT INTO templates (user_id, subject, body) VALUES (?, ?, ?) RETURNING id",
+      )
+      .get(USER_A, "Subj", "Body") as { id: number }
+  ).id;
+
+  const insertCampaign = (status: string) =>
+    connection
+      .prepare(
+        "INSERT INTO campaigns (user_id, recipient_set_id, template_id, smtp_config_id, status) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(USER_A, rsId, tplId, cfg.id, status);
+
+  // No campaigns yet → zero.
+  assert.equal(countActiveSendsForConfig(USER_A, cfg.id), 0);
+
+  insertCampaign("queued");
+  insertCampaign("running");
+  insertCampaign("completed"); // terminal — must NOT be counted
+  insertCampaign("draft"); // not yet enqueued — must NOT be counted
+
+  assert.equal(countActiveSendsForConfig(USER_A, cfg.id), 2, "only queued+running count");
+  // Cross-tenant caller sees none of USER_A's active sends.
+  assert.equal(countActiveSendsForConfig(USER_B, cfg.id), 0);
 });
 
 test("updateFromFields updates only from_* and never touches verified_at", async () => {
-  const before = await getSmtpConfigForUser(USER_A);
-  assert.ok(before);
+  const list = await listSmtpConfigsForUser(USER_A);
+  const before = list[0];
   const priorVerifiedAt = before.verified_at;
-  const priorHost = before.host;
 
   await updateFromFields(USER_A, {
-    from_addr: "changed@host-a2.example",
+    from_addr: "changed@example.com",
     from_name: "Changed Name",
   });
 
-  const after = await getSmtpConfigForUser(USER_A);
+  const after = await getSmtpConfigByIdForUser(USER_A, before.id);
   assert.ok(after);
-  assert.equal(after.from_addr, "changed@host-a2.example");
+  assert.equal(after.from_addr, "changed@example.com");
   assert.equal(after.from_name, "Changed Name");
-  // verified_at is untouched (D-08) and connection fields are unchanged.
-  assert.equal(after.verified_at, priorVerifiedAt);
-  assert.equal(after.host, priorHost);
+  assert.equal(after.verified_at, priorVerifiedAt, "verified_at untouched (D-08)");
 });
 
-test("updateFromFields for User A does not affect User B", async () => {
-  const before = await getSmtpConfigForUser(USER_B);
-  assert.ok(before);
-  await updateFromFields(USER_A, {
-    from_addr: "again@host-a2.example",
-    from_name: "Again",
-  });
-  const after = await getSmtpConfigForUser(USER_B);
-  assert.ok(after);
-  assert.equal(after.from_addr, before.from_addr);
-  assert.equal(after.from_name, before.from_name);
-});
-
-test("toSmtpConfigDto exposes no password material for a real stored row", async () => {
-  const row = await getSmtpConfigForUser(USER_B);
-  assert.ok(row);
+test("toSmtpConfigDto carries id/label/is_default and never the encrypted triple", async () => {
+  const list = await listSmtpConfigsForUser(USER_B);
+  const row = list[0];
   const dto = toSmtpConfigDto(row);
   const keys = Object.keys(dto);
-  assert.ok(!keys.some((k) => k.startsWith("password")));
+  assert.ok(keys.includes("id"));
+  assert.ok(keys.includes("label"));
+  assert.ok(keys.includes("is_default"));
+  assert.ok(!keys.some((k) => k.startsWith("password")), "no password material");
   assert.ok(!JSON.stringify(dto).includes("B-secret"));
 });
