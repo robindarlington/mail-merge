@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 6.1 UI-SPEC approved
-last_updated: "2026-07-14T15:43:33.224Z"
-last_activity: 2026-07-14 -- Phase 6.1 planning complete
+last_updated: "2026-07-14T15:44:19.616Z"
+last_activity: 2026-07-14 -- Phase 06.1 execution started
 progress:
   total_phases: 10
   completed_phases: 3
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-24)
 
 **Core value:** A signed-in user can reliably send a personalized email to every row of their CSV, using their own validated SMTP, with confidence (preview + test-send) and a record of exactly what was sent and to whom.
-**Current focus:** Phase 05 — test-send-confirmation-gate
+**Current focus:** Phase 06.1 — Multiple SMTP servers per account
 
 ## Current Position
 
-Phase: 05 (test-send-confirmation-gate) — EXECUTING
-Plan: 1 of 5
-Status: Ready to execute
-Last activity: 2026-07-14 -- Phase 6.1 planning complete
+Phase: 06.1 (Multiple SMTP servers per account) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 06.1
+Last activity: 2026-07-14 -- Phase 06.1 execution started
 
 Progress: [██████████] 100%
 

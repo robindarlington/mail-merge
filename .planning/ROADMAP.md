@@ -258,12 +258,12 @@ Plans:
   3. Test-send (and any future send path) loads the config by the campaign's `smtp_config_id`, scoped to the owning user — a cross-tenant or unknown config id is not_found (IDOR-safe).
   4. Existing accounts migrate with zero user action: the current unique-per-user row survives the migration and remains the default server.
   5. Deleting a server never corrupts campaign history (past campaigns keep their record), and a server in use by a queued/running campaign cannot be silently removed.
-**Plans:** 4 plans in 3 waves
+**Plans:** 3/4 plans executed
 
 Plans:
-- [ ] 06.1-01-PLAN.md — Data foundation: schema migration (multi-row + partial-unique default + soft-delete) + id-scoped DAL (wave 1)
-- [ ] 06.1-02-PLAN.md — SMTP server backend: label + create/update/set-default/soft-delete actions + WR-09 host-change gate + in-use guard (wave 2)
-- [ ] 06.1-03-PLAN.md — Campaign server selection: thread smtp_config_id through prepare/test-send/confirm + compose picker + Phase 6 load contract (wave 2)
+- [x] 06.1-01-PLAN.md — Data foundation: schema migration (multi-row + partial-unique default + soft-delete) + id-scoped DAL (wave 1)
+- [x] 06.1-02-PLAN.md — SMTP server backend: label + create/update/set-default/soft-delete actions + WR-09 host-change gate + in-use guard (wave 2)
+- [x] 06.1-03-PLAN.md — Campaign server selection: thread smtp_config_id through prepare/test-send/confirm + compose picker + Phase 6 load contract (wave 2)
 - [ ] 06.1-04-PLAN.md — Settings multi-server UI: per-server list, wizard label + WR-09 gate, destructive delete + no-default state, dashboard readiness (wave 3)
 
 ### Phase 7: Per-Row Attachments
