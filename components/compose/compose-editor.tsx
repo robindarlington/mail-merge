@@ -12,6 +12,7 @@ import {
   type PreviewReport,
 } from "@/lib/compose/actions";
 import { composeFormSchema, type ComposeFormValues } from "@/lib/compose/schema";
+import type { SmtpConfigDto } from "@/lib/data";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -93,13 +94,24 @@ function parseColumns(columnsJson: string): string[] {
   }
 }
 
+/** The initial server selection (06.1 multi-server, CONTEXT.md LOCKED): the account
+ *  default when present, else the sole verified server when exactly one exists
+ *  (zero-click auto-select — NOT a silent promote), else null (the no-default,
+ *  multiple-servers "choose a server" state). */
+function initialSmtpConfigId(configs: SmtpConfigDto[]): number | null {
+  const preferred = configs.find((c) => c.is_default);
+  if (preferred) return preferred.id;
+  if (configs.length === 1) return configs[0].id;
+  return null;
+}
+
 export function ComposeEditor({
   sets,
-  hasSmtpConfig,
+  configs,
   defaultTestEmail,
 }: {
   sets: EditorSet[];
-  hasSmtpConfig: boolean;
+  configs: SmtpConfigDto[];
   defaultTestEmail: string;
 }) {
   const form = useForm<ComposeFormValues>({
@@ -109,6 +121,11 @@ export function ComposeEditor({
 
   const [selectedId, setSelectedId] = useState<string>(
     sets.length > 0 ? String(sets[0].id) : "",
+  );
+  // The chosen verified SMTP server the campaign sends through (proposed to the
+  // server, which owner-re-resolves it). Auto-selected per initialSmtpConfigId.
+  const [smtpConfigId, setSmtpConfigId] = useState<number | null>(() =>
+    initialSmtpConfigId(configs),
   );
   // The most-recently saved standalone template id (A1/U7 — template save stays
   // standalone; re-saving creates a new row and updates this to the newest id).
@@ -525,7 +542,9 @@ export function ComposeEditor({
         recipientSetId={selectedId}
         templateId={savedTemplateId}
         recipientCount={activeSet?.row_count ?? 0}
-        hasSmtpConfig={hasSmtpConfig}
+        configs={configs}
+        smtpConfigId={smtpConfigId}
+        onSelect={setSmtpConfigId}
         defaultTestEmail={defaultTestEmail}
       />
     </div>
