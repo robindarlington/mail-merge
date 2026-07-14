@@ -7,9 +7,9 @@ import { AlertCircle, CheckCircle2, ChevronDown, Loader2 } from "lucide-react";
 
 import type { SmtpFormValues } from "@/lib/smtp/schema";
 import {
-  verifyAndSave,
   updateFromFields,
   type ActionError,
+  type ActionResult,
 } from "@/lib/smtp/actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -24,10 +24,12 @@ import {
  * (D-06) and the one-click TLS switch (D-05). Rendered alongside step 1's fields
  * so a failure can point at the exact control that's wrong.
  *
- * "Verify & continue" runs `verifyAndSave(values)`: a clean verify saves the
- * encrypted config and advances to test-send; a failure saves NOTHING and maps
- * `error.field` onto the form's controls via `setError`. A TLS-shaped failure
- * that carries a `suggestion` offers a one-click "Switch to {mode} & verify".
+ * "Verify & continue" runs the wizard-supplied `persist(values)` (createServer /
+ * updateServer): a clean verify saves the encrypted config and advances to
+ * test-send; a failure saves NOTHING and maps `error.field` onto the form's
+ * controls via `setError`. A TLS-shaped failure that carries a `suggestion` offers
+ * a one-click "Switch to {mode} & verify". The WR-09 client gate blocks a
+ * changed-host + blank-password save before any dial.
  *
  * EDIT shortcut (D-08): when only the sender-identity fields changed
  * (`connectionDirty === false`), the primary action becomes "Save changes",
@@ -55,11 +57,16 @@ function switchLabel(suggestion: "starttls" | "implicit"): string {
   return suggestion === "starttls" ? "STARTTLS" : "implicit SSL";
 }
 
+/** A minimal shape for the zod-style validation issues an action returns. */
+type FieldIssue = { path?: unknown[]; message?: string };
+
 export function StepVerify({
   form,
   isEdit,
   connectionDirty,
   pending,
+  persist,
+  hostChangeGate,
   onPendingChange,
   onVerified,
   onComplete,
@@ -68,6 +75,10 @@ export function StepVerify({
   isEdit: boolean;
   connectionDirty: boolean;
   pending: boolean;
+  /** verify-then-save via the id-scoped create/update action (owned by the wizard). */
+  persist: (values: SmtpFormValues) => Promise<ActionResult>;
+  /** WR-09 client gate: returns the field message to anchor on the password, else null. */
+  hostChangeGate: (values: SmtpFormValues) => string | null;
   onPendingChange: (v: boolean) => void;
   onVerified: () => void;
   onComplete: () => void;
@@ -90,13 +101,54 @@ export function StepVerify({
             "Too many verification attempts. Wait a minute, then try again.",
         });
         return;
-      case "validation":
-        setDetail({
-          message: "Some details are invalid. Check the highlighted fields.",
-        });
+      case "validation": {
+        // Anchor server-side field issues on their control — this surfaces the
+        // WR-09 host-change password message and the label-uniqueness error on the
+        // exact field (keeping the client + server gates in lockstep).
+        const issues = Array.isArray(error.issues)
+          ? (error.issues as FieldIssue[])
+          : [];
+        let anchored = false;
+        for (const issue of issues) {
+          const name = issue.path?.[0];
+          if (
+            (name === "label" ||
+              name === "password" ||
+              name === "host" ||
+              name === "port" ||
+              name === "username" ||
+              name === "from_addr" ||
+              name === "from_name" ||
+              name === "secure") &&
+            issue.message
+          ) {
+            form.setError(name as keyof SmtpFormValues, {
+              message: issue.message,
+            });
+            anchored = true;
+          }
+        }
+        if (!anchored) {
+          setDetail({
+            message: "Some details are invalid. Check the highlighted fields.",
+          });
+        }
         return;
+      }
       case "send_failed":
         setDetail({ message: "Saving failed. Try again.", raw: error.raw });
+        return;
+      case "not_found":
+        setDetail({
+          message:
+            "That server no longer exists. Refresh the page and try again.",
+        });
+        return;
+      case "in_use":
+        setDetail({
+          message:
+            "This server is in use — a campaign is queued or sending through it right now.",
+        });
         return;
       default: {
         const { field, raw, suggestion } = error;
@@ -125,8 +177,15 @@ export function StepVerify({
     form.clearErrors();
     setDetail(null);
     await form.handleSubmit(async (values) => {
+      // WR-09 client gate: a changed host with a blank password never dials the
+      // stored credential — anchor the message on the password and block save.
+      const gateMessage = hostChangeGate(values);
+      if (gateMessage) {
+        form.setError("password", { message: gateMessage });
+        return;
+      }
       onPendingChange(true);
-      const res = await verifyAndSave(values);
+      const res = await persist(values);
       onPendingChange(false);
       if (res.ok) {
         onVerified();

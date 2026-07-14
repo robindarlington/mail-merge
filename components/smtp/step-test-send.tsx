@@ -40,6 +40,10 @@ function failureFor(error: ActionError): Failure {
       return { reason: "the recipient address is invalid" };
     case "send_failed":
       return { reason: "the server rejected the message", raw: error.raw };
+    case "not_found":
+      return { reason: "that server is no longer available" };
+    case "in_use":
+      return { reason: "that server is busy with another send" };
     default: {
       const map: Record<"auth" | "connection" | "tls" | "unknown", string> = {
         auth: "the server rejected your credentials",

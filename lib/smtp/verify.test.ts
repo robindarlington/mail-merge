@@ -88,6 +88,8 @@ function startServer(
 const baseInput = (
   over: Partial<SmtpFormValues>,
 ): SmtpFormValues => ({
+  // 06.1: `label` is a required field on the shared schema (multi-server).
+  label: "Test Server",
   // 127.0.0.1 (not "localhost"): on dual-stack hosts nodemailer tries IPv6 ::1
   // first and stalls ~10s on the greeting before falling back to IPv4. The IPv4
   // literal avoids that fixture-only latency. (Real users enter real hostnames;
