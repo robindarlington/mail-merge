@@ -41,7 +41,7 @@ const { createDraftCampaign, getCampaignForUser, enqueueCampaign } =
   await import("./campaigns");
 const { createRecipientSet } = await import("./recipients");
 const { createTemplate } = await import("./templates");
-const { upsertSmtpConfig, getSmtpConfigForUser } = await import("./smtp");
+const { createSmtpConfig } = await import("./smtp");
 const { encrypt } = await import("../crypto");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 
@@ -59,13 +59,6 @@ let SMTP_CONFIG_ID = 0;
 before(async () => {
   // Build all tables (and indexes) on the temp DB from committed migrations.
   migrate(db, { migrationsFolder: "./drizzle" });
-  // The single-row-per-user UNIQUE index backs upsertSmtpConfig's conflict target.
-  connection
-    .prepare(
-      "CREATE UNIQUE INDEX IF NOT EXISTS smtp_configs_user_uq ON smtp_configs(user_id)",
-    )
-    .run();
-
   const [set] = await createRecipientSet(USER_A, {
     filename: "recipients.csv",
     columns_json: JSON.stringify(["email", "name"]),
@@ -84,7 +77,8 @@ before(async () => {
   // Seed the SMTP config as encrypted bytes only — the plaintext password never
   // touches the DB and is never logged (SMTP-04 / T-5-LOG).
   const secret = encrypt(MARKER_PASSWORD);
-  await upsertSmtpConfig(USER_A, {
+  const [cfg] = await createSmtpConfig(USER_A, {
+    label: "Default",
     host: "smtp.example.com",
     port: 587,
     secure: false,
@@ -94,8 +88,8 @@ before(async () => {
     password_tag: secret.tag,
     from_addr: "noreply@example.com",
     from_name: "Example Sender",
+    is_default: true,
   });
-  const cfg = await getSmtpConfigForUser(USER_A);
   assert.ok(cfg, "seeded SMTP config exists");
   SMTP_CONFIG_ID = cfg.id;
 });
