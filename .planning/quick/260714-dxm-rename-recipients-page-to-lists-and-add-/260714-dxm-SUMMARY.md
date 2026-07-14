@@ -83,7 +83,9 @@ userId-scoped with `notFound()` on miss and cell values escaped as plain JSX tex
 - No `href="/recipients"` remains in `app/` or `components/`
 - No `dangerouslySetInnerHTML` in the detail page (grep gate clean)
 
-### Manual browser check — PENDING (orchestrator drives this)
+### Manual browser check — VERIFIED 2026-07-14 (orchestrator-driven, Chrome on localhost:3000)
+
+> /lists renders with sidebar "Lists"; reels-test.csv row links to /lists/2 which shows metadata (21 rows / 7 columns), column chips incl. spaced names, and the rows table with working horizontal scroll (Email column reachable); /recipients redirects to /lists. Original checklist follows.
 Not performed by the executor. To verify: sidebar "Lists" navigates to `/lists`;
 `/recipients` redirects to `/lists`; clicking an uploaded CSV opens `/lists/[id]` showing
 columns + rows; a CSV with >100 rows shows the "Showing first 100 of N rows" note and the

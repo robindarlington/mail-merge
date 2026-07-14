@@ -64,7 +64,7 @@ Fixed two compose-editor bugs: merge fields with spaces in the column name (e.g.
 - `npx tsc --noEmit` — clean.
 - `npm run build` (next build) — compiled successfully, all routes generated.
 - `git diff package.json package-lock.json` — empty (zero-new-dependency constraint held).
-- **Browser check — PENDING (orchestrator-driven):** `npm run dev`, open compose editor, pick a recipient list, type `{{` in subject and message: popover appears at the caret (not below chips) and follows the caret/scroll; a space inside a spaced field name keeps it filtering; Escape closes, Enter picks first match, click inserts without blurring. No component-test harness exists for caret geometry, so this must be verified visually.
+- **Browser check — VERIFIED 2026-07-14 (orchestrator-driven, Chrome on localhost:3000):** typed `Footage plan: {{Hook Ov` in the message field — popover rendered at the caret (not below the chips), stayed open through the space in the partial, matched "Hook Overlay"; click-select inserted `{{Hook Overlay}}` without blurring and the preview filled it ("Morning reset in Zanzibar" for recipient 1). Original acceptance description follows: `npm run dev`, open compose editor, pick a recipient list, type `{{` in subject and message: popover appears at the caret (not below chips) and follows the caret/scroll; a space inside a spaced field name keeps it filtering; Escape closes, Enter picks first match, click inserts without blurring. No component-test harness exists for caret geometry, so this must be verified visually.
 
 ## Deviations from Plan
 
