@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
  * we're here the config is already saved and verified, so this step only proves
  * real delivery; "Skip for now" completes onboarding without sending.
  *
- * "Send test email" calls `sendTestEmail(toAddress)`; the server decrypts the
+ * "Send test email" calls `sendTestEmail(configId, toAddress)`; the server decrypts the
  * password, runs verify-before-send, and sends one real message. Success shows a
  * toast and completes onboarding; a failure keeps the (already-saved) settings
  * and surfaces a classified reason plus a message-only technical detail
@@ -57,9 +57,12 @@ function failureFor(error: ActionError): Failure {
 }
 
 export function StepTestSend({
+  configId,
   defaultEmail,
   onComplete,
 }: {
+  /** The just-saved server's id — sendTestEmail is id-addressed (06.1). */
+  configId: number | null;
   defaultEmail: string;
   onComplete: () => void;
 }) {
@@ -71,7 +74,7 @@ export function StepTestSend({
     const recipient = to.trim();
     setSending(true);
     setFailure(null);
-    const res = await sendTestEmail(recipient || undefined);
+    const res = await sendTestEmail(configId, recipient || undefined);
     setSending(false);
     if (res.ok) {
       toast.success(`Test email sent — check ${recipient}'s inbox.`);

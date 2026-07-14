@@ -100,6 +100,9 @@ export function SmtpWizard({
   // stepper's "Verify" marker lights while a verify is in flight (`pending`).
   const [stage, setStage] = useState<"details" | "test">("details");
   const [pending, setPending] = useState(false);
+  // The id the test-send step addresses: the edited row's id up front, or the id
+  // createServer returns once a NEW row is saved (create flow has no id earlier).
+  const [savedId, setSavedId] = useState<number | null>(configId);
 
   const form = useForm<SmtpFormValues>({
     // `port` uses z.coerce, so the schema's INPUT type (port: unknown) diverges
@@ -158,9 +161,16 @@ export function SmtpWizard({
   // Persist via the id-scoped create/update actions (replacing the retired
   // single-config verify-and-save): a null id inserts a NEW named server, an id
   // updates that owned row. Both verify-then-save server-side; a failure saves
-  // nothing.
-  const persist = (values: SmtpFormValues) =>
-    configId === null ? createServer(values) : updateServer(configId, values);
+  // nothing. The result's id is captured so StepTestSend can address the
+  // just-saved server.
+  const persist = async (values: SmtpFormValues) => {
+    const res =
+      configId === null
+        ? await createServer(values)
+        : await updateServer(configId, values);
+    if (res.ok && res.id !== undefined) setSavedId(res.id);
+    return res;
+  };
 
   const title = isEdit ? "Edit server" : "Add an SMTP server";
 
@@ -196,7 +206,11 @@ export function SmtpWizard({
               />
             </div>
           ) : (
-            <StepTestSend defaultEmail={testEmailDefault} onComplete={finish} />
+            <StepTestSend
+              configId={savedId}
+              defaultEmail={testEmailDefault}
+              onComplete={finish}
+            />
           )}
         </Form>
       </CardContent>

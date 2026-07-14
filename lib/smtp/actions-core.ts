@@ -51,7 +51,9 @@ export type ActionError =
   | { kind: "in_use" };
 
 /** The uniform result every Server Action here resolves to (never rejects). */
-export type ActionResult = { ok: true } | { ok: false; error: ActionError };
+export type ActionResult =
+  | { ok: true; id?: number }
+  | { ok: false; error: ActionError };
 
 // --- Per-user verify rate limit (T-2-SPAM / Pitfall 9) ----------------------
 // A user-supplied host:port dial is an abuse/SSRF surface; cap verify attempts
@@ -202,15 +204,19 @@ export async function applyVerifiedConfig(
     // First server for the account auto-defaults (Pitfall 6); later adds do NOT
     // silently promote themselves over an existing default.
     const isFirstServer = existingConfigs.length === 0;
-    await createSmtpConfig(userId, { ...persistable, is_default: isFirstServer });
-  } else {
-    const updated = await updateSmtpConfigById(userId, id, persistable);
-    // 0-length = the id was not owned / already deleted (IDOR / not-found).
-    if (updated.length === 0) {
-      return { ok: false, error: { kind: "not_found" } };
-    }
+    const [created] = await createSmtpConfig(userId, {
+      ...persistable,
+      is_default: isFirstServer,
+    });
+    // The saved id lets the wizard's test-send step address THIS server.
+    return { ok: true, id: created.id };
   }
-  return { ok: true };
+  const updated = await updateSmtpConfigById(userId, id, persistable);
+  // 0-length = the id was not owned / already deleted (IDOR / not-found).
+  if (updated.length === 0) {
+    return { ok: false, error: { kind: "not_found" } };
+  }
+  return { ok: true, id };
 }
 
 /**
