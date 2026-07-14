@@ -34,6 +34,13 @@ export const recipientSetIdSchema = z.coerce.number().int().positive();
 /** A template id — same positive-int coercion. */
 export const templateIdSchema = z.coerce.number().int().positive();
 
+/** An SMTP-config id the client proposes when choosing which verified server a
+ *  campaign sends through (06.1 multi-server). Same positive-int coercion, so a
+ *  missing/non-numeric/0/negative selection fails as `validation` up front; the
+ *  parsed id is then owner-re-resolved server-side (unknown/cross-tenant →
+ *  not_found), never trusted as a storage path. */
+export const smtpConfigIdSchema = z.coerce.number().int().positive();
+
 /** The chunk cursor offset — a non-negative int (offset 0 is the first chunk). */
 export const chunkOffsetSchema = z.coerce.number().int().min(0);
 
