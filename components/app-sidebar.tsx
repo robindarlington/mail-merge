@@ -29,7 +29,7 @@ import {
  */
 const NAV_ITEMS = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { title: "Recipients", href: "/recipients", icon: Users },
+  { title: "Lists", href: "/lists", icon: Users },
   { title: "Compose", href: "/compose", icon: PenLine },
   { title: "SMTP Settings", href: "/settings/smtp", icon: Settings },
 ] as const;

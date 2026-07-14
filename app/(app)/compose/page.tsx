@@ -20,7 +20,7 @@ import { ComposeEditor } from "@/components/compose/compose-editor";
  * never another tenant's sets (T-4-IDOR / AUTH-02).
  *
  * With no recipient lists yet, a dominant empty-state Card gates the editor and
- * points the user at /recipients (the single accent CTA in that state). Once at
+ * points the user at /lists (the single accent CTA in that state). Once at
  * least one list exists, the client <ComposeEditor> renders; each set's columns
  * (columns_json) feed the merge-field autocomplete with no extra round-trip.
  */
@@ -63,7 +63,7 @@ export default async function ComposePage() {
           </CardHeader>
           <CardContent className="flex justify-center">
             <Button asChild>
-              <Link href="/recipients">Go to recipients</Link>
+              <Link href="/lists">Go to lists</Link>
             </Button>
           </CardContent>
         </Card>
