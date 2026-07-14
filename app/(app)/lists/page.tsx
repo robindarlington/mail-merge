@@ -1,4 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
+import Link from "next/link";
 import { FileSpreadsheet } from "lucide-react";
 
 import { listRecipientSetsForUser } from "@/lib/data";
@@ -61,16 +62,17 @@ export default async function ListsPage() {
         <Card>
           <CardContent className="flex flex-col divide-y">
             {sets.map((set) => (
-              <div
+              <Link
                 key={set.id}
-                className="flex items-center gap-2 py-3 text-sm first:pt-0 last:pb-0"
+                href={`/lists/${set.id}`}
+                className="-mx-2 flex items-center gap-2 rounded px-2 py-3 text-sm first:pt-0 last:pb-0 hover:bg-muted"
               >
                 <FileSpreadsheet className="size-4 shrink-0 text-muted-foreground" />
                 <span>
                   {set.filename} — {set.row_count} recipients ·{" "}
                   {formatRelativeDate(set.created_at)}
                 </span>
-              </div>
+              </Link>
             ))}
           </CardContent>
         </Card>
