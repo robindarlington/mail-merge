@@ -64,6 +64,29 @@ export function StepDetails({
 
         <FormField
           control={form.control}
+          name="label"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Label</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="e.g. Work Gmail"
+                  autoComplete="off"
+                  {...field}
+                  value={field.value ?? ""}
+                />
+              </FormControl>
+              <FormDescription>
+                A name to tell this server apart — you&apos;ll see it when you
+                pick a server for a campaign.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
           name="host"
           render={({ field }) => (
             <FormItem>

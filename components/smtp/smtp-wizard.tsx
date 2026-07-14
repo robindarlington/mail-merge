@@ -4,15 +4,17 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CheckCircle2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2 } from "lucide-react";
 
 import {
   smtpEditFormSchema,
   smtpFormSchema,
   type SmtpFormValues,
 } from "@/lib/smtp/schema";
+import { createServer, updateServer } from "@/lib/smtp/actions";
 import type { SmtpConfigDto } from "@/lib/data/smtp";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Form } from "@/components/ui/form";
 import { StepDetails } from "@/components/smtp/step-details";
@@ -68,14 +70,31 @@ function Stepper({ current }: { current: number }) {
   );
 }
 
+/**
+ * WR-09 (LOCKED, client half): changing the host with a blank password must force
+ * re-entry — a stored credential is never dialed against a host it wasn't verified
+ * with. Kept identical to the server-side gate copy (actions-core.ts) for parity.
+ */
+const WR09_HOST_CHANGE_MESSAGE =
+  "You changed the server host. Re-enter the password so we can verify it against the new host.";
+
 export function SmtpWizard({
   initial,
   testEmailDefault,
+  onExit,
 }: {
   initial: SmtpConfigDto | null;
   testEmailDefault: string;
+  /**
+   * Where "done"/exit leads. When rendered from the settings server list, this
+   * returns to the list (and refreshes it); when absent (legacy onboarding entry)
+   * the wizard falls back to the dashboard.
+   */
+  onExit?: () => void;
 }) {
   const isEdit = initial !== null;
+  const configId = initial?.id ?? null;
+  const initialHost = initial?.host ?? null;
   const router = useRouter();
   // Wizard stage: the details+verify screen, then the test-send screen. The
   // stepper's "Verify" marker lights while a verify is in flight (`pending`).
@@ -93,6 +112,8 @@ export function SmtpWizard({
       isEdit ? smtpEditFormSchema : smtpFormSchema,
     ) as unknown as Resolver<SmtpFormValues>,
     defaultValues: {
+      // Required, user-facing server name (06.1 multi-server). Prefilled on edit.
+      label: initial?.label ?? "",
       host: initial?.host ?? "",
       // The port control is a string until zod coerces it; empty for a new form.
       port: initial?.port ?? 465,
@@ -116,13 +137,46 @@ export function SmtpWizard({
   const current = stage === "test" ? 2 : pending ? 1 : 0;
 
   const finish = () => {
+    if (onExit) {
+      onExit();
+      return;
+    }
     router.push("/dashboard");
     router.refresh();
   };
 
+  // WR-09 client gate (LOCKED): on an edit where the host changed and the password
+  // is left blank, block the verify/save and return the field message so StepVerify
+  // can anchor it on the password control. Re-entering a password clears the gate.
+  const hostChangeGate = (values: SmtpFormValues): string | null => {
+    if (!isEdit) return null;
+    const hostChanged = values.host.trim() !== (initialHost ?? "").trim();
+    if (hostChanged && values.password === "") return WR09_HOST_CHANGE_MESSAGE;
+    return null;
+  };
+
+  // Persist via the id-scoped create/update actions (replacing the retired
+  // single-config verify-and-save): a null id inserts a NEW named server, an id
+  // updates that owned row. Both verify-then-save server-side; a failure saves
+  // nothing.
+  const persist = (values: SmtpFormValues) =>
+    configId === null ? createServer(values) : updateServer(configId, values);
+
+  const title = isEdit ? "Edit server" : "Add an SMTP server";
+
   return (
     <Card>
-      <CardContent className="flex flex-col gap-12">
+      <CardContent className="flex flex-col gap-8">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-xl font-semibold leading-[1.2]">{title}</h2>
+          {onExit ? (
+            <Button type="button" variant="ghost" size="sm" onClick={onExit}>
+              <ArrowLeft />
+              Back to servers
+            </Button>
+          ) : null}
+        </div>
+
         <Stepper current={current} />
 
         <Form {...form}>
@@ -134,6 +188,8 @@ export function SmtpWizard({
                 isEdit={isEdit}
                 connectionDirty={connectionDirty}
                 pending={pending}
+                persist={persist}
+                hostChangeGate={hostChangeGate}
                 onPendingChange={setPending}
                 onVerified={() => setStage("test")}
                 onComplete={finish}

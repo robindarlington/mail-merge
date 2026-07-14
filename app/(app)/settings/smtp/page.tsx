@@ -1,24 +1,23 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 
-import { getSmtpConfigForUser, toSmtpConfigDto } from "@/lib/data/smtp";
-import { SmtpWizard } from "@/components/smtp/smtp-wizard";
+import { listSmtpConfigsForUser, toSmtpConfigDto } from "@/lib/data/smtp";
+import { ServerList } from "@/components/smtp/server-list";
 
 /**
- * /settings/smtp — the SMTP onboarding wizard and its edit flow (SMTP-01/02/05).
+ * /settings/smtp — the multi-server SMTP settings surface (SMTP-01/02/05, 06.1
+ * MSMTP-01/05). This RSC lists the caller's servers via the userId-scoped DAL
+ * (listSmtpConfigsForUser, default-first) and hands the CLIENT ONLY the
+ * password-free DTOs (toSmtpConfigDto) plus the Clerk primary email used to
+ * prefill the reused wizard's test-send recipient. The encrypted password triple
+ * is never referenced here, so it cannot cross to the client (SMTP-04 / T-061-12).
  *
- * This RSC loads the caller's existing config via the userId-scoped DAL
- * (getSmtpConfigForUser) and hands the CLIENT ONLY the password-free DTO
- * (toSmtpConfigDto) plus the Clerk primary email used to prefill the test-send
- * recipient. The encrypted password triple is never referenced here, so it
- * cannot cross to the client (SMTP-04 / T-2-CRED / D-07).
- *
- * The same page is the edit flow: a non-null `initial` puts the wizard in edit
- * mode (prefilled fields, blank password).
+ * The ServerList island owns add/edit (reusing SmtpWizard per server),
+ * set-default, and the destructive delete + in-use guard.
  */
 export default async function SmtpSettingsPage() {
   const { userId } = await auth();
-  const row = userId ? await getSmtpConfigForUser(userId) : undefined;
-  const initial = row ? toSmtpConfigDto(row) : null;
+  const rows = userId ? await listSmtpConfigsForUser(userId) : [];
+  const configs = rows.map(toSmtpConfigDto);
 
   const user = await currentUser();
   const testEmailDefault =
@@ -29,17 +28,14 @@ export default async function SmtpSettingsPage() {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-2">
-        <h1 className="text-[28px] font-semibold leading-[1.2]">
-          {initial ? "SMTP settings" : "Connect your email server"}
-        </h1>
+        <h1 className="text-[28px] font-semibold leading-[1.2]">SMTP servers</h1>
         <p className="text-base text-muted-foreground">
-          {initial
-            ? "Update your sending configuration below."
-            : "Set up the SMTP server Mail Merge will send through — verified before it's saved."}
+          The email servers Mail Merge can send through. Add as many as you need
+          and choose one per campaign.
         </p>
       </div>
 
-      <SmtpWizard initial={initial} testEmailDefault={testEmailDefault} />
+      <ServerList configs={configs} testEmailDefault={testEmailDefault} />
     </div>
   );
 }
