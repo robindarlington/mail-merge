@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 6 UI-SPEC approved
-last_updated: "2026-07-13T20:19:05.327Z"
-last_activity: 2026-07-13 -- Phase 6 planning complete
+last_updated: "2026-07-14T14:41:15.312Z"
+last_activity: "2026-07-14 -- Completed quick task 260714-dxm: Lists page rename + CSV contents viewer"
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 3
   total_plans: 37
   completed_plans: 28
-  percent: 33
+  percent: 30
 ---
 
 # Project State
@@ -61,6 +61,10 @@ Progress: [██████████] 100%
 | Phase 01 P05 | 4 | 3 tasks | 8 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 6.1 inserted after Phase 6: Multiple SMTP servers per account — register several SMTP configs, choose one per send (URGENT)
 
 ### Decisions
 

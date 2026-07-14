@@ -245,6 +245,16 @@ Plans:
 **Research flag**: research complete (see 06-RESEARCH.md — plainjob rejected, DB-as-queue + polling chosen, no new packages)
 **UI hint**: yes
 
+### Phase 06.1: Multiple SMTP servers per account — register several SMTP configs, choose one per send (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 6
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 06.1 to break down)
+
 ### Phase 7: Per-Row Attachments
 
 **Goal**: A user can attach a different file per CSV row, with attachments resolved safely and validated as present before any send.
