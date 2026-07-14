@@ -55,6 +55,15 @@ export function isPrivateHostLiteral(host: string): boolean {
 }
 
 export const smtpFormSchema = z.object({
+  // A required, user-facing name for this server (06.1 multi-server). Trimmed and
+  // length-bounded here; case-insensitive per-account UNIQUENESS is enforced in
+  // actions-core (it needs the account's other rows to compare against). The
+  // messages are the exact UI-SPEC Copywriting Contract strings.
+  label: z
+    .string()
+    .trim()
+    .min(1, "Give this server a label.")
+    .max(60, "Keep the label under 60 characters."),
   host: z
     .string()
     .trim()

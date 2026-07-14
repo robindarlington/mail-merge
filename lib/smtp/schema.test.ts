@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 const { smtpFormSchema, isPrivateHostLiteral } = await import("./schema");
 
 const valid = {
+  label: "Primary Server",
   host: "smtp.example.com",
   port: 587,
   secure: false,
@@ -68,6 +69,34 @@ test("from_name is optional", () => {
   void from_name;
   const res = smtpFormSchema.safeParse(withoutName);
   assert.equal(res.success, true);
+});
+
+// --- 06.1 multi-server: label is required and length-bounded (UI-SPEC copy) ---
+
+test("rejects a blank label with the exact required-copy message", () => {
+  const res = smtpFormSchema.safeParse({ ...valid, label: "   " });
+  assert.equal(res.success, false);
+  assert.ok(
+    !res.success &&
+      res.error.issues.some((i) => i.message === "Give this server a label."),
+  );
+});
+
+test("rejects a label longer than 60 characters with the exact too-long copy", () => {
+  const res = smtpFormSchema.safeParse({ ...valid, label: "x".repeat(61) });
+  assert.equal(res.success, false);
+  assert.ok(
+    !res.success &&
+      res.error.issues.some(
+        (i) => i.message === "Keep the label under 60 characters.",
+      ),
+  );
+});
+
+test("trims the label to a clean stored value", () => {
+  const res = smtpFormSchema.safeParse({ ...valid, label: "  Marketing  " });
+  assert.equal(res.success, true);
+  assert.equal(res.success && res.data.label, "Marketing");
 });
 
 // --- T-2-SSRF: private-range / loopback host rejection (Pitfall 9) ---

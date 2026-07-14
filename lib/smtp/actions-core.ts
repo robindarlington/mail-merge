@@ -15,7 +15,15 @@
 import type { MailTransport } from "../core";
 import { sendOne, verifyTransport } from "../core";
 import { decrypt, encrypt } from "../crypto";
-import { getSmtpConfigForUser, upsertSmtpConfig } from "../data/smtp";
+import {
+  countActiveSendsForConfig,
+  createSmtpConfig,
+  getSmtpConfigByIdForUser,
+  listSmtpConfigsForUser,
+  setDefaultSmtpConfig,
+  softDeleteSmtpConfig,
+  updateSmtpConfigById,
+} from "../data/smtp";
 import { classifyVerifyError, type VerifyErrorField } from "./errors";
 import { smtpEditFormSchema, type SmtpFormValues } from "./schema";
 import { verifySmtp, type VerifyOutcome } from "./verify";
@@ -35,7 +43,12 @@ export type ActionError =
       suggestion?: "starttls" | "implicit";
     }
   | { kind: "rate_limited" }
-  | { kind: "send_failed"; raw: string };
+  | { kind: "send_failed"; raw: string }
+  // 06.1 multi-server: an owned id resolved to no row (cross-tenant / deleted /
+  // unknown), and a soft-delete refused because a queued/running campaign still
+  // references the config (the in-use guard, SC5).
+  | { kind: "not_found" }
+  | { kind: "in_use" };
 
 /** The uniform result every Server Action here resolves to (never rejects). */
 export type ActionResult = { ok: true } | { ok: false; error: ActionError };
@@ -66,47 +79,87 @@ export function underVerifyRateLimit(userId: string): boolean {
   return true;
 }
 
+/** A `path`-anchored zod-style custom validation issue helper (message-only). */
+function validationError(path: string, message: string): ActionResult {
+  return {
+    ok: false,
+    error: {
+      kind: "validation",
+      issues: [{ code: "custom", path: [path], message }],
+    },
+  };
+}
+
 /**
- * Orchestration seam (testable): parse → verify → persist. The `verifyFn` is
- * injectable so tests can drive verified_at semantics without a live SMTP dial.
- * The "use server" wrapper calls it with the real `verifySmtp`.
+ * Orchestration seam (testable): parse → (label-unique) → verify → persist. The
+ * `verifyFn` is injectable so tests can drive verified_at semantics without a
+ * live SMTP dial. The "use server" wrappers call it with the real `verifySmtp`.
  *
- * Persists ONLY on a clean verify (D-04). A verify failure OR a D-05
- * alternate-mode `suggestion` returns WITHOUT saving (T-2-VERIFY): an unverified
- * or suggestion-only config never reaches the DB.
+ * `id === null` is the CREATE flow (insert a new named server); a number is the
+ * EDIT flow (update that owned row by id). Persists ONLY on a clean verify (D-04):
+ * a verify failure OR a D-05 alternate-mode `suggestion` returns WITHOUT saving
+ * (T-2-VERIFY) — an unverified or suggestion-only config never reaches the DB.
+ *
+ * WR-09 (LOCKED, option 2): on an EDIT with a blank ("keep") password, the stored
+ * credential is merged in ONLY when the host is unchanged. A changed host with a
+ * blank password is REJECTED before any decrypt — the stored secret is never
+ * re-authed against a client-changed host (T-061-05 information-disclosure gate).
  */
 export async function applyVerifiedConfig(
   userId: string,
+  id: number | null,
   input: unknown,
   verifyFn: (values: SmtpFormValues) => Promise<VerifyOutcome> = verifySmtp,
 ): Promise<ActionResult> {
   // Parse with the EDIT schema (blank password allowed): a blank is the D-07
   // "leave blank to keep" signal, resolved server-side below. The create flow's
-  // "password required" rule is re-imposed by the blank-without-stored-row branch.
+  // "password required" rule is re-imposed by the id === null branch.
   const parsed = smtpEditFormSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: { kind: "validation", issues: parsed.error.issues } };
   }
 
-  // Blank-password edit merge (D-07 / SMTP-04): when the caller omits the password,
-  // substitute the STORED one BEFORE verify/persist. The lookup is userId-scoped
-  // (T-2-08-IDOR — no client-supplied id is ever trusted), and the decrypted
-  // plaintext lives ONLY in this local `parsed.data.password` and never reaches an
-  // ActionResult, a throw, or a log line (T-2-08-CRED). A blank with no stored row
-  // falls back to the create-flow rule: reject and save nothing (T-2-08-BLANK).
+  // Label uniqueness (LOCKED — required, case-insensitively UNIQUE per account).
+  // An application check (not a LOWER(label) expression unique index) is sufficient
+  // here: better-sqlite3 is single-writer, so the TOCTOU window between this read
+  // and the persist below is negligible for this solo-tenant tool, and it avoids a
+  // migration for an expression index. Compare trimmed + lower-cased, EXCLUDING the
+  // row being edited (by id) so an unchanged label on edit is not a self-conflict.
+  const existingConfigs = await listSmtpConfigsForUser(userId);
+  const wantedLabel = parsed.data.label.trim().toLowerCase();
+  const labelClash = existingConfigs.some(
+    (c) =>
+      c.id !== id && (c.label ?? "").trim().toLowerCase() === wantedLabel,
+  );
+  if (labelClash) {
+    return validationError(
+      "label",
+      `You already have a server called '${parsed.data.label}'. Pick a different name.`,
+    );
+  }
+
+  // Blank-password handling (D-07 / SMTP-04 / WR-09). A blank means "keep the stored
+  // password". The decrypted plaintext lives ONLY in this local `parsed.data.password`
+  // and never reaches an ActionResult, a throw, or a log line (T-061-05-CRED).
   if (parsed.data.password === "") {
-    const existing = await getSmtpConfigForUser(userId);
-    if (!existing) {
-      return {
-        ok: false,
-        error: {
-          kind: "validation",
-          issues: [
-            { code: "custom", path: ["password"], message: "Password is required" },
-          ],
-        },
-      };
+    // CREATE always needs a real password — there is no stored row to keep.
+    if (id === null) {
+      return validationError("password", "Password is required");
     }
+    // EDIT: resolve the owned row by id (IDOR-safe, soft-delete-aware).
+    const existing = await getSmtpConfigByIdForUser(userId, id);
+    if (!existing) {
+      return validationError("password", "Password is required");
+    }
+    // WR-09 gate (LOCKED): host changed + blank password → reject BEFORE any decrypt.
+    // No stored credential is ever dialed against a client-changed host.
+    if (parsed.data.host !== existing.host) {
+      return validationError(
+        "password",
+        "You changed the server host. Re-enter the password so we can verify it against the new host.",
+      );
+    }
+    // Host unchanged — safe to merge the stored credential for the re-verify.
     parsed.data.password = decrypt({
       enc: existing.password_enc as Buffer,
       iv: existing.password_iv as Buffer,
@@ -129,10 +182,11 @@ export async function applyVerifiedConfig(
     };
   }
 
-  // Verify succeeded — encrypt the password server-side and upsert (this is the
-  // ONLY path that stamps verified_at, via upsertSmtpConfig).
+  // Verify succeeded — encrypt the password server-side. This is the ONLY path
+  // that stamps verified_at (via create/update in the DAL).
   const { enc, iv, tag } = encrypt(parsed.data.password);
-  await upsertSmtpConfig(userId, {
+  const persistable = {
+    label: parsed.data.label,
     host: parsed.data.host,
     port: parsed.data.port,
     secure: parsed.data.secure,
@@ -142,7 +196,57 @@ export async function applyVerifiedConfig(
     password_tag: tag,
     from_addr: parsed.data.from_addr,
     from_name: parsed.data.from_name ?? null,
-  });
+  };
+
+  if (id === null) {
+    // First server for the account auto-defaults (Pitfall 6); later adds do NOT
+    // silently promote themselves over an existing default.
+    const isFirstServer = existingConfigs.length === 0;
+    await createSmtpConfig(userId, { ...persistable, is_default: isFirstServer });
+  } else {
+    const updated = await updateSmtpConfigById(userId, id, persistable);
+    // 0-length = the id was not owned / already deleted (IDOR / not-found).
+    if (updated.length === 0) {
+      return { ok: false, error: { kind: "not_found" } };
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Set one owned config as the account default (testable seam). Delegates to the
+ * transactional DAL swap; a 0-length result means the id was not owned / deleted /
+ * unknown, mapped to `not_found` (T-061-06 IDOR).
+ */
+export async function setDefaultConfigCore(
+  userId: string,
+  id: number,
+): Promise<ActionResult> {
+  const changed = await setDefaultSmtpConfig(userId, id);
+  if (changed.length === 0) {
+    return { ok: false, error: { kind: "not_found" } };
+  }
+  return { ok: true };
+}
+
+/**
+ * Soft-delete one owned config (testable seam), guarded by the in-use check
+ * (SC5 / T-061-07): if a queued or running campaign still references the config,
+ * refuse with `in_use` and delete NOTHING. Otherwise soft-delete; a 0-length
+ * result maps to `not_found` (cross-tenant / already deleted / unknown).
+ */
+export async function softDeleteConfigCore(
+  userId: string,
+  id: number,
+): Promise<ActionResult> {
+  // In-use guard FIRST — a config mid-send must not be yanked from the worker.
+  if (countActiveSendsForConfig(userId, id) > 0) {
+    return { ok: false, error: { kind: "in_use" } };
+  }
+  const deleted = await softDeleteSmtpConfig(userId, id);
+  if (deleted.length === 0) {
+    return { ok: false, error: { kind: "not_found" } };
+  }
   return { ok: true };
 }
 
