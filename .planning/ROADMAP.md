@@ -247,9 +247,17 @@ Plans:
 
 ### Phase 06.1: Multiple SMTP servers per account — register several SMTP configs, choose one per send (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
-**Depends on:** Phase 6
+**Goal:** A user can register several named SMTP servers on one account — each verified and encrypted independently — and pick which one a given campaign sends through, with existing single-server accounts migrating transparently.
+**Requirements**: TBD (extends SMTP-01..05; feasibility sketch in .planning/todos/pending/feature-multi-smtp-per-account.md)
+**Depends on:** Phase 2 (SMTP onboarding). Executes BEFORE Phase 6's worker is built; Phase 6 execution must load SMTP config via `campaign.smtp_config_id` (already stamped at campaign creation), not a lookup by userId.
+**Mode:** mvp
+**Success Criteria** (what must be TRUE):
+
+  1. A user can add multiple named SMTP servers; each is verified (`transport.verify()`) before save and stores its own AES-256-GCM-encrypted password; each server row shows its verified status in settings.
+  2. The compose/send flow lets the user choose which verified server a campaign uses; with a single server it is auto-selected (zero extra clicks); the chosen `smtp_config_id` is stamped on the campaign as today.
+  3. Test-send (and any future send path) loads the config by the campaign's `smtp_config_id`, scoped to the owning user — a cross-tenant or unknown config id is not_found (IDOR-safe).
+  4. Existing accounts migrate with zero user action: the current unique-per-user row survives the migration and remains the default server.
+  5. Deleting a server never corrupts campaign history (past campaigns keep their record), and a server in use by a queued/running campaign cannot be silently removed.
 **Plans:** 0 plans
 
 Plans:
