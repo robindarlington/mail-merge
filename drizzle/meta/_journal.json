@@ -22,6 +22,20 @@
       "when": 1783941075447,
       "tag": "0002_nappy_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784043968538,
+      "tag": "0003_pale_wallow",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784043979331,
+      "tag": "0004_backfill_default_smtp",
+      "breakpoints": true
     }
   ]
 }
