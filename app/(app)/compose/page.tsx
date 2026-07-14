@@ -1,7 +1,11 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
 
-import { listRecipientSetsForUser, getSmtpConfigForUser } from "@/lib/data";
+import {
+  listRecipientSetsForUser,
+  listSmtpConfigsForUser,
+  toSmtpConfigDto,
+} from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,11 +32,15 @@ export default async function ComposePage() {
   const { userId } = await auth();
   const sets = userId ? await listRecipientSetsForUser(userId) : [];
 
-  // Send-card gating: presence-only SMTP flag + the default test address. Only a
-  // boolean and the email string cross to the client — never the encrypted SMTP
-  // triple / password (T-5-CRED / SMTP-04).
-  const cfg = userId ? await getSmtpConfigForUser(userId) : undefined;
-  const hasSmtpConfig = !!cfg;
+  // Send-card server picker (06.1 multi-server): list the user's verified servers
+  // and project each through the redacted DTO. Only the DTO (id/label/is_default/
+  // sender identity — NEVER the encrypted SMTP triple/password) crosses to the
+  // client (T-061-11 / SMTP-04). A verified server is one with a non-null
+  // verified_at; soft-deleted rows are already excluded by the DAL.
+  const rows = userId ? await listSmtpConfigsForUser(userId) : [];
+  const configs = rows
+    .filter((row) => row.verified_at !== null)
+    .map(toSmtpConfigDto);
   const user = userId ? await currentUser() : null;
   const defaultTestEmail =
     user?.primaryEmailAddress?.emailAddress ??
@@ -70,7 +78,7 @@ export default async function ComposePage() {
       ) : (
         <ComposeEditor
           sets={editorSets}
-          hasSmtpConfig={hasSmtpConfig}
+          configs={configs}
           defaultTestEmail={defaultTestEmail}
         />
       )}

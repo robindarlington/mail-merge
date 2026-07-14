@@ -81,12 +81,14 @@ function estimateDuration(count: number): string {
 export function TestSendPanel({
   recipientSetId,
   templateId,
+  smtpConfigId,
   recipientCount,
   defaultTestEmail,
   disabled = false,
 }: {
   recipientSetId: string;
   templateId: number;
+  smtpConfigId: number;
   recipientCount: number;
   defaultTestEmail: string;
   disabled?: boolean;
@@ -127,6 +129,7 @@ export function TestSendPanel({
       const res = await sendTestBatchChunk({
         recipientSetId,
         templateId,
+        smtpConfigId,
         testAddress: address,
         offset,
       });

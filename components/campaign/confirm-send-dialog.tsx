@@ -34,10 +34,10 @@ import { Skeleton } from "@/components/ui/skeleton";
  * successful enqueue (05-UI-SPEC Interaction rules): `showCloseButton={false}` plus
  * `preventDefault` on interact-outside / escape.
  *
- * On EVERY open transition (and whenever [recipientSetId, templateId] change) the
- * prior campaignId/summary are reset, then a fresh draft is prepared and its
- * summary fetched — so a review NEVER shows a summary built from a previously
- * selected list/template (stale-summary guard).
+ * On EVERY open transition (and whenever [recipientSetId, templateId, smtpConfigId]
+ * change) the prior campaignId/summary are reset, then a fresh draft is prepared
+ * (stamping the chosen server) and its summary fetched — so a review NEVER shows a
+ * summary built from a previously selected list/template/server (stale-summary guard).
  */
 
 /** Render unknown tokens as literal `{{token}}` for the authoring warning copy. */
@@ -48,11 +48,13 @@ function formatTokens(tokens: string[]): string {
 export function ConfirmSendDialog({
   recipientSetId,
   templateId,
+  smtpConfigId,
   open,
   onOpenChange,
 }: {
   recipientSetId: string;
   templateId: number;
+  smtpConfigId: number;
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
@@ -63,13 +65,13 @@ export function ConfirmSendDialog({
   const [submitting, setSubmitting] = useState(false);
   const [enqueueError, setEnqueueError] = useState<string | null>(null);
 
-  // Stale-summary guard (checker fix): a change of the selected list/template
+  // Stale-summary guard (checker fix): a change of the selected list/template/server
   // ALWAYS drops any prior campaignId/summary, even while the modal is closed, so
   // a later review can never render a summary built from an earlier selection.
   useEffect(() => {
     setCampaignId(null);
     setSummary(null);
-  }, [recipientSetId, templateId]);
+  }, [recipientSetId, templateId, smtpConfigId]);
 
   // On every open transition (and on a selection change while open), reset prior
   // state then prepare the draft + fetch its server-authoritative summary.
@@ -82,7 +84,7 @@ export function ConfirmSendDialog({
     setEnqueueError(null);
     setLoading(true);
     (async () => {
-      const prep = await prepareCampaign({ recipientSetId, templateId });
+      const prep = await prepareCampaign({ recipientSetId, templateId, smtpConfigId });
       if (ignore) return;
       if (!prep.ok) {
         setLoadFailed(true);
@@ -103,7 +105,7 @@ export function ConfirmSendDialog({
     return () => {
       ignore = true;
     };
-  }, [open, recipientSetId, templateId]);
+  }, [open, recipientSetId, templateId, smtpConfigId]);
 
   async function confirm() {
     if (campaignId === null) return;

@@ -25,8 +25,11 @@
  * SECURITY:
  *  - T-5-IDOR: the recipient set / template / SMTP config are resolved through the
  *    userId-scoped DAL (`getRecipientSetForUser` / `getTemplateForUser` /
- *    `getSmtpConfigForUser`); a client id owned by another tenant → not_found. The
- *    storage path comes from the userId-scoped row, NEVER from the client.
+ *    `getSmtpConfigByIdForUser`); a client id owned by another tenant → not_found.
+ *    The storage path comes from the userId-scoped row, NEVER from the client. The
+ *    SMTP config is resolved by the client-proposed `smtpConfigId`, owner-scoped
+ *    (T-061-09): an unknown / deleted / cross-tenant id resolves to undefined →
+ *    not_found, so nothing is sent (06.1 multi-server).
  *  - T-5-CRED / SMTP-04 / D-06: the SMTP password is decrypted transiently into a
  *    local and never reaches a result field, a throw, or a log; `errors[]` carries
  *    only `res.error.message` strings, never a raw Error object.
@@ -51,7 +54,7 @@ import {
   enqueueCampaign as enqueueCampaignDal,
   getCampaignForUser,
   getRecipientSetForUser,
-  getSmtpConfigForUser,
+  getSmtpConfigByIdForUser,
   getTemplateForUser,
   toSmtpConfigDto,
 } from "@/lib/data";
@@ -59,6 +62,7 @@ import { readUpload } from "@/lib/csv";
 import {
   campaignIdSchema,
   recipientSetIdSchema,
+  smtpConfigIdSchema,
   templateIdSchema,
   testAddressSchema,
   chunkOffsetSchema,
@@ -100,10 +104,13 @@ export type TestSendResult =
   | { ok: true; data: TestSendData }
   | { ok: false; error: ActionError };
 
-/** The untrusted input the client supplies (ids + address + cursor offset). */
+/** The untrusted input the client supplies (ids + address + cursor offset). The
+ *  `smtpConfigId` is the client-proposed choice of which verified server to send
+ *  through — always owner-re-resolved server-side (06.1 multi-server). */
 export type TestSendInput = {
   recipientSetId: unknown;
   templateId: unknown;
+  smtpConfigId: unknown;
   testAddress: unknown;
   offset: unknown;
 };
@@ -137,17 +144,20 @@ export async function sendTestBatchChunkCore(
   // address fails as `validation` rather than resolving a bogus row (T-5-IDOR).
   const idParsed = recipientSetIdSchema.safeParse(input.recipientSetId);
   const tplParsed = templateIdSchema.safeParse(input.templateId);
+  const cfgIdParsed = smtpConfigIdSchema.safeParse(input.smtpConfigId);
   const addrParsed = testAddressSchema.safeParse(input.testAddress);
   const offsetParsed = chunkOffsetSchema.safeParse(input.offset);
   if (
     !idParsed.success ||
     !tplParsed.success ||
+    !cfgIdParsed.success ||
     !addrParsed.success ||
     !offsetParsed.success
   ) {
     const issues = [
       ...(idParsed.success ? [] : idParsed.error.issues),
       ...(tplParsed.success ? [] : tplParsed.error.issues),
+      ...(cfgIdParsed.success ? [] : cfgIdParsed.error.issues),
       ...(addrParsed.success ? [] : addrParsed.error.issues),
       ...(offsetParsed.success ? [] : offsetParsed.error.issues),
     ];
@@ -164,8 +174,11 @@ export async function sendTestBatchChunkCore(
   if (!set) return { ok: false, error: { kind: "not_found" } };
   const template = await getTemplateForUser(userId, templateId);
   if (!template) return { ok: false, error: { kind: "not_found" } };
-  const cfg = await getSmtpConfigForUser(userId);
-  if (!cfg) return { ok: false, error: { kind: "no_smtp_config" } };
+  // Owner-re-resolve the client-proposed server choice by id (T-061-09): an
+  // unknown / deleted / cross-tenant smtpConfigId → undefined → not_found; nothing
+  // is sent. The encrypted config is loaded from THIS owner-scoped row only.
+  const cfg = await getSmtpConfigByIdForUser(userId, cfgIdParsed.data);
+  if (!cfg) return { ok: false, error: { kind: "not_found" } };
 
   // Read + parse the CSV server-side (storage_path came from the userId-scoped
   // row; readUpload also enforces the traversal boundary).
@@ -289,8 +302,14 @@ export type ConfirmSummary = {
   sendableCount: number;
 };
 
-/** The untrusted input for prepare (ids the client selected). */
-export type PrepareInput = { recipientSetId: unknown; templateId: unknown };
+/** The untrusted input for prepare (ids the client selected). `smtpConfigId` is
+ *  the client-proposed choice of which verified server the campaign sends through;
+ *  it is owner-re-resolved and stamped on the draft (06.1 multi-server). */
+export type PrepareInput = {
+  recipientSetId: unknown;
+  templateId: unknown;
+  smtpConfigId: unknown;
+};
 /** The untrusted input for summary/enqueue — ONLY a campaignId after prepare. */
 export type ConfirmInput = { campaignId: unknown };
 
@@ -307,14 +326,17 @@ export type EnqueueResult =
 
 /**
  * Prepare seam (testable): validate the selected ids → userId-scoped resolve of the
- * recipient set + template (cross-tenant/bogus id → not_found) and the saved SMTP
- * config (none → no_smtp_config) → create the draft campaign wiring all three FKs.
+ * recipient set + template (cross-tenant/bogus id → not_found) and the
+ * client-chosen SMTP config by id (unknown/deleted/cross-tenant → not_found) →
+ * create the draft campaign wiring all three FKs, STAMPING the resolved config id.
  *
  * This is the A1/U7 timing: the draft is created HERE (the "review and send"
  * moment), NOT at template save — the three FKs are NOT NULL, so a draft can only
  * exist once recipient set + template + SMTP config all do. Ownership is
  * server-injected by the DAL (`createDraftCampaign` spreads userId LAST), so a
- * caller can never spoof it (T-5-IDOR / T-5-TAMPER-OWNER).
+ * caller can never spoof it (T-5-IDOR / T-5-TAMPER-OWNER). The server choice is
+ * owner-re-resolved (T-061-09): a missing/invalid smtpConfigId fails as
+ * `validation`; an unknown/deleted/cross-tenant one → not_found — nothing created.
  */
 export async function prepareCampaignCore(
   userId: string,
@@ -322,10 +344,12 @@ export async function prepareCampaignCore(
 ): Promise<PrepareResult> {
   const idParsed = recipientSetIdSchema.safeParse(input.recipientSetId);
   const tplParsed = templateIdSchema.safeParse(input.templateId);
-  if (!idParsed.success || !tplParsed.success) {
+  const cfgIdParsed = smtpConfigIdSchema.safeParse(input.smtpConfigId);
+  if (!idParsed.success || !tplParsed.success || !cfgIdParsed.success) {
     const issues = [
       ...(idParsed.success ? [] : idParsed.error.issues),
       ...(tplParsed.success ? [] : tplParsed.error.issues),
+      ...(cfgIdParsed.success ? [] : cfgIdParsed.error.issues),
     ];
     return { ok: false, error: { kind: "validation", issues } };
   }
@@ -336,8 +360,10 @@ export async function prepareCampaignCore(
   if (!set) return { ok: false, error: { kind: "not_found" } };
   const template = await getTemplateForUser(userId, tplParsed.data);
   if (!template) return { ok: false, error: { kind: "not_found" } };
-  const cfg = await getSmtpConfigForUser(userId);
-  if (!cfg) return { ok: false, error: { kind: "no_smtp_config" } };
+  // Owner-re-resolve the client-proposed server choice by id (T-061-09). Unknown /
+  // deleted / cross-tenant → undefined → not_found; nothing is created.
+  const cfg = await getSmtpConfigByIdForUser(userId, cfgIdParsed.data);
+  if (!cfg) return { ok: false, error: { kind: "not_found" } };
 
   try {
     const [created] = await createDraftCampaign(userId, {
@@ -388,8 +414,10 @@ export async function buildConfirmSummaryCore(
   if (!set) return { ok: false, error: { kind: "not_found" } };
   const template = await getTemplateForUser(userId, campaign.template_id);
   if (!template) return { ok: false, error: { kind: "not_found" } };
-  const cfg = await getSmtpConfigForUser(userId);
-  if (!cfg) return { ok: false, error: { kind: "no_smtp_config" } };
+  // Resolve the config from the campaign's OWN stamped FK (owner-scoped), NEVER a
+  // client value (T-061-10) — mirrors how the set/template FKs already resolve.
+  const cfg = await getSmtpConfigByIdForUser(userId, campaign.smtp_config_id);
+  if (!cfg) return { ok: false, error: { kind: "not_found" } };
 
   // Read + parse the stored CSV server-side (storage_path came from the
   // userId-scoped row; readUpload also enforces the traversal boundary).

@@ -80,7 +80,7 @@ const {
 const { TEST_SEND_CHUNK_SIZE } = await import("./schema");
 const { createRecipientSet } = await import("../data/recipients");
 const { createTemplate } = await import("../data/templates");
-const { upsertSmtpConfig } = await import("../data/smtp");
+const { createSmtpConfig } = await import("../data/smtp");
 const { getCampaignForUser } = await import("../data/campaigns");
 const { encrypt } = await import("../crypto");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
@@ -94,12 +94,17 @@ const TEST_ADDRESS = "inbox@test.example.com";
 
 let recipientSetId: number;
 let templateId: number;
+// USER's chosen verified SMTP server (06.1 multi-server): threaded into every
+// prepare / test-send call and asserted as the stamped campaign FK.
+let smtpConfigId: number;
 // Confirm-summary fixture ids (owned by USER): the 3-row set + a {{typo}} template.
 let summarySetId: number;
 let summaryTemplateId: number;
-// USER_B's own set + template (USER_B deliberately has NO smtp config).
+// USER_B's own set + template + its OWN verified server — used to prove IDOR
+// isolation: USER proposing USER_B's smtpConfigId must resolve to not_found.
 let userBSetId: number;
 let userBTemplateId: number;
+let userBSmtpConfigId: number;
 
 // Count campaign rows owned by a user directly (bypasses the userId-scoped DAL) so
 // a test can assert prepareCampaignCore created NOTHING on a rejected path.
@@ -157,13 +162,11 @@ function stubTransport(opts: {
 }
 
 before(() => {
+  // The committed 0003/0004 migrations promote smtp_configs to many-rows-per-user
+  // (drop the single-row unique index, add label/is_default/deleted_at, add the
+  // partial one-default-per-user index). createSmtpConfig is a plain insert now, so
+  // no manual conflict-target index is needed (06.1 multi-server).
   migrate(db, { migrationsFolder: "./drizzle" });
-  // The single-row-per-user UNIQUE index backs upsertSmtpConfig's conflict target.
-  connection
-    .prepare(
-      "CREATE UNIQUE INDEX IF NOT EXISTS smtp_configs_user_uq ON smtp_configs(user_id)",
-    )
-    .run();
 });
 
 // The async DAL seeding runs as the FIRST test so the awaited inserts complete
@@ -185,7 +188,8 @@ test("seed: recipient set, template, and smtp config", async () => {
   templateId = tpl.id;
 
   const { enc, iv, tag } = encrypt(MARKER_PASSWORD);
-  await upsertSmtpConfig(USER, {
+  const [cfg] = await createSmtpConfig(USER, {
+    label: "Primary",
     host: "smtp.example.com",
     port: 587,
     secure: false,
@@ -196,6 +200,7 @@ test("seed: recipient set, template, and smtp config", async () => {
     from_addr: "noreply@example.com",
     from_name: "Example Sender",
   });
+  smtpConfigId = cfg.id;
 
   // Confirm-summary fixture (owned by USER): the 3-row set with a bad email + a
   // blank merge value, and a template whose body references an unknown {{typo}}.
@@ -214,8 +219,9 @@ test("seed: recipient set, template, and smtp config", async () => {
   });
   summaryTemplateId = summaryTpl.id;
 
-  // USER_B's own set + template — but NO smtp config (drives no_smtp_config +
-  // proves cross-tenant isolation on prepare/summary/enqueue).
+  // USER_B's own set + template + its OWN verified server — used to prove
+  // cross-tenant isolation on prepare/summary/enqueue AND that USER cannot send
+  // through USER_B's smtpConfigId (owner re-resolve → not_found).
   const [setB] = await createRecipientSet(USER_B, {
     filename: "summary-fixture.csv",
     columns_json: JSON.stringify(["email", "name", "code"]),
@@ -230,12 +236,29 @@ test("seed: recipient set, template, and smtp config", async () => {
   });
   userBTemplateId = tplB.id;
 
+  const bCred = encrypt("USER-B-SECRET");
+  const [cfgB] = await createSmtpConfig(USER_B, {
+    label: "B Primary",
+    host: "smtp.b.example.com",
+    port: 587,
+    secure: false,
+    username: "sender-b",
+    password_enc: bCred.enc,
+    password_iv: bCred.iv,
+    password_tag: bCred.tag,
+    from_addr: "noreply@b.example.com",
+    from_name: "B Sender",
+  });
+  userBSmtpConfigId = cfgB.id;
+
   assert.ok(recipientSetId > 0);
   assert.ok(templateId > 0);
+  assert.ok(smtpConfigId > 0);
   assert.ok(summarySetId > 0);
   assert.ok(summaryTemplateId > 0);
   assert.ok(userBSetId > 0);
   assert.ok(userBTemplateId > 0);
+  assert.ok(userBSmtpConfigId > 0);
 });
 
 after(() => {
@@ -249,7 +272,7 @@ test("fill is preserved per row: subject AND body are merged with the row's valu
   const stub = stubTransport({ verifyOk: true });
   const result = await sendTestBatchChunkCore(
     USER,
-    { recipientSetId, templateId, testAddress: TEST_ADDRESS, offset: 0 },
+    { recipientSetId, templateId, smtpConfigId, testAddress: TEST_ADDRESS, offset: 0 },
     stub,
   );
   assert.equal(result.ok, true);
@@ -265,7 +288,7 @@ test("every message is redirected to the ONE test address (CLI --test parity)", 
   const stub = stubTransport({ verifyOk: true });
   const result = await sendTestBatchChunkCore(
     USER,
-    { recipientSetId, templateId, testAddress: TEST_ADDRESS, offset: 0 },
+    { recipientSetId, templateId, smtpConfigId, testAddress: TEST_ADDRESS, offset: 0 },
     stub,
   );
   assert.equal(result.ok, true);
@@ -279,7 +302,7 @@ test("verify runs ONCE before any send on the first chunk (offset 0)", async () 
   const stub = stubTransport({ verifyOk: true });
   const result = await sendTestBatchChunkCore(
     USER,
-    { recipientSetId, templateId, testAddress: TEST_ADDRESS, offset: 0 },
+    { recipientSetId, templateId, smtpConfigId, testAddress: TEST_ADDRESS, offset: 0 },
     stub,
   );
   assert.equal(result.ok, true);
@@ -299,6 +322,7 @@ test("a later chunk (offset === CHUNK_SIZE) skips verify and still sends its sli
     {
       recipientSetId,
       templateId,
+      smtpConfigId,
       testAddress: TEST_ADDRESS,
       offset: TEST_SEND_CHUNK_SIZE,
     },
@@ -313,7 +337,7 @@ test("cursor: chunk 0 reports more, the final chunk reports done; looping covers
   // Chunk 0 cursor.
   const first = await sendTestBatchChunkCore(
     USER,
-    { recipientSetId, templateId, testAddress: TEST_ADDRESS, offset: 0 },
+    { recipientSetId, templateId, smtpConfigId, testAddress: TEST_ADDRESS, offset: 0 },
     stubTransport({ verifyOk: true }),
   );
   assert.equal(first.ok, true);
@@ -332,7 +356,7 @@ test("cursor: chunk 0 reports more, the final chunk reports done; looping covers
     const stub = stubTransport({ verifyOk: true });
     const res = await sendTestBatchChunkCore(
       USER,
-      { recipientSetId, templateId, testAddress: TEST_ADDRESS, offset },
+      { recipientSetId, templateId, smtpConfigId, testAddress: TEST_ADDRESS, offset },
       stub,
     );
     assert.equal(res.ok, true);
@@ -352,7 +376,7 @@ test("a per-row send failure is isolated: the row lands in failed/errors, the re
   const stub = stubTransport({ verifyOk: true, failOnSend: 3, sendMessage: "550 nope" });
   const result = await sendTestBatchChunkCore(
     USER,
-    { recipientSetId, templateId, testAddress: TEST_ADDRESS, offset: 0 },
+    { recipientSetId, templateId, smtpConfigId, testAddress: TEST_ADDRESS, offset: 0 },
     stub,
   );
   assert.equal(result.ok, true);
@@ -370,7 +394,7 @@ test("redaction: no result field ever carries the decrypted password (T-5-CRED)"
   const stub = stubTransport({ verifyOk: true, failOnSend: 0, sendMessage: "550 fail" });
   const result = await sendTestBatchChunkCore(
     USER,
-    { recipientSetId, templateId, testAddress: TEST_ADDRESS, offset: 0 },
+    { recipientSetId, templateId, smtpConfigId, testAddress: TEST_ADDRESS, offset: 0 },
     stub,
   );
   assert.ok(
@@ -382,18 +406,39 @@ test("redaction: no result field ever carries the decrypted password (T-5-CRED)"
 test("a NaN/0/negative id fails as a validation error (never resolves a bogus row)", async () => {
   const result = await sendTestBatchChunkCore(
     USER,
-    { recipientSetId: 0, templateId, testAddress: TEST_ADDRESS, offset: 0 },
+    { recipientSetId: 0, templateId, smtpConfigId, testAddress: TEST_ADDRESS, offset: 0 },
     stubTransport({ verifyOk: true }),
   );
   assert.equal(result.ok, false);
   assert.ok(!result.ok && result.error.kind === "validation");
 });
 
+test("test-send is IDOR-safe on smtpConfigId: another tenant's server → not_found, nothing sent", async () => {
+  // USER proposes USER_B's smtpConfigId — owner re-resolve → undefined → not_found
+  // BEFORE any decrypt/verify/send (T-061-09).
+  const stub = stubTransport({ verifyOk: true });
+  const result = await sendTestBatchChunkCore(
+    USER,
+    {
+      recipientSetId,
+      templateId,
+      smtpConfigId: userBSmtpConfigId,
+      testAddress: TEST_ADDRESS,
+      offset: 0,
+    },
+    stub,
+  );
+  assert.equal(result.ok, false);
+  assert.ok(!result.ok && result.error.kind === "not_found");
+  assert.equal(stub.calls.verify, 0, "a cross-tenant server choice never dials");
+  assert.equal(stub.calls.send, 0, "a cross-tenant server choice never sends");
+});
+
 // --- TEST-02 / TEST-03 confirmation-gate seam assertions ---------------------
 
 test("prepareCampaignCore creates a draft campaign from the caller's FKs (A1/U7 timing)", async () => {
   const before = campaignCountFor(USER);
-  const result = await prepareCampaignCore(USER, { recipientSetId, templateId });
+  const result = await prepareCampaignCore(USER, { recipientSetId, templateId, smtpConfigId });
   assert.equal(result.ok, true);
   if (result.ok) {
     assert.ok(result.data.campaignId > 0, "returns the created campaign id");
@@ -403,28 +448,49 @@ test("prepareCampaignCore creates a draft campaign from the caller's FKs (A1/U7 
     assert.equal(row!.status, "draft", "a freshly prepared campaign is a draft");
     assert.equal(row!.recipient_set_id, recipientSetId);
     assert.equal(row!.template_id, templateId);
-    assert.ok(row!.smtp_config_id > 0, "the saved smtp config FK is wired server-side");
+    assert.equal(
+      row!.smtp_config_id,
+      smtpConfigId,
+      "the stamped smtp_config_id equals the SELECTED verified server (06.1)",
+    );
   }
   assert.equal(campaignCountFor(USER), before + 1, "exactly one draft was created");
 });
 
-test("prepareCampaignCore with NO saved SMTP config returns no_smtp_config and creates nothing", async () => {
+test("prepareCampaignCore with a missing/invalid smtpConfigId fails as validation and creates nothing", async () => {
   const before = campaignCountFor(USER_B);
+  // A missing server selection (0 fails the positive-int coercion) → validation,
+  // NOT a bogus resolve. Under 06.1 the choice is required up front (SC2).
   const result = await prepareCampaignCore(USER_B, {
     recipientSetId: userBSetId,
     templateId: userBTemplateId,
+    smtpConfigId: 0,
   });
   assert.equal(result.ok, false);
-  assert.ok(!result.ok && result.error.kind === "no_smtp_config");
-  assert.equal(campaignCountFor(USER_B), before, "no draft is created without an smtp config");
+  assert.ok(!result.ok && result.error.kind === "validation");
+  assert.equal(campaignCountFor(USER_B), before, "no draft is created for an invalid server selection");
 });
 
-test("prepareCampaignCore is IDOR-safe: another tenant's ids return not_found, no row created", async () => {
+test("prepareCampaignCore is IDOR-safe on smtpConfigId: another tenant's server → not_found, no row created", async () => {
+  const before = campaignCountFor(USER);
+  // USER proposes USER_B's smtpConfigId — owner re-resolve returns undefined → not_found (T-061-09).
+  const result = await prepareCampaignCore(USER, {
+    recipientSetId,
+    templateId,
+    smtpConfigId: userBSmtpConfigId,
+  });
+  assert.equal(result.ok, false);
+  assert.ok(!result.ok && result.error.kind === "not_found");
+  assert.equal(campaignCountFor(USER), before, "a cross-tenant server choice creates nothing");
+});
+
+test("prepareCampaignCore is IDOR-safe: another tenant's recipient set returns not_found, no row created", async () => {
   const before = campaignCountFor(USER);
   // USER tries to prepare against USER_B's recipient set → not_found (userId-scoped resolve).
   const result = await prepareCampaignCore(USER, {
     recipientSetId: userBSetId,
     templateId,
+    smtpConfigId,
   });
   assert.equal(result.ok, false);
   assert.ok(!result.ok && result.error.kind === "not_found");
@@ -435,6 +501,7 @@ test("buildConfirmSummaryCore recomputes every aggregate server-side from the ca
   const prepared = await prepareCampaignCore(USER, {
     recipientSetId: summarySetId,
     templateId: summaryTemplateId,
+    smtpConfigId,
   });
   assert.equal(prepared.ok, true);
   if (!prepared.ok) return;
@@ -474,6 +541,7 @@ test("buildConfirmSummaryCore is server-authoritative: a known-bad email is coun
   const prepared = await prepareCampaignCore(USER, {
     recipientSetId: summarySetId,
     templateId: summaryTemplateId,
+    smtpConfigId,
   });
   assert.equal(prepared.ok, true);
   if (!prepared.ok) return;
@@ -488,6 +556,7 @@ test("buildConfirmSummaryCore redaction: the summary never carries the SMTP pass
   const prepared = await prepareCampaignCore(USER, {
     recipientSetId: summarySetId,
     templateId: summaryTemplateId,
+    smtpConfigId,
   });
   assert.equal(prepared.ok, true);
   if (!prepared.ok) return;
@@ -504,6 +573,7 @@ test("buildConfirmSummaryCore IDOR: another tenant's campaignId returns not_foun
   const prepared = await prepareCampaignCore(USER, {
     recipientSetId: summarySetId,
     templateId: summaryTemplateId,
+    smtpConfigId,
   });
   assert.equal(prepared.ok, true);
   if (!prepared.ok) return;
@@ -516,7 +586,7 @@ test("buildConfirmSummaryCore IDOR: another tenant's campaignId returns not_foun
 });
 
 test("enqueueCampaignCore flips a draft to queued exactly once; a second confirm is already_queued (TEST-03)", async () => {
-  const prepared = await prepareCampaignCore(USER, { recipientSetId, templateId });
+  const prepared = await prepareCampaignCore(USER, { recipientSetId, templateId, smtpConfigId });
   assert.equal(prepared.ok, true);
   if (!prepared.ok) return;
   const campaignId = prepared.data.campaignId;
@@ -533,7 +603,7 @@ test("enqueueCampaignCore flips a draft to queued exactly once; a second confirm
 });
 
 test("enqueueCampaignCore cross-tenant: another tenant's id is refused (already_queued) and the status is unchanged", async () => {
-  const prepared = await prepareCampaignCore(USER, { recipientSetId, templateId });
+  const prepared = await prepareCampaignCore(USER, { recipientSetId, templateId, smtpConfigId });
   assert.equal(prepared.ok, true);
   if (!prepared.ok) return;
   const campaignId = prepared.data.campaignId;
