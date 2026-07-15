@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { eq } from "drizzle-orm";
 
 // --- Provision an isolated temp DB + key + uploads dir BEFORE any import -------
 const TMP_DIR = mkdtempSync(join(tmpdir(), "campaign-actions-"));
@@ -71,11 +72,13 @@ const SUMMARY_ROW1_EMAIL = "alice@example.com";
 
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
+const { campaigns, send_records } = await import("@/lib/db/schema");
 const {
   sendTestBatchChunkCore,
   prepareCampaignCore,
   buildConfirmSummaryCore,
   enqueueCampaignCore,
+  getCampaignProgressCore,
 } = await import("./actions-core");
 const { TEST_SEND_CHUNK_SIZE } = await import("./schema");
 const { createRecipientSet } = await import("../data/recipients");
@@ -615,4 +618,67 @@ test("enqueueCampaignCore cross-tenant: another tenant's id is refused (already_
   // The owner's campaign is still a draft — the cross-tenant call changed nothing.
   const row = await getCampaignForUser(USER, campaignId);
   assert.ok(row && row.status === "draft", "the cross-tenant enqueue left the status untouched");
+});
+
+// --- SEND-05 live-progress service seam --------------------------------------
+//
+// getCampaignProgressCore is the userId-scoped read the polling UI (Plan 05) and
+// the export route (Plan 06) consume. It lives in this NON-"use server" module so
+// it can accept a caller-supplied userId without being registered as a
+// client-invocable endpoint (T-06-09); actions.ts wraps it behind auth().
+
+test("getCampaignProgressCore rejects an invalid campaignId as a validation error", async () => {
+  for (const bad of [0, -1, Number.NaN, "abc"]) {
+    const result = await getCampaignProgressCore(USER, { campaignId: bad });
+    assert.equal(result.ok, false);
+    assert.ok(
+      !result.ok && result.error.kind === "validation",
+      `campaignId ${String(bad)} must fail as validation`,
+    );
+  }
+});
+
+test("getCampaignProgressCore returns remaining = total − sent − failed + the current recipient (owned)", async () => {
+  const prepared = await prepareCampaignCore(USER, { recipientSetId, templateId, smtpConfigId });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const campaignId = prepared.data.campaignId;
+
+  // Drive a mixed running state: 10 total, 4 sent, 2 failed → 4 remaining.
+  await db
+    .update(campaigns)
+    .set({ status: "running", total: 10, sent_count: 4, failed_count: 2 })
+    .where(eq(campaigns.id, campaignId));
+  await db.insert(send_records).values([
+    { campaign_id: campaignId, to_addr: "done@example.com", merged_subject: "S", merged_body: "B", status: "sent" },
+    { campaign_id: campaignId, to_addr: "live@example.com", merged_subject: "S", merged_body: "B", status: "sending" },
+  ]);
+
+  const result = await getCampaignProgressCore(USER, { campaignId });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.data.status, "running");
+  assert.equal(result.data.total, 10);
+  assert.equal(result.data.sent, 4);
+  assert.equal(result.data.failed, 2);
+  assert.equal(result.data.remaining, 4, "remaining = total − sent − failed");
+  assert.equal(result.data.current, "live@example.com", "current = the lone 'sending' row's to_addr");
+});
+
+test("getCampaignProgressCore reports a null current when nothing is 'sending'", async () => {
+  const prepared = await prepareCampaignCore(USER, { recipientSetId, templateId, smtpConfigId });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const result = await getCampaignProgressCore(USER, { campaignId: prepared.data.campaignId });
+  assert.equal(result.ok, true);
+  assert.ok(result.ok && result.data.current === null, "a fresh draft has no in-flight recipient");
+});
+
+test("getCampaignProgressCore is IDOR-safe: another tenant's campaignId → not_found", async () => {
+  const prepared = await prepareCampaignCore(USER, { recipientSetId, templateId, smtpConfigId });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const result = await getCampaignProgressCore(USER_B, { campaignId: prepared.data.campaignId });
+  assert.equal(result.ok, false);
+  assert.ok(!result.ok && result.error.kind === "not_found", "USER_B cannot read USER's progress");
 });
