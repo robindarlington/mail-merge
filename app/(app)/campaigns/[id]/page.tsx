@@ -116,11 +116,15 @@ export default async function CampaignDetailPage({
         />
       ) : campaign.status === "failed" ? (
         <Alert variant="destructive">
-          <AlertTitle>This send couldn&apos;t start</AlertTitle>
+          <AlertTitle>
+            {campaign.sent_count > 0
+              ? "This send stopped partway through"
+              : "This send couldn't start"}
+          </AlertTitle>
           <AlertDescription>
-            Your SMTP server didn&apos;t accept the connection, or the settings
-            were no longer valid. Nothing was sent. Check your SMTP settings and
-            start a new send.
+            {campaign.sent_count > 0
+              ? `The send stopped after ${campaign.sent_count} of ${campaign.total} messages — your SMTP server stopped accepting the connection, or the settings were no longer valid. Delivered messages are listed below; nothing was sent twice. Check your SMTP settings and start a new send for the rest.`
+              : "Your SMTP server didn't accept the connection, or the settings were no longer valid. No emails were sent. Check your SMTP settings and start a new send."}
           </AlertDescription>
         </Alert>
       ) : (
