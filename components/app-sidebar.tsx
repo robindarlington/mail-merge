@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, PenLine, Settings, Users } from "lucide-react";
+import { LayoutDashboard, PenLine, Send, Settings, Users } from "lucide-react";
 
 import {
   Sidebar,
@@ -18,19 +18,19 @@ import {
 /**
  * Left-hand nav for the authenticated app shell (D-11).
  *
- * Two active slots this phase — Dashboard and SMTP Settings. The active item is
- * detected from the current pathname and rendered with the sidebar accent
- * indicator (the `isActive` prop drives shadcn's data-active accent styling, the
- * only accent use permitted for nav per the UI-SPEC Color contract).
+ * Active slots — Dashboard, Lists, Compose, Campaigns, and SMTP Settings. The
+ * active item is detected from the current pathname and rendered with the sidebar
+ * accent indicator (the `isActive` prop drives shadcn's data-active accent styling,
+ * the only accent use permitted for nav per the UI-SPEC Color contract). The
+ * `startsWith` check keeps "Campaigns" active on the /campaigns/[id] drill-down.
  *
- * Client component because active detection needs `usePathname()`. Future slots
- * (Campaigns, History) arrive in later phases — see the placeholder note below;
- * they drop into this same SidebarMenu without reshaping the shell.
+ * Client component because active detection needs `usePathname()`.
  */
 const NAV_ITEMS = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { title: "Lists", href: "/lists", icon: Users },
   { title: "Compose", href: "/compose", icon: PenLine },
+  { title: "Campaigns", href: "/campaigns", icon: Send },
   { title: "SMTP Settings", href: "/settings/smtp", icon: Settings },
 ] as const;
 
@@ -61,12 +61,6 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 );
               })}
-              {/*
-                Future nav slots (D-11): "Campaigns" and "History" pages arrive in
-                later phases (CSV upload → send → history). They belong here, in
-                the same SidebarMenu, so the shell never needs restructuring — add
-                a SidebarMenuItem per the pattern above when those routes exist.
-              */}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
