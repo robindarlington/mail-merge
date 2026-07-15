@@ -77,12 +77,24 @@ export async function tick(opts: TickOptions): Promise<TickResult> {
   const campaign = claimNextCampaign(opts.workerId, opts.leaseSec);
   if (!campaign) return { claimed: false };
 
-  // Re-claim recovery: sweep any orphaned 'sending' rows terminal BEFORE sending,
-  // so a crashed worker's in-flight row is never re-delivered (no-op on first claim).
-  recoverOrphanedSending(campaign.id);
+  // Every post-claim failure MUST be terminal (CR-02). materialize throws on a
+  // deleted CSV, an unresolvable email column, or a missing recipient set/template;
+  // recover could throw on a DB fault. Without this catch the campaign sits
+  // 'running' until its lease expires, gets reclaimed, throws again — an infinite
+  // claim→throw→reclaim loop with the UI spinning "Sending" forever. Instead we
+  // mark it failed so it reaches a terminal state and frees the FIFO queue.
+  try {
+    // Re-claim recovery: sweep any orphaned 'sending' rows terminal BEFORE sending,
+    // so a crashed worker's in-flight row is never re-delivered (no-op on first claim).
+    recoverOrphanedSending(campaign.id);
 
-  // Idempotent materialize: inserts only missing rows (no-op on a resume).
-  await materializeSendRecords(campaign);
+    // Idempotent materialize: inserts only missing rows (no-op on a resume).
+    await materializeSendRecords(campaign);
+  } catch (e) {
+    const reason = (e as Error)?.message ?? String(e);
+    markFailed(campaign.id, reason, opts.workerId);
+    return { claimed: true, campaignId: campaign.id, outcome: "failed", reason };
+  }
 
   // Per-row lease bump so a long batch keeps its claim (Pattern 4). The bump is
   // ownership-checked: if it matches zero rows the lease was stolen, so it throws

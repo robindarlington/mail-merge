@@ -220,6 +220,39 @@ test("verify-abort: a verify failure marks the campaign 'failed' with ZERO sent"
   assert.equal(camp!.sent_count, 0, "no rows sent");
 });
 
+test("a materialize failure marks the campaign failed — no infinite reclaim loop (CR-02)", async () => {
+  // A recipient set whose stored CSV does not exist → readUpload (inside
+  // materialize) throws. Before CR-02 that propagated out of tick, leaving the
+  // campaign 'running' to be reclaimed → throw → reclaimed forever. Now it is
+  // caught and the campaign is driven to a terminal 'failed' state.
+  const [badSet] = await createRecipientSet(USER, {
+    filename: "gone.csv",
+    columns_json: JSON.stringify(["email", "name"]),
+    row_count: 1,
+    storage_path: "does-not-exist.csv",
+    email_column: "email",
+  });
+  const [created] = await createDraftCampaign(USER, {
+    recipient_set_id: badSet.id,
+    template_id: templateId,
+    smtp_config_id: smtpConfigId,
+  });
+  await enqueueCampaign(USER, created.id);
+
+  const stub = stubTransport({ verifyOk: true });
+  const result = await tick({ workerId: "w1", leaseSec: 300, delayMs: 0, transportOverride: stub });
+
+  assert.equal(result.claimed, true);
+  assert.equal(result.claimed && result.campaignId, created.id);
+  assert.equal(result.claimed && result.outcome, "failed", "a materialize failure is terminal");
+  assert.equal(stub.calls.send, 0, "nothing sent when materialize fails");
+
+  const camp = await campaignRow(created.id);
+  assert.equal(camp!.status, "failed", "the campaign reaches a terminal state (not stuck running)");
+  assert.equal(camp!.worker_id, null, "the lease is released so it is never reclaimed again");
+  assert.equal(camp!.lease_expires_at, null);
+});
+
 test("a stolen lease mid-run aborts the tick without finalizing (CR-01)", async () => {
   const id = await queuedCampaign();
 
