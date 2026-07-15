@@ -235,9 +235,9 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 06-04-PLAN.md — Worker composition: tick() lifecycle + worker/index.ts (pino, poll interval, SIGTERM, env config)
-- [ ] 06-05-PLAN.md — History + live-progress UI: Campaigns nav + list + detail + results table + polling progress panel
-- [ ] 06-06-PLAN.md — Downloadable results CSV: formula-injection-safe toResultsCsv + userId-scoped GET export route
+- [x] 06-04-PLAN.md — Worker composition: tick() lifecycle + worker/index.ts (pino, poll interval, SIGTERM, env config)
+- [x] 06-05-PLAN.md — History + live-progress UI: Campaigns nav + list + detail + results table + polling progress panel
+- [x] 06-06-PLAN.md — Downloadable results CSV: formula-injection-safe toResultsCsv + userId-scoped GET export route
 
 **Wave 3** *(blocked on Wave 2)*
 
