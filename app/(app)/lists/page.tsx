@@ -5,6 +5,7 @@ import { FileSpreadsheet } from "lucide-react";
 import { listRecipientSetsForUser } from "@/lib/data";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CsvUploader } from "@/components/recipients/csv-uploader";
+import { ListRename } from "@/components/recipients/list-rename";
 
 /**
  * /lists — the CSV upload + review + save surface (CSV-01/03/04/05, read side
@@ -62,17 +63,26 @@ export default async function ListsPage() {
         <Card>
           <CardContent className="flex flex-col divide-y">
             {sets.map((set) => (
-              <Link
+              <div
                 key={set.id}
-                href={`/lists/${set.id}`}
                 className="-mx-2 flex items-center gap-2 rounded px-2 py-3 text-sm first:pt-0 last:pb-0 hover:bg-muted"
               >
-                <FileSpreadsheet className="size-4 shrink-0 text-muted-foreground" />
-                <span>
-                  {set.filename} — {set.row_count} recipients ·{" "}
-                  {formatRelativeDate(set.created_at)}
-                </span>
-              </Link>
+                <Link
+                  href={`/lists/${set.id}`}
+                  className="flex flex-1 items-center gap-2"
+                >
+                  <FileSpreadsheet className="size-4 shrink-0 text-muted-foreground" />
+                  <span>
+                    {set.label ?? set.filename} — {set.row_count} recipients ·{" "}
+                    {formatRelativeDate(set.created_at)}
+                  </span>
+                </Link>
+                <ListRename
+                  id={set.id}
+                  currentName={set.label ?? set.filename}
+                  showName={false}
+                />
+              </div>
             ))}
           </CardContent>
         </Card>
