@@ -348,6 +348,32 @@ test("a row delivered by another worker mid-run is fenced out and never re-sent 
   assert.equal(camp!.sent_count, 2, "counter bumped only for rows this run delivered");
 });
 
+test("shouldStop drains between rows: remaining rows stay pending, run reports stopped (WR-03)", async () => {
+  const c = await freshCampaign();
+  await seedPending(c.id, ["a@ex.com", "b@ex.com", "c@ex.com"]);
+  const stub = stubTransport({ verifyOk: true });
+
+  // shouldStop is checked at the head of each iteration. Trip it once the first
+  // row has been processed so the loop drains before row b — leaving b and c
+  // pending for the reclaim path to resume.
+  let processed = 0;
+  const result = await runCampaign(c, {
+    transportOverride: stub,
+    delayMs: 0,
+    onHeartbeat: () => {
+      processed++;
+    },
+    shouldStop: () => processed >= 1,
+  });
+
+  assert.deepEqual(result, { ok: true, sent: 1, failed: 0, stopped: true });
+  assert.equal(stub.calls.send, 1, "only the first row was sent before the drain");
+
+  const rows = await recordsFor(c.id);
+  const pending = rows.filter((r) => r.status === "pending");
+  assert.equal(pending.length, 2, "the remaining rows are left pending for resume");
+});
+
 test("worker transport timeouts are capped below the default lease (CR-01)", () => {
   const DEFAULT_LEASE_MS = 300_000;
   const maxTimeout = Math.max(

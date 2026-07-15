@@ -57,7 +57,15 @@ function main(): void {
   const interval = setInterval(() => {
     if (stopping || inFlight) return;
     inFlight = true;
-    tick({ workerId, leaseSec: WORKER_LEASE_SEC, delayMs: SEND_DELAY_MS })
+    // Thread the stop flag so a SIGTERM drains BETWEEN rows (WR-03) rather than
+    // waiting for a whole campaign's tick — the graceful path stays inside the
+    // container stop-grace window.
+    tick({
+      workerId,
+      leaseSec: WORKER_LEASE_SEC,
+      delayMs: SEND_DELAY_MS,
+      shouldStop: () => stopping,
+    })
       .then((result) => {
         if (result.claimed && result.outcome === "completed") {
           logger.info(
@@ -68,6 +76,16 @@ function main(): void {
           logger.warn(
             { campaignId: result.campaignId, reason: result.reason },
             "campaign failed",
+          );
+        } else if (result.claimed && result.outcome === "aborted") {
+          logger.warn(
+            { campaignId: result.campaignId, reason: result.reason },
+            "campaign aborted — lease reclaimed by another worker",
+          );
+        } else if (result.claimed && result.outcome === "stopped") {
+          logger.info(
+            { campaignId: result.campaignId, sent: result.sent, failed: result.failed },
+            "campaign drain-stopped — remaining rows left pending for resume",
           );
         }
         // result.claimed === false → no work this poll; stay quiet.

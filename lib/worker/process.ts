@@ -73,11 +73,16 @@ export interface RunCampaignOptions {
   /** Called once per processed row so the caller can bump the lease (Pattern 4).
    *  May THROW (e.g. LeaseLostError) to abort the run promptly on a stolen lease. */
   onHeartbeat?: (campaignId: number) => void;
+  /** Cooperative stop signal checked BEFORE each row. When it returns true the
+   *  loop exits cleanly between rows (graceful drain, WR-03) leaving the remaining
+   *  rows `pending`; the result carries `stopped:true` so the caller does NOT
+   *  finalize the campaign. */
+  shouldStop?: () => boolean;
 }
 
 /** The result of a run: per-row outcome counts, or a whole-campaign abort. */
 export type RunCampaignResult =
-  | { ok: true; sent: number; failed: number }
+  | { ok: true; sent: number; failed: number; stopped?: boolean }
   | { ok: false; reason: string };
 
 /**
@@ -150,6 +155,13 @@ export async function runCampaign(
 
     for (let i = 0; i < pending.length; i++) {
       const rec = pending[i];
+
+      // Graceful drain (WR-03): a stop signal (SIGTERM) exits the loop cleanly
+      // BETWEEN rows — well inside a container's stop-grace window. The remaining
+      // rows stay `pending`; `stopped:true` tells the caller to leave the campaign
+      // `running` (lease intact) so the reclaim path resumes the rest. We never
+      // finalize a drained campaign, and never mark it failed.
+      if (opts.shouldStop?.()) return { ok: true, sent, failed, stopped: true };
 
       // FENCE the pending→sending transition on its expected prior state (CR-01).
       // If another worker (a live-but-slow original whose lease was stolen, or the

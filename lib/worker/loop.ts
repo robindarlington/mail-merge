@@ -59,6 +59,10 @@ export interface TickOptions {
   delayMs: number;
   /** Inject a stub transport in tests so no real socket is opened. */
   transportOverride?: MailTransport;
+  /** Cooperative stop signal (SIGTERM) checked between rows for a graceful drain
+   *  (WR-03). When it trips mid-batch the campaign is left `running` for the
+   *  reclaim path to resume; the tick reports outcome "stopped". */
+  shouldStop?: () => boolean;
 }
 
 /** The summary of one tick: no work, a completed run, or a whole-campaign abort. */
@@ -66,7 +70,8 @@ export type TickResult =
   | { claimed: false }
   | { claimed: true; campaignId: number; outcome: "completed"; sent: number; failed: number }
   | { claimed: true; campaignId: number; outcome: "failed"; reason: string }
-  | { claimed: true; campaignId: number; outcome: "aborted"; reason: string };
+  | { claimed: true; campaignId: number; outcome: "aborted"; reason: string }
+  | { claimed: true; campaignId: number; outcome: "stopped"; sent: number; failed: number };
 
 /**
  * Claim the next campaign and drive its full lifecycle. Returns `{ claimed:false }`
@@ -109,6 +114,7 @@ export async function tick(opts: TickOptions): Promise<TickResult> {
       transportOverride: opts.transportOverride,
       delayMs: opts.delayMs,
       onHeartbeat,
+      shouldStop: opts.shouldStop,
     });
   } catch (e) {
     if (e instanceof LeaseLostError) {
@@ -123,6 +129,19 @@ export async function tick(opts: TickOptions): Promise<TickResult> {
       };
     }
     throw e;
+  }
+
+  if (r.ok && r.stopped) {
+    // Graceful drain (WR-03): the loop stopped between rows. Leave the campaign
+    // `running` with its lease intact — do NOT finalize — so the reclaim path
+    // resumes the remaining `pending` rows on the next claim.
+    return {
+      claimed: true,
+      campaignId: campaign.id,
+      outcome: "stopped",
+      sent: r.sent,
+      failed: r.failed,
+    };
   }
 
   if (r.ok) {

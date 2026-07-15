@@ -220,6 +220,44 @@ test("verify-abort: a verify failure marks the campaign 'failed' with ZERO sent"
   assert.equal(camp!.sent_count, 0, "no rows sent");
 });
 
+test("a drain stop mid-run leaves the campaign running for resume (WR-03)", async () => {
+  const id = await queuedCampaign();
+
+  let sent = 0;
+  const transport = {
+    async verify() {
+      return true;
+    },
+    async sendMail() {
+      sent++;
+      return { messageId: `m${sent}` };
+    },
+  } as unknown as MailTransport;
+
+  const result = await tick({
+    workerId: "w1",
+    leaseSec: 300,
+    delayMs: 0,
+    transportOverride: transport,
+    shouldStop: () => sent >= 1, // stop after the first delivery
+  });
+
+  assert.equal(result.claimed, true);
+  assert.equal(result.claimed && result.outcome, "stopped", "the tick reports a graceful drain");
+  assert.equal(sent, 1, "exactly one row sent before draining");
+
+  const camp = await campaignRow(id);
+  assert.equal(camp!.status, "running", "left running (not completed/failed) for the reclaim path");
+  assert.notEqual(camp!.worker_id, null, "the lease is retained so resume can pick it up");
+
+  const rows = await recordsFor(id);
+  assert.equal(
+    rows.filter((r) => r.status === "pending").length,
+    ADDRS.length - 1,
+    "the undelivered rows remain pending",
+  );
+});
+
 test("a materialize failure marks the campaign failed — no infinite reclaim loop (CR-02)", async () => {
   // A recipient set whose stored CSV does not exist → readUpload (inside
   // materialize) throws. Before CR-02 that propagated out of tick, leaving the
