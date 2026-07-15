@@ -51,16 +51,25 @@ export function ProgressPanel({
 
     let active = true;
     async function poll() {
-      const res = await getCampaignProgress({ campaignId });
-      if (!active) return;
-      if (!res.ok) {
-        // Keep the last-known counts on screen; just flag the transient hiccup.
-        setStaleError(true);
-        return;
+      try {
+        const res = await getCampaignProgress({ campaignId });
+        if (!active) return;
+        if (!res.ok) {
+          // Keep the last-known counts on screen; just flag the transient hiccup.
+          setStaleError(true);
+          return;
+        }
+        setStaleError(false);
+        setProgress(res.data);
+        setStatus(res.data.status);
+      } catch {
+        // A server action is a network fetch: on a deploy restart, a dropped
+        // connection, or a proxy timeout the call REJECTS (not `{ ok:false }`).
+        // Route that through the same last-known-counts retry path so the U9
+        // "Couldn't refresh progress — retrying." line actually fires instead of
+        // producing an unhandled rejection every 2s (WR-01).
+        if (active) setStaleError(true);
       }
-      setStaleError(false);
-      setProgress(res.data);
-      setStatus(res.data.status);
     }
 
     poll();
