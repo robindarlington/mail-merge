@@ -220,6 +220,43 @@ test("verify-abort: a verify failure marks the campaign 'failed' with ZERO sent"
   assert.equal(camp!.sent_count, 0, "no rows sent");
 });
 
+test("a stolen lease mid-run aborts the tick without finalizing (CR-01)", async () => {
+  const id = await queuedCampaign();
+
+  // A transport that, on the FIRST delivery, simulates another worker reclaiming
+  // the stalled campaign by overwriting worker_id. The ownership-checked heartbeat
+  // that fires after that row then matches zero rows → LeaseLostError → the run
+  // aborts BEFORE sending another row (no double-send under a stolen lease).
+  const calls = { verify: 0, send: 0 };
+  const transport = {
+    async verify() {
+      calls.verify++;
+      return true;
+    },
+    async sendMail(m: { from: string; to: string; subject: string; text: string }) {
+      void m;
+      calls.send++;
+      connection.prepare("UPDATE campaigns SET worker_id='thief' WHERE id=?").run(id);
+      return { messageId: `msg-${calls.send}` };
+    },
+  } as unknown as MailTransport;
+
+  const result = await tick({
+    workerId: "w1",
+    leaseSec: 300,
+    delayMs: 0,
+    transportOverride: transport,
+  });
+
+  assert.equal(result.claimed, true);
+  assert.equal(result.claimed && result.outcome, "aborted", "the run aborts on a stolen lease");
+  assert.equal(calls.send, 1, "no further rows are sent once the lease is lost");
+
+  const camp = await campaignRow(id);
+  assert.equal(camp!.status, "running", "the campaign is NOT finalized — the new owner drives it");
+  assert.equal(camp!.worker_id, "thief", "the reclaiming worker's ownership is left intact");
+});
+
 test("resume: re-claim a stalled campaign → orphan swept, only pending sent, no double-send", async () => {
   // Build a campaign that a prior worker started and crashed mid-batch:
   //   a@ = already 'sent' (delivered before the crash — must NOT be re-sent)

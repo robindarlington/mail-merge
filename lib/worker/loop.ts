@@ -26,7 +26,7 @@
  * worker and stolen by another claim mid-send. A single UPDATE, no new opener (D-04).
  */
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db, campaigns, type Campaign } from "@/lib/db";
 import type { MailTransport } from "@/lib/core";
@@ -35,6 +35,19 @@ import { recoverOrphanedSending } from "@/lib/worker/recover";
 import { materializeSendRecords } from "@/lib/worker/materialize";
 import { runCampaign } from "@/lib/worker/process";
 import { markCompleted, markFailed } from "@/lib/worker/finalize";
+
+/**
+ * Thrown by the ownership-checked heartbeat when a lease bump matches zero rows —
+ * i.e. another worker reclaimed this campaign (the stalled-lease branch fired
+ * after a hung socket). The run aborts WITHOUT finalizing: the new owner is now
+ * authoritative and this stale worker must never write to the campaign again.
+ */
+export class LeaseLostError extends Error {
+  constructor(campaignId: number) {
+    super(`lease lost for campaign ${campaignId}`);
+    this.name = "LeaseLostError";
+  }
+}
 
 /** Options for a single poll tick — all side-effecting deps injected. */
 export interface TickOptions {
@@ -52,7 +65,8 @@ export interface TickOptions {
 export type TickResult =
   | { claimed: false }
   | { claimed: true; campaignId: number; outcome: "completed"; sent: number; failed: number }
-  | { claimed: true; campaignId: number; outcome: "failed"; reason: string };
+  | { claimed: true; campaignId: number; outcome: "failed"; reason: string }
+  | { claimed: true; campaignId: number; outcome: "aborted"; reason: string };
 
 /**
  * Claim the next campaign and drive its full lifecycle. Returns `{ claimed:false }`
@@ -70,17 +84,37 @@ export async function tick(opts: TickOptions): Promise<TickResult> {
   // Idempotent materialize: inserts only missing rows (no-op on a resume).
   await materializeSendRecords(campaign);
 
-  // Per-row lease bump so a long batch keeps its claim (Pattern 4).
-  const onHeartbeat = (campaignId: number) => bumpLease(campaignId, opts.leaseSec);
+  // Per-row lease bump so a long batch keeps its claim (Pattern 4). The bump is
+  // ownership-checked: if it matches zero rows the lease was stolen, so it throws
+  // LeaseLostError and the run aborts before sending another row (CR-01).
+  const onHeartbeat = (campaignId: number) =>
+    bumpLease(campaignId, opts.workerId, opts.leaseSec);
 
-  const r = await runCampaign(campaign, {
-    transportOverride: opts.transportOverride,
-    delayMs: opts.delayMs,
-    onHeartbeat,
-  });
+  let r;
+  try {
+    r = await runCampaign(campaign, {
+      workerId: opts.workerId,
+      transportOverride: opts.transportOverride,
+      delayMs: opts.delayMs,
+      onHeartbeat,
+    });
+  } catch (e) {
+    if (e instanceof LeaseLostError) {
+      // The lease was reclaimed mid-run by another worker. Do NOT finalize — the
+      // new owner is authoritative; touching the campaign here would double-send
+      // or stomp its state. Abort quietly and let the new owner drive it.
+      return {
+        claimed: true,
+        campaignId: campaign.id,
+        outcome: "aborted",
+        reason: e.message,
+      };
+    }
+    throw e;
+  }
 
   if (r.ok) {
-    markCompleted(campaign.id);
+    markCompleted(campaign.id, opts.workerId);
     return {
       claimed: true,
       campaignId: campaign.id,
@@ -90,20 +124,29 @@ export async function tick(opts: TickOptions): Promise<TickResult> {
     };
   }
 
-  markFailed(campaign.id, r.reason);
+  markFailed(campaign.id, r.reason, opts.workerId);
   return { claimed: true, campaignId: campaign.id, outcome: "failed", reason: r.reason };
 }
 
 /**
- * Extend a running campaign's lease to `now + leaseSec`. A single UPDATE on the
- * shared drizzle `db` (no new opener, D-04) — called once per sent row so a long
- * batch is not mistaken for a crashed worker and reclaimed mid-send.
+ * Extend a running campaign's lease to `now + leaseSec`, PROVING ownership in the
+ * same statement (`AND worker_id = ?`). A single UPDATE on the shared drizzle `db`
+ * (no new opener, D-04) — called once per sent row so a long batch is not mistaken
+ * for a crashed worker and reclaimed mid-send.
+ *
+ * When the bump matches zero rows the lease was stolen (another worker reclaimed
+ * the stalled campaign): we throw LeaseLostError so the caller aborts the run
+ * before sending another row, preventing the live-but-slow worker from
+ * double-sending (CR-01).
  */
-function bumpLease(campaignId: number, leaseSec: number): void {
-  db.update(campaigns)
+function bumpLease(campaignId: number, workerId: string, leaseSec: number): void {
+  const bumped = db
+    .update(campaigns)
     .set({ lease_expires_at: sql`unixepoch() + ${leaseSec}` })
-    .where(eq(campaigns.id, campaignId))
-    .run();
+    .where(and(eq(campaigns.id, campaignId), eq(campaigns.worker_id, workerId)))
+    .returning({ id: campaigns.id })
+    .all();
+  if (bumped.length === 0) throw new LeaseLostError(campaignId);
 }
 
 export type { Campaign };

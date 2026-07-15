@@ -48,13 +48,30 @@ import {
   type MailTransport,
 } from "@/lib/core";
 
+/**
+ * SMTP dial timeouts for the worker's transport (CR-01). Every phase is capped
+ * WELL BELOW the default lease (WORKER_LEASE_SEC=300s) so a hung connection
+ * surfaces as a per-row failure long before another worker can steal the lease and
+ * double-send. Without these, nodemailer's default 600s socketTimeout exceeds the
+ * 300s lease. Exported so a test can assert the invariant `max < leaseSec*1000`.
+ */
+export const WORKER_TRANSPORT_TIMEOUTS = {
+  connectionTimeout: 60_000,
+  greetingTimeout: 30_000,
+  socketTimeout: 120_000,
+} as const;
+
 /** Options for a single run of a claimed campaign. */
 export interface RunCampaignOptions {
+  /** The claiming worker's id — carried for symmetry with the ownership-checked
+   *  heartbeat/finalize fences (CR-01); the per-row writes fence on status. */
+  workerId?: string;
   /** Inject a stub transport in tests so no real socket is opened. */
   transportOverride?: MailTransport;
   /** Inter-send delay in ms (defaults to 0 — applied BETWEEN sends only). */
   delayMs?: number;
-  /** Called once per processed row so the caller can bump the lease (Pattern 4). */
+  /** Called once per processed row so the caller can bump the lease (Pattern 4).
+   *  May THROW (e.g. LeaseLostError) to abort the run promptly on a stolen lease. */
   onHeartbeat?: (campaignId: number) => void;
 }
 
@@ -97,6 +114,10 @@ export async function runCampaign(
       port: cfg.port,
       secure: cfg.secure,
       auth: { user: cfg.username, pass: password },
+      // Cap every phase of the SMTP dial WELL BELOW the default lease so a hung
+      // connection surfaces as a per-row failure before the lease is stealable
+      // and a live-but-slow worker double-sends (CR-01).
+      ...WORKER_TRANSPORT_TIMEOUTS,
     }) as unknown as MailTransport);
 
   const from = cfg.from_name
@@ -130,11 +151,24 @@ export async function runCampaign(
     for (let i = 0; i < pending.length; i++) {
       const rec = pending[i];
 
-      // Commit 'sending' BEFORE the SMTP await so a crash orphan is detectable.
-      await db
+      // FENCE the pending→sending transition on its expected prior state (CR-01).
+      // If another worker (a live-but-slow original whose lease was stolen, or the
+      // new owner) already advanced this row, the `AND status='pending'` predicate
+      // matches zero rows — we SKIP it and never re-send an already-delivered row.
+      // Committing 'sending' BEFORE the SMTP await also keeps the crash orphan
+      // detectable by the recovery sweep.
+      const claimedRow = db
         .update(send_records)
         .set({ status: "sending" })
-        .where(eq(send_records.id, rec.id));
+        .where(
+          and(
+            eq(send_records.id, rec.id),
+            eq(send_records.status, "pending"),
+          ),
+        )
+        .returning({ id: send_records.id })
+        .all();
+      if (claimedRow.length === 0) continue; // row taken by another worker — do NOT send
 
       // sendOne NEVER throws — a failure comes back as a structured value, so one
       // bad recipient cannot abort the batch (SEND-04). The await is deliberately
@@ -147,38 +181,67 @@ export async function runCampaign(
         body: rec.merged_body,
       });
 
+      // The terminal row write + counter bump are one synchronous transaction so a
+      // crash between them can never desynchronize the counters (WR-04). Each row
+      // write is fenced on `status='sending'` (CR-01): if the recovery sweep or the
+      // new owner already moved this row terminal, we neither overwrite it nor bump
+      // the counter, keeping sent_count/failed_count honest.
       if (res.ok) {
-        await db
-          .update(send_records)
-          .set({
-            status: "sent",
-            message_id: res.messageId,
-            sent_at: sql`(unixepoch())`,
-          })
-          .where(eq(send_records.id, rec.id));
-        await db
-          .update(campaigns)
-          .set({ sent_count: sql`${campaigns.sent_count} + 1` })
-          .where(eq(campaigns.id, campaign.id));
-        sent++;
+        const written = db.transaction((tx) => {
+          const upd = tx
+            .update(send_records)
+            .set({
+              status: "sent",
+              message_id: res.messageId,
+              sent_at: sql`(unixepoch())`,
+            })
+            .where(
+              and(
+                eq(send_records.id, rec.id),
+                eq(send_records.status, "sending"),
+              ),
+            )
+            .returning({ id: send_records.id })
+            .all();
+          if (upd.length === 0) return false;
+          tx.update(campaigns)
+            .set({ sent_count: sql`${campaigns.sent_count} + 1` })
+            .where(eq(campaigns.id, campaign.id))
+            .run();
+          return true;
+        });
+        if (written) sent++;
       } else {
         // Store the message STRING only — never a raw Error object (D-06).
-        await db
-          .update(send_records)
-          .set({
-            status: "failed",
-            error: res.error.message,
-            attempts: sql`${send_records.attempts} + 1`,
-          })
-          .where(eq(send_records.id, rec.id));
-        await db
-          .update(campaigns)
-          .set({ failed_count: sql`${campaigns.failed_count} + 1` })
-          .where(eq(campaigns.id, campaign.id));
-        failed++;
+        const written = db.transaction((tx) => {
+          const upd = tx
+            .update(send_records)
+            .set({
+              status: "failed",
+              error: res.error.message,
+              attempts: sql`${send_records.attempts} + 1`,
+            })
+            .where(
+              and(
+                eq(send_records.id, rec.id),
+                eq(send_records.status, "sending"),
+              ),
+            )
+            .returning({ id: send_records.id })
+            .all();
+          if (upd.length === 0) return false;
+          tx.update(campaigns)
+            .set({ failed_count: sql`${campaigns.failed_count} + 1` })
+            .where(eq(campaigns.id, campaign.id))
+            .run();
+          return true;
+        });
+        if (written) failed++;
       }
 
-      // Heartbeat (lease bump hook) each row, then throttle BETWEEN sends only.
+      // Heartbeat (lease bump hook) each row — it also PROVES ownership and throws
+      // LeaseLostError when the lease was stolen, aborting the run promptly (CR-01).
+      // Then throttle BETWEEN sends only.
       opts.onHeartbeat?.(campaign.id);
       if (i < pending.length - 1) await throttle(delayMs);
     }

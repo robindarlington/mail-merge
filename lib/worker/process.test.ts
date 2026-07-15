@@ -36,7 +36,7 @@ const MARKER_PASSWORD = "MARKER-SECRET-PASSWORD-06-02";
 
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection, send_records, campaigns } = await import("@/lib/db");
-const { runCampaign } = await import("./process");
+const { runCampaign, WORKER_TRANSPORT_TIMEOUTS } = await import("./process");
 const { createRecipientSet } = await import("@/lib/data");
 const { createTemplate } = await import("@/lib/data");
 const { createSmtpConfig } = await import("@/lib/data");
@@ -308,6 +308,59 @@ test("throttle is applied BETWEEN sends only, never after the last row", async (
   // there would be 3 gaps (>= 75ms). Assert 2 gaps happened but not 3.
   assert.ok(elapsed >= DELAY * 2 * 0.8, `expected >= ~${DELAY * 2}ms of throttle, got ${elapsed}ms`);
   assert.ok(elapsed < DELAY * 3, `expected < ${DELAY * 3}ms (no throttle after last row), got ${elapsed}ms`);
+});
+
+test("a row delivered by another worker mid-run is fenced out and never re-sent (CR-01)", async () => {
+  const c = await freshCampaign();
+  const ids = await seedPending(c.id, ["a@ex.com", "b@ex.com", "c@ex.com"]);
+  const stub = stubTransport({ verifyOk: true });
+
+  // The pending snapshot captures all three rows. After the FIRST row is processed
+  // a concurrent worker "delivers" the LAST row (flips it 'sending' snapshot →
+  // 'sent'). The pending→sending fence (AND status='pending') must then SKIP it so
+  // it is never re-sent — the no-double-send guarantee under a stolen lease.
+  let beats = 0;
+  const result = await runCampaign(c, {
+    transportOverride: stub,
+    delayMs: 0,
+    onHeartbeat: () => {
+      beats++;
+      if (beats === 1) {
+        db.update(send_records)
+          .set({ status: "sent", message_id: "other-worker", sent_at: 222 })
+          .where(eq(send_records.id, ids[2]))
+          .run();
+      }
+    },
+  });
+
+  assert.deepEqual(result, { ok: true, sent: 2, failed: 0 });
+  assert.equal(stub.calls.send, 2, "the row taken by another worker was skipped, not re-sent");
+
+  const rows = await recordsFor(c.id);
+  const cRow = rows.find((r) => r.id === ids[2])!;
+  assert.equal(cRow.status, "sent", "the concurrently-delivered row stays sent");
+  assert.equal(cRow.message_id, "other-worker", "the other worker's delivery is untouched");
+
+  // sent_count bumps only for rows THIS run actually delivered (a@, b@) — the
+  // fenced-out c@ never bumped it, so the counter stays honest under contention.
+  const camp = await campaignRow(c.id);
+  assert.equal(camp!.sent_count, 2, "counter bumped only for rows this run delivered");
+});
+
+test("worker transport timeouts are capped below the default lease (CR-01)", () => {
+  const DEFAULT_LEASE_MS = 300_000;
+  const maxTimeout = Math.max(
+    WORKER_TRANSPORT_TIMEOUTS.connectionTimeout,
+    WORKER_TRANSPORT_TIMEOUTS.greetingTimeout,
+    WORKER_TRANSPORT_TIMEOUTS.socketTimeout,
+  );
+  assert.ok(
+    maxTimeout < DEFAULT_LEASE_MS,
+    `every SMTP dial phase (max ${maxTimeout}ms) must finish before the ${DEFAULT_LEASE_MS}ms lease can be stolen`,
+  );
+  // Guard against a regression back to nodemailer's 600s socket default.
+  assert.ok(WORKER_TRANSPORT_TIMEOUTS.socketTimeout <= 120_000);
 });
 
 test("onHeartbeat fires once per processed row", async () => {

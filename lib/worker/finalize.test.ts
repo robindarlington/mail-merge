@@ -107,7 +107,8 @@ const byId = (id: number) =>
 test("markCompleted → completed, finished_at set, lease released, even with failed_count>0", async () => {
   const id = await runningLeasedCampaign(3);
 
-  markCompleted(id);
+  const rows = markCompleted(id, "worker-x");
+  assert.equal(rows, 1, "the owning worker's terminal write lands");
 
   const c = byId(id);
   assert.equal(c.status, "completed", "a drained run is completed");
@@ -120,11 +121,33 @@ test("markCompleted → completed, finished_at set, lease released, even with fa
 test("markFailed → failed, finished_at set, lease released", async () => {
   const id = await runningLeasedCampaign(0);
 
-  markFailed(id, "smtp verify failed before any send");
+  const rows = markFailed(id, "smtp verify failed before any send", "worker-x");
+  assert.equal(rows, 1, "the owning worker's terminal write lands");
 
   const c = byId(id);
   assert.equal(c.status, "failed", "a whole-campaign abort is failed");
   assert.ok(c.finished_at, "finished_at stamped");
   assert.equal(c.worker_id, null, "worker_id cleared (lease released)");
   assert.equal(c.lease_expires_at, null, "lease_expires_at cleared");
+});
+
+test("markCompleted is a no-op when the lease was stolen (worker_id mismatch, CR-01)", async () => {
+  const id = await runningLeasedCampaign(0);
+  // A stale worker whose lease was reclaimed by 'worker-x' tries to finalize.
+  const rows = markCompleted(id, "stale-worker");
+  assert.equal(rows, 0, "the stale worker's terminal write matches zero rows");
+
+  const c = byId(id);
+  assert.equal(c.status, "running", "the campaign is left running for the new owner");
+  assert.equal(c.worker_id, "worker-x", "the new owner's claim is untouched");
+});
+
+test("markFailed is a no-op when the lease was stolen (worker_id mismatch, CR-01)", async () => {
+  const id = await runningLeasedCampaign(0);
+  const rows = markFailed(id, "stale abort", "stale-worker");
+  assert.equal(rows, 0, "the stale worker's terminal write matches zero rows");
+
+  const c = byId(id);
+  assert.equal(c.status, "running", "the campaign is left running for the new owner");
+  assert.equal(c.worker_id, "worker-x", "the new owner's claim is untouched");
 });
