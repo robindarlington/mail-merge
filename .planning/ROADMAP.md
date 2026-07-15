@@ -279,8 +279,16 @@ Plans:
   3. Attachment resolution is safe against path traversal (opaque upload IDs, never CSV-provided paths) and enforces per-file and per-message size limits.
   4. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
-**Plans**: TBD
+**Plans**: 6 plans (5 + staging checkpoint)
 **UI hint**: yes
+
+Plans:
+- [ ] 07-01-PLAN.md — Foundation: attachments-table migration (owner + nullable FKs + size_bytes) + traversal-proof storage + limit constants + column auto-detect (wave 1)
+- [ ] 07-02-PLAN.md — userId-scoped attachments DAL (IDOR) + upload/list/delete/confirm-column actions + attachment_column persistence + bodySizeLimit bump (wave 2)
+- [ ] 07-03-PLAN.md — Confirm-gate: prepare-time campaign stamping + server-authoritative match/presence/size validation + blocking enqueue (wave 3)
+- [ ] 07-04-PLAN.md — Worker send-path: additive transport attachments + send_record linkage at materialize + graceful rejected-attachment-missing per-row fail (wave 3)
+- [ ] 07-05-PLAN.md — UI: compose attachments card + confirm-dialog attachment lines/block + results table & CSV attachment column (wave 4)
+- [ ] 07-06-PLAN.md — [CHECKPOINT] Coolify staging redeploy + per-row attachment walkthrough (wave 5)
 
 ### Phase 8: Docker / Coolify Packaging + Operational Hardening
 
