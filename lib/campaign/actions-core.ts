@@ -53,6 +53,7 @@ import {
   createDraftCampaign,
   enqueueCampaign as enqueueCampaignDal,
   getCampaignForUser,
+  getCampaignProgressRow,
   getRecipientSetForUser,
   getSmtpConfigByIdForUser,
   getTemplateForUser,
@@ -513,4 +514,60 @@ export async function enqueueCampaignCore(
     return { ok: false, error: { kind: "already_queued" } };
   }
   return { ok: true, data: { campaignId: idParsed.data } };
+}
+
+// --- Live-progress read seam (SEND-05) ---------------------------------------
+//
+// The single source of truth the polling UI (Plan 05) and the export route
+// (Plan 06) read. It carries counts ONLY — never a send_record.error body (those
+// are message-only strings by Plan-02 discipline, but the progress payload does
+// not surface them at all) so nothing sensitive rides the client wire (T-06-10).
+
+/**
+ * The live-progress payload the polling client renders. `remaining` is derived
+ * server-side (total − sent − failed) so the client never computes it; `current`
+ * is the in-flight recipient's address (the lone 'sending' row) or null.
+ */
+export type ProgressData = {
+  status: string;
+  total: number;
+  sent: number;
+  failed: number;
+  remaining: number;
+  current: string | null;
+};
+
+/** Uniform result (never rejects). */
+export type ProgressResult =
+  | { ok: true; data: ProgressData }
+  | { ok: false; error: ActionError };
+
+/**
+ * Progress seam (testable): validate the campaignId → userId-scoped
+ * `getCampaignProgressRow` (cross-tenant/bogus id → undefined → not_found) →
+ * shape the counts + derived `remaining` + current recipient. This module carries
+ * NO "use server", so it can accept a caller-supplied userId without becoming a
+ * client-invocable endpoint (T-06-09); actions.ts wraps it behind auth().
+ */
+export async function getCampaignProgressCore(
+  userId: string,
+  input: { campaignId: unknown },
+): Promise<ProgressResult> {
+  const idParsed = campaignIdSchema.safeParse(input.campaignId);
+  if (!idParsed.success) {
+    return { ok: false, error: { kind: "validation", issues: idParsed.error.issues } };
+  }
+  const row = await getCampaignProgressRow(userId, idParsed.data);
+  if (!row) return { ok: false, error: { kind: "not_found" } };
+  return {
+    ok: true,
+    data: {
+      status: row.status,
+      total: row.total,
+      sent: row.sent_count,
+      failed: row.failed_count,
+      remaining: row.total - row.sent_count - row.failed_count,
+      current: row.current,
+    },
+  };
 }
