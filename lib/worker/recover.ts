@@ -33,26 +33,33 @@ const INTERRUPTED_ERROR = "interrupted: delivery status unknown";
  * never be re-sent.
  */
 export function recoverOrphanedSending(campaignId: number): number {
-  // Single atomic sweep; the RETURNING rows ARE the count (no separate SELECT).
-  const swept = db
-    .update(send_records)
-    .set({ status: "failed", error: INTERRUPTED_ERROR })
-    .where(
-      and(
-        eq(send_records.campaign_id, campaignId),
-        eq(send_records.status, "sending"),
-      ),
-    )
-    .returning({ id: send_records.id })
-    .all();
+  // The sweep and the failed_count bump are ONE synchronous transaction (WR-04):
+  // a crash between them (SIGKILL lands here on every deploy) would otherwise
+  // desynchronize failed_count from the row states forever, since the counters are
+  // never reconciled from rows. better-sqlite3 is synchronous, so the whole
+  // sweep+bump commits atomically or not at all.
+  return db.transaction((tx) => {
+    // Single atomic sweep; the RETURNING rows ARE the count (no separate SELECT).
+    const swept = tx
+      .update(send_records)
+      .set({ status: "failed", error: INTERRUPTED_ERROR })
+      .where(
+        and(
+          eq(send_records.campaign_id, campaignId),
+          eq(send_records.status, "sending"),
+        ),
+      )
+      .returning({ id: send_records.id })
+      .all();
 
-  const n = swept.length;
-  if (n === 0) return 0; // no orphans → no counter change
+    const n = swept.length;
+    if (n === 0) return 0; // no orphans → no counter change
 
-  db.update(campaigns)
-    .set({ failed_count: sql`${campaigns.failed_count} + ${n}` })
-    .where(eq(campaigns.id, campaignId))
-    .run();
+    tx.update(campaigns)
+      .set({ failed_count: sql`${campaigns.failed_count} + ${n}` })
+      .where(eq(campaigns.id, campaignId))
+      .run();
 
-  return n;
+    return n;
+  });
 }

@@ -144,6 +144,33 @@ test("sweeps sending→failed(interrupted) and leaves sent/failed/pending untouc
   assert.equal(campaign.failed_count, 2, "failed_count rose by exactly the swept count");
 });
 
+test("sweep + failed_count bump commit together — counter matches row states (WR-04)", async () => {
+  const id = await newCampaign();
+  insertRecord(id, "s1@example.com", "sending");
+  insertRecord(id, "s2@example.com", "sending");
+  insertRecord(id, "s3@example.com", "sending");
+
+  const swept = recoverOrphanedSending(id);
+  assert.equal(swept, 3);
+
+  // The row transition and the counter bump are one transaction, so the counter
+  // can never disagree with the row states (no torn/partial write on a crash).
+  const rows = db
+    .select()
+    .from(send_records)
+    .where(eq(send_records.campaign_id, id))
+    .all();
+  const interrupted = rows.filter((r) => r.error === INTERRUPTED).length;
+  const campaign = db.select().from(campaigns).where(eq(campaigns.id, id)).all()[0];
+
+  assert.equal(interrupted, 3, "every sending row is now failed(interrupted)");
+  assert.equal(
+    campaign.failed_count,
+    interrupted,
+    "failed_count is exactly the swept-row count — committed atomically with the sweep",
+  );
+});
+
 test("a campaign with zero sending rows is a no-op returning 0", async () => {
   const id = await newCampaign();
   insertRecord(id, "only-pending@example.com", "pending");
