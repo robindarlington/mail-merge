@@ -196,6 +196,7 @@ export function SmtpWizard({
               <StepVerify
                 form={form}
                 isEdit={isEdit}
+                configId={configId}
                 connectionDirty={connectionDirty}
                 pending={pending}
                 persist={persist}

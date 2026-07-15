@@ -16,8 +16,9 @@
  *   setDefaultServer — make one owned server the account default (owner-scoped).
  *   deleteServer     — soft-delete one owned server, blocked by the in-use guard
  *                      when a queued/running campaign still references it (SC5).
- *   updateFromFields — saves from_addr / from_name WITHOUT a verify round-trip and
- *                      WITHOUT touching verified_at (D-08 / Pitfall 6).
+ *   updateServerMeta — saves label + from_addr / from_name of ONE owned, id-scoped
+ *                      config WITHOUT a verify round-trip and WITHOUT touching
+ *                      verified_at (D-08 / Pitfall 6). No SMTP dial, no rate limit.
  *   sendTestEmail    — reuses lib/core/send.ts to prove a SAVED, id-addressed
  *                      transport really delivers. Carries forward the CLAUDE.md
  *                      constraint of running `transport.verify()` BEFORE any send.
@@ -42,19 +43,16 @@ import { z } from "zod";
 import type { MailTransport } from "../core";
 import { createSmtpTransport } from "../core";
 import { decrypt } from "../crypto";
-import {
-  getSmtpConfigByIdForUser,
-  updateFromFields as dalUpdateFromFields,
-} from "../data/smtp";
+import { getSmtpConfigByIdForUser } from "../data/smtp";
 import {
   applyVerifiedConfig,
   sendTestVia,
   setDefaultConfigCore,
   softDeleteConfigCore,
   underVerifyRateLimit,
+  updateMetaCore,
   type ActionResult,
 } from "./actions-core";
-import { smtpFormSchema } from "./schema";
 import { verifySmtp } from "./verify";
 
 // Type-only re-exports are erased at compile time, so they are NOT registered
@@ -159,30 +157,27 @@ export async function deleteServer(id: unknown): Promise<ActionResult> {
 }
 
 /**
- * updateFromFields (D-08): save ONLY the sender-identity fields. Deliberately does
- * NOT call `verifySmtp` and does NOT write `verified_at` — a display-name/address
- * edit does not invalidate a proven connection (Pitfall 6). The DAL's
- * updateFromFields leaves verified_at untouched. (Stays userId-scoped for the
- * sender-only edit; the wizard's per-row connection edits go through updateServer.)
+ * updateServerMeta (06.1 / D-08): auth → validate id → save ONLY the metadata
+ * fields (label + sender identity from_addr / from_name) of the owned, id-addressed
+ * config. Deliberately does NOT call `verifySmtp` and does NOT write `verified_at`
+ * — a rename or display-name/address edit does not invalidate a proven connection
+ * (Pitfall 6). No SMTP dial happens, so there is NO rate limit here. The id is
+ * validated but never trusted as an owner claim — `updateMetaCore` re-resolves it
+ * through the id-scoped DAL, so a cross-tenant / deleted / unknown id resolves to
+ * `not_found` (T-061-06 IDOR). Replaces the retired userId-only updateFromFields.
  */
-export async function updateFromFields(raw: unknown): Promise<ActionResult> {
+export async function updateServerMeta(
+  id: unknown,
+  raw: unknown,
+): Promise<ActionResult> {
   const { auth } = await import("@clerk/nextjs/server");
   const { userId } = await auth();
   if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
 
-  // Parse ONLY the from-fields — a subset of the shared schema so the same
-  // validation (valid email, trimmed name) can never diverge.
-  const fromSchema = smtpFormSchema.pick({ from_addr: true, from_name: true });
-  const parsed = fromSchema.safeParse(raw);
-  if (!parsed.success) {
-    return { ok: false, error: { kind: "validation", issues: parsed.error.issues } };
-  }
+  const parsedId = parseId(id);
+  if (!parsedId.ok) return parsedId.result;
 
-  await dalUpdateFromFields(userId, {
-    from_addr: parsed.data.from_addr,
-    from_name: parsed.data.from_name ?? null,
-  });
-  return { ok: true };
+  return updateMetaCore(userId, parsedId.id, raw);
 }
 
 /**

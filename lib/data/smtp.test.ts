@@ -40,7 +40,7 @@ const {
   setDefaultSmtpConfig,
   softDeleteSmtpConfig,
   countActiveSendsForConfig,
-  updateFromFields,
+  updateSmtpConfigMeta,
   toSmtpConfigDto,
 } = await import("./smtp");
 const { encrypt } = await import("@/lib/crypto");
@@ -214,21 +214,43 @@ test("countActiveSendsForConfig counts only the owner's queued/running campaigns
   assert.equal(countActiveSendsForConfig(USER_B, cfg.id), 0);
 });
 
-test("updateFromFields updates only from_* and never touches verified_at", async () => {
+test("updateSmtpConfigMeta updates label + from_* on ONE owned row, never touching verified_at", async () => {
   const list = await listSmtpConfigsForUser(USER_A);
   const before = list[0];
   const priorVerifiedAt = before.verified_at;
 
-  await updateFromFields(USER_A, {
+  const updated = await updateSmtpConfigMeta(USER_A, before.id, {
+    label: "Changed Label",
     from_addr: "changed@example.com",
     from_name: "Changed Name",
   });
+  assert.equal(updated.length, 1, "the owned row is updated");
 
   const after = await getSmtpConfigByIdForUser(USER_A, before.id);
   assert.ok(after);
+  assert.equal(after.label, "Changed Label");
   assert.equal(after.from_addr, "changed@example.com");
   assert.equal(after.from_name, "Changed Name");
   assert.equal(after.verified_at, priorVerifiedAt, "verified_at untouched (D-08)");
+});
+
+test("updateSmtpConfigMeta is id-scoped: a cross-tenant id updates ZERO rows (IDOR)", async () => {
+  const [ownedByB] = await listSmtpConfigsForUser(USER_B);
+  assert.ok(ownedByB);
+  const priorAddr = ownedByB.from_addr;
+
+  // USER_A attempts to edit USER_B's row by id — the AND(id, userId) filter matches
+  // nothing, so nothing is updated and B's row is untouched.
+  const updated = await updateSmtpConfigMeta(USER_A, ownedByB.id, {
+    label: "Hijacked",
+    from_addr: "intruder@example.com",
+    from_name: "Intruder",
+  });
+  assert.equal(updated.length, 0, "no cross-tenant row is updated");
+
+  const after = await getSmtpConfigByIdForUser(USER_B, ownedByB.id);
+  assert.ok(after);
+  assert.equal(after.from_addr, priorAddr, "B's sender identity is untouched");
 });
 
 test("toSmtpConfigDto carries id/label/is_default and never the encrypted triple", async () => {

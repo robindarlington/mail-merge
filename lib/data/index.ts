@@ -16,7 +16,7 @@ export {
   setDefaultSmtpConfig,
   softDeleteSmtpConfig,
   countActiveSendsForConfig,
-  updateFromFields,
+  updateSmtpConfigMeta,
   toSmtpConfigDto,
   type PersistableConfig,
   type SmtpConfigDto,
