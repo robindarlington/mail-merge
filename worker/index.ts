@@ -27,13 +27,30 @@ import { tick } from "@/lib/worker/loop";
 const logger = pino({ base: { component: "worker" } });
 
 /**
- * Config from env with safe defaults (lib/db/client.ts:27 idiom — read
- * process.env.X, fall back to a literal). Numbers go through Number(...) so a
- * string env value becomes a real number; the `??` keeps the default when unset.
+ * Parse a positive-integer env var with a safe default (WR-06). Fail-closed: an
+ * UNSET var uses the default, but a SET-but-malformed value (`abc`, `-5`, `0`,
+ * empty) is REJECTED with a startup error and exit(1) rather than silently
+ * degrading to NaN — which would otherwise hot-spin the poll loop (NaN interval),
+ * blast SMTP with zero throttle, or produce a NULL, never-reclaimable lease. The
+ * error logs the var NAME only, never the value (secret-safe discipline).
  */
-const SEND_DELAY_MS = Number(process.env.SEND_DELAY_MS ?? 1000);
-const WORKER_POLL_MS = Number(process.env.WORKER_POLL_MS ?? 2000);
-const WORKER_LEASE_SEC = Number(process.env.WORKER_LEASE_SEC ?? 300);
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    logger.error(
+      { name },
+      "invalid worker env value — must be a positive number; refusing to start",
+    );
+    process.exit(1);
+  }
+  return n;
+}
+
+const SEND_DELAY_MS = envInt("SEND_DELAY_MS", 1000);
+const WORKER_POLL_MS = envInt("WORKER_POLL_MS", 2000);
+const WORKER_LEASE_SEC = envInt("WORKER_LEASE_SEC", 300);
 const workerId = process.env.WORKER_ID ?? `worker-${process.pid}`;
 
 function main(): void {
