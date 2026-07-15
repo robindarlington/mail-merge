@@ -62,6 +62,7 @@ Two critical gaps remain. First, the no-double-send guarantee holds only when th
 ### CR-01: Lease-steal by a live worker breaks the no-double-send guarantee — per-row writes, heartbeat, and finalize have no ownership fence
 
 **File:** `lib/worker/process.ts:130-183`, `lib/worker/loop.ts:102-107`, `lib/worker/finalize.ts:31-60`, `lib/worker/claim.ts:46-52`
+**Fixed:** 9af7bed
 **Issue:** The stalled-reclaim branch of `claimNextCampaign` assumes an expired lease means a dead worker. But the lease heartbeat only fires *once per processed row* (`process.ts:182`), and the worker builds its transport with **no timeouts** (`process.ts:95-100`), so nodemailer defaults apply: `connectionTimeout` 120s, `socketTimeout` 600s. A single hung SMTP dial can exceed the default `WORKER_LEASE_SEC=300` without a heartbeat. Worker B then legitimately reclaims the campaign while Worker A is still alive and mid-send. From that point every guard is absent:
 
 - `process.ts:134-137` flips a row to `sending` with `WHERE id = ?` only — no `AND status = 'pending'`. A stale Worker A walking its pre-claim `pending` snapshot will flip a row Worker B already delivered (`status='sent'`) back to `sending` and **re-send it**. Both workers also race the same still-pending rows — each selects them as `pending`, each sends → duplicate delivery.
@@ -97,6 +98,7 @@ createSmtpTransport({ ...cfg, connectionTimeout: 30_000, greetingTimeout: 30_000
 ### CR-02: A materialize failure poisons the queue — campaign loops claim→throw→reclaim forever, never reaching a terminal state
 
 **File:** `lib/worker/loop.ts:62-95`, `lib/worker/materialize.ts:48-84`, `worker/index.ts:75-78`
+**Fixed:** f5ba15e
 **Issue:** `tick()` runs `recoverOrphanedSending` and `materializeSendRecords` with no try/catch. `materializeSendRecords` throws on: a missing/deleted CSV file (`readUpload`), an unresolvable email column (`materialize.ts:61`), a missing recipient set/template row (`:48-50`), and — subtly — any CSV row whose email cell is absent, because `to_addr: row[emailColumn]` (`:79`) binds `undefined` into a `NOT NULL` column. When that throws, the campaign has already been claimed (`status='running'`, lease stamped) but the error propagates out of `tick()` to the worker's `.catch` (`worker/index.ts:75`), which only logs it. Nothing calls `markFailed`. The campaign sits `running` until the lease expires (~300s), gets reclaimed by the stalled branch, throws again — an infinite retry loop. The user's UI shows "Sending" with the queued spinner forever, the campaign never terminates, and the worker log fills with the same error every 5 minutes for eternity (and it blocks nothing else only because a *newer* queued campaign sorts after it — but with `ORDER BY created_at` FIFO, the poisoned campaign is retried *before* any newer queued campaign once its lease expires, delaying all other tenants' sends by a reclaim cycle each loop).
 **Fix:**
 ```ts
@@ -117,6 +119,7 @@ And in `materialize.ts`, skip rows with a blank/missing email cell instead of in
 ### WR-01: ProgressPanel's poll does not handle a rejected server-action call — the advertised "keeps last-known counts, retrying" behavior never fires for real network errors
 
 **File:** `components/campaign/progress-panel.tsx:53-64`
+**Fixed:** 3e8e10f
 **Issue:** `poll()` only handles the structured `{ ok: false }` result. A server action invoked from the client is a network fetch: when the server restarts (every deploy), the connection drops, or the proxy times out, `getCampaignProgress(...)` **rejects** — and `poll()` has no try/catch, producing an unhandled promise rejection every 2 seconds and never setting `staleError`. This is precisely the transient failure mode the U9 copy ("Couldn't refresh progress — retrying.") was written for. Separately, a terminal `not_found`/`unauthenticated` result (session expired) keeps polling forever with the stale banner.
 **Fix:**
 ```ts
@@ -137,6 +140,7 @@ async function poll() {
 ### WR-02: Detail-page failed Alert asserts "Nothing was sent" — false after a resume verify-abort with prior deliveries
 
 **File:** `app/(app)/campaigns/[id]/page.tsx:117-125`
+**Fixed:** c22d92c
 **Issue:** `markFailed` fires for any pre-send abort of a *run*, including a **resumed** run: a campaign that delivered 50 rows, crashed, and then failed `verifyTransport` on re-claim (e.g., the user rotated their SMTP password mid-campaign, or soft-deleted the config → `"no SMTP config"`) ends `status='failed'` with `sent_count > 0`. The hardcoded Alert then tells the user "Nothing was sent." while the results table directly below shows 50 `Sent` rows — contradictory and materially misleading for a mail product whose core value is "a record of exactly what was sent."
 **Fix:** Branch the copy on `campaign.sent_count`:
 ```tsx
@@ -150,6 +154,7 @@ async function poll() {
 ### WR-03: SIGTERM "drain" waits on a whole-campaign tick — it can essentially never complete within a container stop-grace period
 
 **File:** `worker/index.ts:57-97`, `lib/worker/process.ts:130-184`
+**Fixed:** 2e6c665
 **Issue:** The drain unit is one `tick()`, and one tick runs an *entire campaign* (N rows × (`SEND_DELAY_MS` + SMTP round-trip) — minutes to hours). Docker/Coolify sends SIGTERM then SIGKILL after ~10s. So for any non-trivial in-flight campaign, the graceful path (`finally → process.exit(0)`) is unreachable; every worker redeploy SIGKILLs mid-send, orphaning one `sending` row that recovery permanently marks `failed (interrupted)` and stalling the campaign for up to `WORKER_LEASE_SEC` before another claim resumes it. Correctness survives (that's what recovery is for), but the shutdown handler as written provides a guarantee it cannot keep, and it costs one falsely-interrupted recipient plus a multi-minute stall per deploy.
 **Fix:** Thread a stop signal into the row loop so drain happens *between rows* (well inside the grace window):
 ```ts
@@ -163,12 +168,14 @@ if (opts.shouldStop?.()) return { ok: true, sent, failed }; // lease not release
 ### WR-04: Row-state transition and counter bump are separate non-transactional statements — a crash between them permanently desynchronizes the counters
 
 **File:** `lib/worker/recover.ts:36-57`, `lib/worker/process.ts:150-178`
+**Fixed:** 0910b9b (recover.ts); the process.ts row-transition + counter-bump pair became transactional in 9af7bed (CR-01)
 **Issue:** `recoverOrphanedSending` sweeps rows in one statement and bumps `failed_count` in a second; `runCampaign` likewise updates the send_record and then the campaign counter as two statements around no `await`. A crash (SIGKILL lands here on every deploy, per WR-03) between the pair leaves `sent_count`/`failed_count` disagreeing with the row states *forever* — the counters are incremented blindly, never reconciled from rows, so the progress math (`remaining = total − sent − failed`) and the history line ("97 sent / 3 failed") drift from the drill-down table. `recover.ts`'s own header comment claims the return value and bump "can never disagree", but the guarantee only covers the count *within* one call, not crash atomicity across the two writes. Both statement pairs are fully synchronous (better-sqlite3), so a transaction is trivially available.
 **Fix:** Wrap each pair in a synchronous transaction (`connection.transaction(...)` / `db.transaction(...)` with no `await` inside), or better: stop maintaining incremental counters and derive `sent_count`/`failed_count` with `count(*) ... GROUP BY status` at read time (the poll is one user's page every 2s — cheap).
 
 ### WR-05: materialize inserts unvalidated email cells — `undefined` crashes the campaign (feeds CR-02), `""` becomes a send to an empty address, and `total` contradicts the confirm summary's `sendableCount`
 
 **File:** `lib/worker/materialize.ts:75-85`
+**Fixed:** 111efec
 **Issue:** `to_addr: row[emailColumn]` is inserted verbatim. Three concrete failure shapes: (1) a ragged CSV row missing the email column yields `undefined` → `NOT NULL` violation → materialize throws → the CR-02 poison loop; (2) an empty-string cell materializes a send_record addressed to `""`, which the loop dutifully attempts and fails per-row (and all blank-email rows collapse into that one `""` record via the UNIQUE constraint, silently dropping the rest); (3) rows the confirm gate reported as *not sendable* (`invalidEmailCount`, `sendableCount = recipients − invalid`) are still materialized into `total`, so the user who confirmed "2 of 3 sendable" watches a campaign whose total is 3 and whose failure count includes rows they were told would be excluded.
 **Fix:**
 ```ts
@@ -180,6 +187,7 @@ And decide explicitly whether invalid-format addresses (per `countInvalidEmails`
 ### WR-06: Worker env config is unvalidated — a malformed value degrades to NaN with pathological runtime behavior
 
 **File:** `worker/index.ts:34-37`
+**Fixed:** 3ee653f
 **Issue:** `Number(process.env.WORKER_POLL_MS ?? 2000)` etc. accept garbage silently. `WORKER_POLL_MS=abc` → `setInterval(cb, NaN)` → fires every ~1ms (a hot poll loop hammering the DB with claim UPDATEs). `SEND_DELAY_MS=abc` → `throttle(NaN)` → `NaN <= 0` is false → `setTimeout(..., NaN)` → zero inter-send delay (full-speed blast through the user's SMTP, the exact thing the throttle exists to prevent). `WORKER_LEASE_SEC=abc` → `NaN` bound into `unixepoch() + @leaseSec` → `lease_expires_at` becomes NULL, so a crashed worker's campaign is **never reclaimable** (NULL fails the `< unixepoch()` comparison) — permanently stuck `running`.
 **Fix:**
 ```ts
