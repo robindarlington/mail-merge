@@ -26,6 +26,7 @@ export {
   createRecipientSet,
   listRecipientSetsForUser,
   getRecipientSetForUser,
+  renameRecipientSet,
   type PersistableRecipientSet,
 } from "./recipients";
 

@@ -60,3 +60,18 @@ export const confirmColumnSchema = z.object({
 });
 
 export type ConfirmColumnValues = z.infer<typeof confirmColumnSchema>;
+
+/**
+ * The rename-list form: a required, user-facing display name for a saved list
+ * (r8d). Trimmed, non-empty, capped at 60 chars — mirrors smtpFormSchema.label so
+ * the client resolver and the server action can never diverge (T-r8d-02).
+ */
+export const renameListSchema = z.object({
+  label: z
+    .string()
+    .trim()
+    .min(1, "Give this list a name.")
+    .max(60, "Keep the name under 60 characters."),
+});
+
+export type RenameListValues = z.infer<typeof renameListSchema>;

@@ -36,6 +36,13 @@
       "when": 1784043979331,
       "tag": "0004_backfill_default_smtp",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1784137329027,
+      "tag": "0005_list_label",
+      "breakpoints": true
     }
   ]
 }
