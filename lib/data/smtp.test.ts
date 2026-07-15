@@ -136,6 +136,23 @@ test("setDefaultSmtpConfig keeps exactly one default and is a no-op cross-tenant
   assert.equal(noop.length, 0, "cross-tenant setDefault is a no-op");
   const bAfter = await getSmtpConfigByIdForUser(USER_B, bList[0].id);
   assert.equal(bAfter!.is_default, bList[0].is_default, "USER_B row untouched");
+
+  // CR-01: a failed set-default (bogus/cross-tenant id) MUST roll back the
+  // clear-all-defaults step — the caller's ORIGINAL default must survive.
+  const before = await listSmtpConfigsForUser(USER_A);
+  const priorDefault = before.find((r) => r.is_default);
+  assert.ok(priorDefault, "USER_A has a default going into the failed call");
+  // (a) cross-tenant id and (b) a definitely-nonexistent id both no-op.
+  assert.equal((await setDefaultSmtpConfig(USER_A, bList[0].id)).length, 0);
+  assert.equal((await setDefaultSmtpConfig(USER_A, 9_999_999)).length, 0);
+  const afterFailed = await listSmtpConfigsForUser(USER_A);
+  const stillDefault = afterFailed.filter((r) => r.is_default);
+  assert.equal(stillDefault.length, 1, "USER_A still has exactly one default");
+  assert.equal(
+    stillDefault[0].id,
+    priorDefault.id,
+    "USER_A's ORIGINAL default row is intact after the failed set-default (CR-01)",
+  );
 });
 
 test("updateSmtpConfigById updates only the owner's row and re-stamps verified_at", async () => {

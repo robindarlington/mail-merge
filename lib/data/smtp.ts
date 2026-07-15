@@ -195,27 +195,44 @@ export function updateSmtpConfigMeta(
  * the target. Doing the clear FIRST keeps the partial unique index
  * `smtp_configs_user_default_uq` satisfied at commit. The returned `{ id }[]`
  * length is the did-I-win signal — 0 for a cross-tenant / deleted / missing id
- * (nothing changes, because the target update matched no row) (T-061-04).
+ * (T-061-04).
+ *
+ * CRITICAL (CR-01): when the target update matches 0 rows (stale / deleted /
+ * cross-tenant id) the clear-all-defaults step MUST be rolled back — otherwise the
+ * caller's existing default is silently stripped, leaving zero defaults. We force
+ * the rollback by THROWING a sentinel inside the transaction, then catch it around
+ * `db.transaction` so the function still returns `[]` for the not-owned case and
+ * the existing callers' `changed.length === 0 → not_found` contract is preserved.
+ * So nothing changes for a cross-tenant / deleted / missing id.
  */
 export function setDefaultSmtpConfig(userId: string, id: number) {
-  return db.transaction((tx) => {
-    tx.update(smtp_configs)
-      .set({ is_default: false })
-      .where(eq(smtp_configs.userId, userId))
-      .run();
-    return tx
-      .update(smtp_configs)
-      .set({ is_default: true })
-      .where(
-        and(
-          eq(smtp_configs.id, id),
-          eq(smtp_configs.userId, userId),
-          isNull(smtp_configs.deleted_at),
-        ),
-      )
-      .returning({ id: smtp_configs.id })
-      .all();
-  });
+  try {
+    return db.transaction((tx) => {
+      tx.update(smtp_configs)
+        .set({ is_default: false })
+        .where(eq(smtp_configs.userId, userId))
+        .run();
+      const won = tx
+        .update(smtp_configs)
+        .set({ is_default: true })
+        .where(
+          and(
+            eq(smtp_configs.id, id),
+            eq(smtp_configs.userId, userId),
+            isNull(smtp_configs.deleted_at),
+          ),
+        )
+        .returning({ id: smtp_configs.id })
+        .all();
+      // Roll back the clear when the target did not match — otherwise the
+      // caller's existing default is silently stripped.
+      if (won.length === 0) throw new Error("SET_DEFAULT_TARGET_NOT_FOUND");
+      return won;
+    });
+  } catch (e) {
+    if ((e as Error).message === "SET_DEFAULT_TARGET_NOT_FOUND") return [];
+    throw e;
+  }
 }
 
 /**
