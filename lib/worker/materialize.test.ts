@@ -157,6 +157,68 @@ test("materialize is idempotent on resume: a second call inserts ZERO rows", asy
   assert.equal(second.total, before, "total still equals the materialized count");
 });
 
+test("skips blank cells and materializes invalid addresses as failed records (WR-05)", async () => {
+  const MIXED = "mixed.csv";
+  writeFileSync(
+    join(UPLOADS_DIR, MIXED),
+    [
+      "email,name",
+      "good@example.com,Good",
+      "not-an-email,Bad",
+      ",Blank",
+      "  ,Spaces",
+      "another@example.com,AlsoGood",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const [set] = await createRecipientSet(USER, {
+    filename: MIXED,
+    columns_json: JSON.stringify(["email", "name"]),
+    row_count: 5,
+    storage_path: MIXED,
+    email_column: "email",
+  });
+  const [c] = await createDraftCampaign(USER, {
+    recipient_set_id: set.id,
+    template_id: campaign.template_id,
+    smtp_config_id: campaign.smtp_config_id,
+  });
+
+  const result = await materializeSendRecords(c);
+
+  // 2 valid + 1 malformed materialized; the 2 blank/whitespace rows are skipped.
+  assert.equal(result.inserted, 3, "2 valid + 1 invalid inserted; blanks skipped");
+  assert.equal(result.total, 3, "total counts only materialized rows");
+
+  const rows = await db
+    .select()
+    .from(send_records)
+    .where(eq(send_records.campaign_id, c.id));
+  const failed = rows.filter((r) => r.status === "failed");
+  const pending = rows.filter((r) => r.status === "pending");
+
+  assert.equal(pending.length, 2, "the two valid addresses are pending");
+  assert.equal(failed.length, 1, "the malformed address is a terminal failed record");
+  assert.equal(failed[0].to_addr, "not-an-email");
+  assert.equal(failed[0].error, "rejected: invalid address");
+  assert.ok(!rows.some((r) => r.to_addr === ""), "no blank-address record was created");
+
+  // failed_count is bumped so remaining = total - sent - failed stays honest.
+  assert.equal(
+    campaignFailedCount(c.id),
+    1,
+    "failed_count reflects the materialized invalid row",
+  );
+});
+
+function campaignFailedCount(campaignId: number): number {
+  const row = connection
+    .prepare("SELECT failed_count AS f FROM campaigns WHERE id = ?")
+    .get(campaignId) as { f: number };
+  return row.f;
+}
+
 test("each send_record snapshots the per-row merged subject and body", async () => {
   const rows = await db
     .select()

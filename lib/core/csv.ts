@@ -32,6 +32,17 @@ export interface ParsedCsv {
 // only catches obviously malformed addresses before we open a connection.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * The single email-validity predicate shared by every gate (CSV-04): the confirm
+ * summary's `countInvalidEmails`, the parse-time `invalidEmailCount`, and the
+ * worker's materialize step (WR-05). Trims first; a blank/whitespace value is
+ * invalid. Keeping ONE predicate guarantees the count the user confirms and the
+ * rows the worker actually sends can never disagree.
+ */
+export function isValidEmail(value: string | undefined | null): boolean {
+  return EMAIL_RE.test((value ?? "").trim());
+}
+
 /** Strip a single leading UTF-8 BOM (U+FEFF) if present. */
 function stripBom(input: string): string {
   return input.charCodeAt(0) === 0xfeff ? input.slice(1) : input;
@@ -59,8 +70,7 @@ export function parseCsv(input: string | Buffer): ParsedCsv {
   let invalidEmailCount = 0;
   if (columns.includes("email")) {
     for (const row of rows) {
-      const email = (row.email ?? "").trim();
-      if (!EMAIL_RE.test(email)) invalidEmailCount++;
+      if (!isValidEmail(row.email)) invalidEmailCount++;
     }
   }
 
@@ -118,6 +128,6 @@ export function detectEmailColumn(
  */
 export function countInvalidEmails(rows: Row[], column: string): number {
   let n = 0;
-  for (const r of rows) if (!EMAIL_RE.test((r[column] ?? "").trim())) n++;
+  for (const r of rows) if (!isValidEmail(r[column])) n++;
   return n;
 }

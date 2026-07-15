@@ -30,7 +30,10 @@ import { db } from "@/lib/db";
 import { send_records, campaigns, type Campaign } from "@/lib/db/schema";
 import { getRecipientSetForUser, getTemplateForUser } from "@/lib/data";
 import { readUpload } from "@/lib/csv";
-import { parseCsv, detectEmailColumn, fillMessage } from "@/lib/core";
+import { parseCsv, detectEmailColumn, fillMessage, isValidEmail } from "@/lib/core";
+
+/** The error stamped on a row whose address failed the shared validity gate. */
+const INVALID_ADDRESS_ERROR = "rejected: invalid address";
 
 /**
  * Materialize one `pending` send_record per unique CSV recipient for a claimed
@@ -62,12 +65,28 @@ export async function materializeSendRecords(
   }
 
   let inserted = 0;
+  let invalidInserted = 0;
   for (const row of rows) {
+    // Validate the address with the SAME predicate the confirm gate uses (WR-05).
+    const addr = (row[emailColumn] ?? "").trim();
+
+    // A blank/missing cell is UNADDRESSABLE: skip it entirely. This mirrors the
+    // confirm gate excluding blanks, avoids the NOT NULL violation that poisoned
+    // the queue (CR-02), and prevents every blank row collapsing into one "" record.
+    if (!addr) continue;
+
     // fillMessage personalizes BOTH subject and body (EDIT-03) — reused verbatim.
     const merged = fillMessage(
       { subject: template.subject, body: template.body },
       row,
     );
+
+    // A malformed (non-blank) address is materialized as a TERMINAL failed record
+    // immediately, rather than silently attempted against SMTP. The user gets a
+    // visible per-row record ("rejected: invalid address") and `total` stays
+    // consistent with the drill-down table.
+    const valid = isValidEmail(addr);
+
     // onConflictDoNothing against UNIQUE(campaign_id,to_addr): a duplicate address
     // (in this CSV) or a resumed campaign (row already present) is a silent no-op.
     // `.returning()` yields the inserted row ONLY when an insert actually happened,
@@ -76,23 +95,40 @@ export async function materializeSendRecords(
       .insert(send_records)
       .values({
         campaign_id: campaign.id,
-        to_addr: row[emailColumn],
+        to_addr: addr,
         merged_subject: merged.subject,
         merged_body: merged.body,
+        ...(valid
+          ? {}
+          : { status: "failed", error: INVALID_ADDRESS_ERROR }),
       })
       .onConflictDoNothing()
       .returning({ id: send_records.id });
-    if (created.length > 0) inserted++;
+    if (created.length > 0) {
+      inserted++;
+      if (!valid) invalidInserted++;
+    }
   }
 
   // Reconcile the counter to the MATERIALIZED count (dedup-honest) so progress
-  // math converges even when addresses collapsed — a single statement.
-  await db
-    .update(campaigns)
-    .set({
-      total: sql`(SELECT count(*) FROM ${send_records} WHERE ${send_records.campaign_id} = ${campaign.id})`,
-    })
-    .where(eq(campaigns.id, campaign.id));
+  // math converges even when addresses collapsed. When we materialized invalid
+  // addresses as failed rows, bump failed_count by that many so
+  // remaining = total - sent - failed stays honest. Both writes are one
+  // synchronous transaction (WR-04-consistent) so the counters never tear.
+  db.transaction((tx) => {
+    tx.update(campaigns)
+      .set({
+        total: sql`(SELECT count(*) FROM ${send_records} WHERE ${send_records.campaign_id} = ${campaign.id})`,
+      })
+      .where(eq(campaigns.id, campaign.id))
+      .run();
+    if (invalidInserted > 0) {
+      tx.update(campaigns)
+        .set({ failed_count: sql`${campaigns.failed_count} + ${invalidInserted}` })
+        .where(eq(campaigns.id, campaign.id))
+        .run();
+    }
+  });
 
   const [{ total }] = await db
     .select({ total: sql<number>`count(*)` })

@@ -12,7 +12,7 @@ export type { Row as FillRow, MessageTemplate } from "./fill";
 export { extractTokens, analyzeMerge } from "./merge";
 export type { MergeAnalysis } from "./merge";
 
-export { parseCsv, detectEmailColumn, countInvalidEmails } from "./csv";
+export { parseCsv, detectEmailColumn, countInvalidEmails, isValidEmail } from "./csv";
 export type { ParsedCsv, Row as CsvRow } from "./csv";
 
 export {
