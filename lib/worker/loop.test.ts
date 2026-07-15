@@ -184,11 +184,12 @@ test("happy path: claim → materialize → send all → completed", async () =>
 
   const result = await tick({ workerId: "w1", leaseSec: 300, delayMs: 0, transportOverride: stub });
 
-  assert.equal(result.claimed, true);
-  assert.equal(result.claimed && result.campaignId, id);
-  assert.equal(result.claimed && result.outcome, "completed");
-  assert.equal(result.claimed && result.sent, ADDRS.length);
-  assert.equal(result.claimed && result.failed, 0);
+  assert.ok(result.claimed, "tick claimed the queued campaign");
+  assert.equal(result.campaignId, id);
+  assert.equal(result.outcome, "completed");
+  if (result.outcome !== "completed") throw new Error("unreachable — asserted above");
+  assert.equal(result.sent, ADDRS.length);
+  assert.equal(result.failed, 0);
 
   assert.equal(stub.calls.verify, 1, "verify runs once");
   assert.equal(stub.calls.send, ADDRS.length, "one send per recipient");
