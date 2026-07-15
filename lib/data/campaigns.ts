@@ -29,10 +29,10 @@
  * D-04); it never constructs a Database.
  */
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { campaigns, type NewCampaign } from "@/lib/db/schema";
+import { campaigns, send_records, type NewCampaign } from "@/lib/db/schema";
 
 /**
  * The persistable fields for a draft-campaign insert. `userId` is deliberately
@@ -92,4 +92,71 @@ export function enqueueCampaign(userId: string, id: number) {
       ),
     )
     .returning({ id: campaigns.id });
+}
+
+// --- Phase-6 read layer (HIST-01 / HIST-02 / SEND-05) -----------------------
+//
+// Every web surface onto the send — the history list, the per-recipient
+// drill-down, and the live-progress poll — is a VIEW over the persisted state,
+// and each read is userId-scoped so a guessed campaign id can never leak another
+// tenant's data (T-06-08 / AUTH-02). send_records carry NO userId column: their
+// tenancy is inherited through campaign_id, so any send_records read is gated
+// behind `getCampaignForUser` FIRST — there is deliberately no fetch-by-
+// campaign_id-alone path.
+
+/**
+ * List every campaign owned by `userId`, newest first (HIST-01). The `userId`
+ * filter is the tenant scope; the secondary `desc(id)` tiebreaks campaigns
+ * created within the same unixepoch SECOND (created_at has 1s resolution), so
+ * "newest first" is deterministic rather than order-of-insert-dependent.
+ */
+export function listCampaignsForUser(userId: string) {
+  return db.query.campaigns.findMany({
+    where: eq(campaigns.userId, userId),
+    orderBy: [desc(campaigns.created_at), desc(campaigns.id)],
+  });
+}
+
+/**
+ * The per-recipient drill-down for one campaign (HIST-02). Ownership is proven
+ * FIRST via `getCampaignForUser` — send_records have no userId of their own, so
+ * an id owned by another tenant (or a bogus one) short-circuits to `[]` BEFORE
+ * any send_records query runs (T-06-08). Owned rows come back ordered by id
+ * (materialization order = recipient order).
+ */
+export async function getSendRecordsForCampaign(userId: string, campaignId: number) {
+  // Ownership guard BEFORE the send_records read — never fetch by campaign_id alone.
+  const owned = await getCampaignForUser(userId, campaignId);
+  if (!owned) return [];
+  return db.query.send_records.findMany({
+    where: eq(send_records.campaign_id, campaignId),
+    orderBy: asc(send_records.id),
+  });
+}
+
+/**
+ * The live-progress row for one campaign (SEND-05). Ownership is proven FIRST
+ * via `getCampaignForUser` (cross-tenant/bogus id → undefined). Returns the
+ * campaign's own counters plus the `current` recipient = the `to_addr` of the
+ * single send_record in status 'sending' (sends are sequential, so there is at
+ * most one), or `null` when the campaign is between rows / terminal. The caller
+ * (getCampaignProgressCore) derives `remaining` from these counters.
+ */
+export async function getCampaignProgressRow(userId: string, campaignId: number) {
+  const campaign = await getCampaignForUser(userId, campaignId);
+  if (!campaign) return undefined;
+  // The lone in-flight row, if any — the current recipient the UI highlights.
+  const sending = await db.query.send_records.findFirst({
+    where: and(
+      eq(send_records.campaign_id, campaignId),
+      eq(send_records.status, "sending"),
+    ),
+  });
+  return {
+    status: campaign.status,
+    total: campaign.total,
+    sent_count: campaign.sent_count,
+    failed_count: campaign.failed_count,
+    current: sending?.to_addr ?? null,
+  };
 }

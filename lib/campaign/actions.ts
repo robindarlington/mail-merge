@@ -26,6 +26,7 @@ import {
   prepareCampaignCore,
   buildConfirmSummaryCore,
   enqueueCampaignCore,
+  getCampaignProgressCore,
   type TestSendInput,
   type TestSendResult,
   type PrepareInput,
@@ -33,6 +34,7 @@ import {
   type ConfirmInput,
   type SummaryResult,
   type EnqueueResult,
+  type ProgressResult,
 } from "./actions-core";
 import { TEST_SEND_DELAY_MS } from "./schema";
 
@@ -46,6 +48,8 @@ export type {
   PrepareResult,
   SummaryResult,
   EnqueueResult,
+  ProgressData,
+  ProgressResult,
 } from "./actions-core";
 
 /**
@@ -110,4 +114,19 @@ export async function enqueueCampaign(
   const { userId } = await auth();
   if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
   return enqueueCampaignCore(userId, input);
+}
+
+/**
+ * getCampaignProgress (SEND-05): auth → delegate. The live-progress poll the
+ * client loops on while a send runs. Re-derives `userId` server-side via `auth()`
+ * and passes ONLY that to the core — a client-supplied userId is never trusted
+ * (T-06-08). Returns counts + derived remaining + the current recipient.
+ */
+export async function getCampaignProgress(
+  input: ConfirmInput,
+): Promise<ProgressResult> {
+  const { auth } = await import("@clerk/nextjs/server");
+  const { userId } = await auth();
+  if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
+  return getCampaignProgressCore(userId, input);
 }

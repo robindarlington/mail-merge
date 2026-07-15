@@ -26,6 +26,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { eq } from "drizzle-orm";
 
 // --- Provision an isolated temp DB + encryption key BEFORE any DB import ------
 const TMP_DIR = mkdtempSync(join(tmpdir(), "campaigns-dal-"));
@@ -37,8 +38,15 @@ process.env.CREDENTIAL_ENC_KEY = Buffer.from(
 
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
-const { createDraftCampaign, getCampaignForUser, enqueueCampaign } =
-  await import("./campaigns");
+const { campaigns, send_records } = await import("@/lib/db/schema");
+const {
+  createDraftCampaign,
+  getCampaignForUser,
+  enqueueCampaign,
+  listCampaignsForUser,
+  getSendRecordsForCampaign,
+  getCampaignProgressRow,
+} = await import("./campaigns");
 const { createRecipientSet } = await import("./recipients");
 const { createTemplate } = await import("./templates");
 const { createSmtpConfig } = await import("./smtp");
@@ -182,4 +190,95 @@ test("enqueueCampaign refuses a campaign owned by another user (0 rows, status u
     "draft",
     "the refused enqueue left the owner's campaign untouched",
   );
+});
+
+// --- Phase-6 read layer (Plan 03): list / drill-down / progress -------------
+//
+// The history + live-progress surfaces (Plan 05) and the CSV export route
+// (Plan 06) are all VIEWS over the persisted send_records state machine. Every
+// read is userId-scoped: a guessed campaign id owned by another tenant must
+// yield nothing (T-06-08 / AUTH-02). send_records carry NO userId column —
+// their tenancy is inherited through campaign_id, so the ownership guard is
+// getCampaignForUser BEFORE any send_records query.
+
+test("listCampaignsForUser returns only the caller's campaigns, newest first, excludes other tenants", async () => {
+  const [older] = await createDraftCampaign(USER_A, draftValues());
+  const [newer] = await createDraftCampaign(USER_A, draftValues());
+  const [bOwned] = await createDraftCampaign(USER_B, draftValues());
+
+  const mine = await listCampaignsForUser(USER_A);
+  assert.ok(mine.every((c) => c.userId === USER_A), "every returned row is the caller's");
+  const myIds = mine.map((c) => c.id);
+  assert.ok(myIds.includes(older.id) && myIds.includes(newer.id), "the caller's campaigns are present");
+  assert.ok(!myIds.includes(bOwned.id), "another tenant's campaign is excluded");
+  // Newest first: the later-created row (higher autoincrement id) precedes the earlier one.
+  assert.ok(
+    myIds.indexOf(newer.id) < myIds.indexOf(older.id),
+    "campaigns are ordered newest first",
+  );
+
+  const theirs = await listCampaignsForUser(USER_B);
+  assert.ok(theirs.every((c) => c.userId === USER_B), "USER_B sees only its own campaigns");
+  assert.ok(!theirs.some((c) => c.id === older.id), "USER_B never sees USER_A's campaigns");
+});
+
+test("getSendRecordsForCampaign returns an owned campaign's records ordered by id; cross-tenant → []", async () => {
+  const [camp] = await createDraftCampaign(USER_A, draftValues());
+  await db.insert(send_records).values([
+    { campaign_id: camp.id, to_addr: "a@example.com", merged_subject: "S1", merged_body: "B1", status: "sent" },
+    { campaign_id: camp.id, to_addr: "b@example.com", merged_subject: "S2", merged_body: "B2", status: "sending" },
+    { campaign_id: camp.id, to_addr: "c@example.com", merged_subject: "S3", merged_body: "B3", status: "pending" },
+  ]);
+
+  const records = await getSendRecordsForCampaign(USER_A, camp.id);
+  assert.equal(records.length, 3, "the owner reads all of their campaign's send_records");
+  const ids = records.map((r) => r.id);
+  assert.deepEqual(ids, [...ids].sort((x, y) => x - y), "records are ordered by ascending id");
+  assert.deepEqual(
+    records.map((r) => r.to_addr),
+    ["a@example.com", "b@example.com", "c@example.com"],
+    "insertion order is preserved by the id sort",
+  );
+
+  const leaked = await getSendRecordsForCampaign(USER_B, camp.id);
+  assert.deepEqual(leaked, [], "a cross-tenant drill-down returns an empty array (ownership guard first)");
+});
+
+test("getCampaignProgressRow derives counts + the current 'sending' recipient for the owner; cross-tenant → undefined", async () => {
+  const [camp] = await createDraftCampaign(USER_A, draftValues());
+  // Force a mixed running state on the campaign counters.
+  await db
+    .update(campaigns)
+    .set({ status: "running", total: 5, sent_count: 2, failed_count: 1 })
+    .where(eq(campaigns.id, camp.id));
+  await db.insert(send_records).values([
+    { campaign_id: camp.id, to_addr: "done@example.com", merged_subject: "S", merged_body: "B", status: "sent" },
+    { campaign_id: camp.id, to_addr: "current@example.com", merged_subject: "S", merged_body: "B", status: "sending" },
+  ]);
+
+  const progress = await getCampaignProgressRow(USER_A, camp.id);
+  assert.ok(progress, "the owner reads their campaign's progress");
+  assert.equal(progress!.status, "running");
+  assert.equal(progress!.total, 5);
+  assert.equal(progress!.sent_count, 2);
+  assert.equal(progress!.failed_count, 1);
+  assert.equal(
+    progress!.current,
+    "current@example.com",
+    "current recipient = the lone row in status 'sending'",
+  );
+
+  const leaked = await getCampaignProgressRow(USER_B, camp.id);
+  assert.equal(leaked, undefined, "a cross-tenant progress read returns undefined");
+});
+
+test("getCampaignProgressRow reports a null current recipient when no row is 'sending'", async () => {
+  const [camp] = await createDraftCampaign(USER_A, draftValues());
+  await db.insert(send_records).values([
+    { campaign_id: camp.id, to_addr: "x@example.com", merged_subject: "S", merged_body: "B", status: "sent" },
+  ]);
+
+  const progress = await getCampaignProgressRow(USER_A, camp.id);
+  assert.ok(progress);
+  assert.equal(progress!.current, null, "no 'sending' row → current is null");
 });
