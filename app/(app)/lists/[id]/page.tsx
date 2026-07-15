@@ -8,6 +8,7 @@ import { readUpload } from "@/lib/csv/storage";
 import { parseCsv } from "@/lib/core/csv";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { ListRename } from "@/components/recipients/list-rename";
 import {
   Table,
   TableBody,
@@ -83,9 +84,9 @@ export default async function ListDetailPage({
           <ArrowLeft className="size-4" />
           Back to lists
         </Link>
-        <h1 className="text-[28px] font-semibold leading-[1.2]">
-          {set.filename}
-        </h1>
+        <div className="flex items-center gap-2 text-[28px] font-semibold leading-[1.2]">
+          <ListRename id={set.id} currentName={set.label ?? set.filename} />
+        </div>
       </div>
 
       <Card>

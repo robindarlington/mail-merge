@@ -24,8 +24,12 @@ process.env.DATABASE_PATH = join(TMP_DIR, "app.db");
 
 // Dynamic imports so the env var above is in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
-const { createRecipientSet, listRecipientSetsForUser, getRecipientSetForUser } =
-  await import("./recipients");
+const {
+  createRecipientSet,
+  listRecipientSetsForUser,
+  getRecipientSetForUser,
+  renameRecipientSet,
+} = await import("./recipients");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 
 const USER_A = "user_aaaaaaaaaaaaaaaaaaaaaa";
@@ -137,4 +141,24 @@ test("getRecipientSetForUser blocks cross-tenant reads (IDOR)", async () => {
 test("getRecipientSetForUser returns undefined for a non-existent id", async () => {
   const none = await getRecipientSetForUser(USER_A, 9_999_999);
   assert.equal(none, undefined);
+});
+
+test("renameRecipientSet updates the owner's row and the new label reads back", async () => {
+  const [updated] = await renameRecipientSet(USER_A, A_FIRST_ID, "Q3 outreach");
+  assert.ok(updated, "the owner's row is returned by the UPDATE");
+  assert.equal(updated.id, A_FIRST_ID);
+  assert.equal(updated.label, "Q3 outreach", "the new label is persisted");
+  // The label reads back through the owner-scoped fetch, and filename is untouched.
+  const reread = await getRecipientSetForUser(USER_A, A_FIRST_ID);
+  assert.equal(reread?.label, "Q3 outreach");
+  assert.equal(reread?.filename, "a-first", "the original filename is preserved");
+});
+
+test("renameRecipientSet by User B on User A's set updates zero rows (IDOR)", async () => {
+  const before = await getRecipientSetForUser(USER_A, A_SECOND_ID);
+  const changed = await renameRecipientSet(USER_B, A_SECOND_ID, "hijacked");
+  assert.equal(changed.length, 0, "a cross-tenant rename updates zero rows");
+  // User A's row is untouched — its label is exactly what it was before.
+  const after = await getRecipientSetForUser(USER_A, A_SECOND_ID);
+  assert.equal(after?.label, before?.label ?? null, "the owner's label is unchanged");
 });

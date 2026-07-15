@@ -23,10 +23,13 @@
  *     passes, in the same call that inserts the row (Pitfall 5).
  */
 
+import { z } from "zod";
+
 import { parseCsv, detectEmailColumn, countInvalidEmails } from "@/lib/core";
-import { createRecipientSet } from "@/lib/data";
+import { createRecipientSet, renameRecipientSet } from "@/lib/data";
 import {
   confirmColumnSchema,
+  renameListSchema,
   uploadFileSchema,
   MAX_ROWS,
 } from "./schema";
@@ -73,6 +76,18 @@ export type SaveResult =
       data: { rowCount: number; filename: string; invalidCount: number };
     }
   | { ok: false; error: ActionError };
+
+/** The uniform result the rename seam resolves to (never rejects). */
+export type RenameResult =
+  | { ok: true }
+  | { ok: false; error: ActionError };
+
+/**
+ * Coerce an untrusted `id` to a positive integer. A client supplies the id as a
+ * proposal only; a non-numeric / non-positive value is a validation failure, never
+ * a throw. Kept local to the rename seam (the only id-accepting core here).
+ */
+const listIdSchema = z.coerce.number().int().positive();
 
 /**
  * Guard the uploaded FormData `file` field with the SHARED zod schema (so the
@@ -232,4 +247,51 @@ export async function saveRecipientSetCore(
     ok: true,
     data: { rowCount: rows.length, filename: guard.file.name, invalidCount },
   };
+}
+
+/**
+ * Rename seam (testable): validate the label + id → owner-scoped UPDATE. The label
+ * is trimmed/length-capped by renameListSchema (T-r8d-02) and the id coerced to a
+ * positive int before any DB touch. `renameRecipientSet` filters on AND(id, userId),
+ * so a cross-tenant id (or a non-existent one) updates ZERO rows — surfaced as a
+ * non-mutating `unknown` result, never a throw and never a leak of another tenant's
+ * data (T-r8d-01 / IDOR).
+ */
+export async function renameRecipientSetCore(
+  userId: string,
+  rawId: unknown,
+  rawLabel: unknown,
+): Promise<RenameResult> {
+  const parsedLabel = renameListSchema.safeParse({ label: rawLabel });
+  if (!parsedLabel.success) {
+    return {
+      ok: false,
+      error: { kind: "validation", issues: parsedLabel.error.issues },
+    };
+  }
+
+  const parsedId = listIdSchema.safeParse(rawId);
+  if (!parsedId.success) {
+    return {
+      ok: false,
+      error: { kind: "validation", issues: parsedId.error.issues },
+    };
+  }
+
+  const updated = await renameRecipientSet(
+    userId,
+    parsedId.data,
+    parsedLabel.data.label,
+  );
+
+  // 0-length = the id was not owned by this user (cross-tenant / deleted / absent).
+  // A silent no-op — never a throw or a leak (T-r8d-01 / IDOR).
+  if (updated.length === 0) {
+    return {
+      ok: false,
+      error: { kind: "unknown", raw: "That list couldn't be renamed." },
+    };
+  }
+
+  return { ok: true };
 }

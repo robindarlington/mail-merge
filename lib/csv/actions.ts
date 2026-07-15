@@ -25,8 +25,10 @@
 import {
   parseUploadedCsvCore,
   saveRecipientSetCore,
+  renameRecipientSetCore,
   type ParseResult,
   type SaveResult,
+  type RenameResult,
 } from "./actions-core";
 
 // Type-only re-exports are erased at compile time, so they are NOT registered as
@@ -35,6 +37,7 @@ export type {
   ParseSummary,
   ParseResult,
   SaveResult,
+  RenameResult,
   ActionError,
 } from "./actions-core";
 
@@ -68,4 +71,27 @@ export async function saveRecipientSet(
   const { userId } = await auth();
   if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
   return saveRecipientSetCore(userId, formData);
+}
+
+/**
+ * renameList (r8d): auth → validate → owner-scoped rename. Rejects unauthenticated
+ * callers before any work, then delegates to `renameRecipientSetCore`, which
+ * validates the label/id and UPDATEs by AND(id, userId) — a client-supplied `id`
+ * is only a proposal; the re-derived `userId` owns the row (T-r8d-01 / IDOR). On
+ * success revalidates the Lists surface so the new name shows on the next render.
+ */
+export async function renameList(
+  id: unknown,
+  label: unknown,
+): Promise<RenameResult> {
+  const { auth } = await import("@clerk/nextjs/server");
+  const { userId } = await auth();
+  if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
+
+  const result = await renameRecipientSetCore(userId, id, label);
+  if (result.ok) {
+    const { revalidatePath } = await import("next/cache");
+    revalidatePath("/lists");
+  }
+  return result;
 }

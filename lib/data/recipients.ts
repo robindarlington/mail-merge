@@ -68,3 +68,19 @@ export function getRecipientSetForUser(userId: string, id: number) {
   // findFirst filtered by AND(id, userId) on this line — never fetch-by-id alone.
   return db.query.recipient_sets.findFirst({ where: and(eq(recipient_sets.id, id), eq(recipient_sets.userId, userId)) });
 }
+
+/**
+ * Set the user-facing `label` on one of the caller's recipient sets and return
+ * the updated row(s). The UPDATE is scoped by AND(id, userId) — the SAME structural
+ * owner-filter as getRecipientSetForUser, so a cross-tenant id (or a non-existent
+ * one) updates ZERO rows and returns an empty array (T-r8d-01 / IDOR / AUTH-02).
+ * There is deliberately NO update-by-id-alone path.
+ */
+export function renameRecipientSet(userId: string, id: number, label: string) {
+  // UPDATE filtered by AND(id, userId) on this line — never update-by-id alone (owner-filter, AUTH-02 grep gate).
+  return db
+    .update(recipient_sets)
+    .set({ label })
+    .where(and(eq(recipient_sets.id, id), eq(recipient_sets.userId, userId)))
+    .returning();
+}

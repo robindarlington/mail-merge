@@ -87,6 +87,10 @@ export const recipient_sets = sqliteTable("recipient_sets", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userId: text("user_id").notNull(),
   filename: text("filename").notNull(),
+  // User-facing display name for this list (r8d). Nullable and never backfilled —
+  // existing rows keep NULL and the UI shows `label ?? filename`, so the original
+  // CSV filename is always preserved for reference. Mirrors smtp_configs.label.
+  label: text("label"),
   // JSON-encoded array of header names → merge-field autocomplete source.
   columns_json: text("columns_json").notNull(),
   row_count: integer("row_count").notNull(),
