@@ -37,8 +37,9 @@ const {
   sendTestVia,
   setDefaultConfigCore,
   softDeleteConfigCore,
+  updateMetaCore,
 } = await import("./actions-core");
-const { listSmtpConfigsForUser, getSmtpConfigByIdForUser, updateFromFields } =
+const { listSmtpConfigsForUser, getSmtpConfigByIdForUser } =
   await import("../data/smtp");
 const { createRecipientSet } = await import("../data/recipients");
 const { createTemplate } = await import("../data/templates");
@@ -58,6 +59,11 @@ const USER_DEFAULT = "user_first_default_dfltdf";
 const USER_INUSE = "user_inuse_guard_iiiiiiii";
 const USER_OWNER = "user_owner_ownerownerown";
 const USER_INTRUDER = "user_intruder_zzzzzzzzzz";
+const USER_META = "user_meta_metametameta01";
+const USER_META_DUP = "user_meta_dup_metadup0202";
+const USER_META_OWNER = "user_meta_owner_metaown03";
+const USER_META_INTRUDER = "user_meta_intruder_meta04";
+const USER_META_SIBLING = "user_meta_sibling_meta005";
 
 // A distinctive marker so a redaction assertion can grep for a leak.
 const MARKER_PASSWORD = "MARKER-SECRET-PASSWORD-9f2c";
@@ -207,26 +213,156 @@ test("applyVerifiedConfig rejects a duplicate label case-insensitively (per acco
   assert.equal(rows.length, 1);
 });
 
-test("a from-only update leaves verified_at (and connection fields) unchanged (D-08)", async () => {
-  // Seed a verified config, then apply the from-only update the action delegates to.
-  await applyVerifiedConfig(USER_FROM, null, validInput(), fakeVerifyOk);
+test("a meta-only update leaves verified_at (and connection fields) unchanged (D-08)", async () => {
+  // Seed a verified config, then apply the meta-only update the action delegates to.
+  await applyVerifiedConfig(USER_FROM, null, validInput({ label: "MetaKeep" }), fakeVerifyOk);
   const [before] = await listSmtpConfigsForUser(USER_FROM);
   assert.ok(before);
   const priorVerifiedAt = before.verified_at;
   const priorHost = before.host;
 
-  await updateFromFields(USER_FROM, {
+  const res = await updateMetaCore(USER_FROM, before.id, {
+    label: "MetaKeep",
     from_addr: "changed@example.com",
     from_name: "Changed Name",
   });
+  assert.equal(res.ok, true);
 
-  const [after] = await listSmtpConfigsForUser(USER_FROM);
+  const after = await getSmtpConfigByIdForUser(USER_FROM, before.id);
   assert.ok(after);
   assert.equal(after.from_addr, "changed@example.com");
   assert.equal(after.from_name, "Changed Name");
   // The proven connection is preserved — no re-verify was required (D-08 / Pitfall 6).
   assert.equal(after.verified_at, priorVerifiedAt);
   assert.equal(after.host, priorHost);
+});
+
+// --- updateMetaCore (label + sender identity, no verify) ----------------------
+
+test("updateMetaCore persists a new label, readable back by id", async () => {
+  await applyVerifiedConfig(USER_META, null, validInput({ label: "Old Name" }), fakeVerifyOk);
+  const [seeded] = await listSmtpConfigsForUser(USER_META);
+  assert.ok(seeded);
+
+  const res = await updateMetaCore(USER_META, seeded.id, {
+    label: "Renamed Server",
+    from_addr: "sender@example.com",
+    from_name: "New Sender",
+  });
+  assert.equal(res.ok, true);
+
+  const row = await getSmtpConfigByIdForUser(USER_META, seeded.id);
+  assert.ok(row);
+  assert.equal(row.label, "Renamed Server");
+  assert.equal(row.from_addr, "sender@example.com");
+  assert.equal(row.from_name, "New Sender");
+  // No re-verify happened — the proven connection is preserved.
+  assert.equal(row.verified_at, seeded.verified_at);
+});
+
+test("updateMetaCore rejects a duplicate label case-insensitively (excluding self)", async () => {
+  await applyVerifiedConfig(USER_META_DUP, null, validInput({ label: "Alpha" }), fakeVerifyOk);
+  await applyVerifiedConfig(
+    USER_META_DUP,
+    null,
+    validInput({ label: "Beta", host: "smtp.beta.example.com" }),
+    fakeVerifyOk,
+  );
+  const rows = await listSmtpConfigsForUser(USER_META_DUP);
+  const beta = rows.find((r) => r.label === "Beta");
+  assert.ok(beta);
+
+  // Renaming Beta → "alpha" (different case) collides with the sibling Alpha row.
+  const clash = await updateMetaCore(USER_META_DUP, beta.id, {
+    label: "  alpha  ",
+    from_addr: beta.from_addr,
+    from_name: beta.from_name,
+  });
+  assert.equal(clash.ok, false);
+  assert.ok(!clash.ok && clash.error.kind === "validation");
+  assert.ok(JSON.stringify(clash).includes("Pick a different name."));
+
+  // Beta keeps its original label — the clashing rename persisted nothing.
+  const betaAfter = await getSmtpConfigByIdForUser(USER_META_DUP, beta.id);
+  assert.ok(betaAfter);
+  assert.equal(betaAfter.label, "Beta");
+
+  // The SAME label on the SAME row (self) is allowed — not a self-conflict.
+  const selfSame = await updateMetaCore(USER_META_DUP, beta.id, {
+    label: "Beta",
+    from_addr: "beta2@example.com",
+    from_name: beta.from_name,
+  });
+  assert.equal(selfSame.ok, true);
+  const betaSelf = await getSmtpConfigByIdForUser(USER_META_DUP, beta.id);
+  assert.equal(betaSelf?.from_addr, "beta2@example.com");
+});
+
+test("updateMetaCore returns not_found for a cross-tenant id (IDOR)", async () => {
+  await applyVerifiedConfig(USER_META_OWNER, null, validInput({ label: "Owned Meta" }), fakeVerifyOk);
+  const [owned] = await listSmtpConfigsForUser(USER_META_OWNER);
+  assert.ok(owned);
+
+  const res = await updateMetaCore(USER_META_INTRUDER, owned.id, {
+    label: "Hijacked",
+    from_addr: "intruder@example.com",
+    from_name: "Intruder",
+  });
+  assert.equal(res.ok, false);
+  assert.ok(!res.ok && res.error.kind === "not_found");
+
+  // The owner's row is untouched by the cross-tenant attempt.
+  const still = await getSmtpConfigByIdForUser(USER_META_OWNER, owned.id);
+  assert.ok(still);
+  assert.equal(still.label, "Owned Meta");
+  assert.notEqual(still.from_addr, "intruder@example.com");
+});
+
+test("updateMetaCore does NOT clobber a SIBLING config's sender fields (clobber regression)", async () => {
+  // Two configs for ONE account. The retired userId-only updateFromFields updated
+  // by eq(userId) alone, overwriting from_addr/from_name on EVERY row. The id-scoped
+  // updateSmtpConfigMeta must touch ONLY the addressed row.
+  await applyVerifiedConfig(
+    USER_META_SIBLING,
+    null,
+    validInput({ label: "First", from_addr: "first@example.com", from_name: "First Sender" }),
+    fakeVerifyOk,
+  );
+  await applyVerifiedConfig(
+    USER_META_SIBLING,
+    null,
+    validInput({
+      label: "Second",
+      host: "smtp.second.example.com",
+      from_addr: "second@example.com",
+      from_name: "Second Sender",
+    }),
+    fakeVerifyOk,
+  );
+  const rows = await listSmtpConfigsForUser(USER_META_SIBLING);
+  const first = rows.find((r) => r.label === "First");
+  const second = rows.find((r) => r.label === "Second");
+  assert.ok(first && second);
+  const secondVerifiedAt = second.verified_at;
+
+  // Edit ONLY the "First" config's sender identity.
+  const res = await updateMetaCore(USER_META_SIBLING, first.id, {
+    label: "First",
+    from_addr: "first-edited@example.com",
+    from_name: "First Edited",
+  });
+  assert.equal(res.ok, true);
+
+  // The addressed row changed…
+  const firstAfter = await getSmtpConfigByIdForUser(USER_META_SIBLING, first.id);
+  assert.equal(firstAfter?.from_addr, "first-edited@example.com");
+
+  // …but the SIBLING "Second" row is completely untouched (the clobber bug).
+  const secondAfter = await getSmtpConfigByIdForUser(USER_META_SIBLING, second.id);
+  assert.ok(secondAfter);
+  assert.equal(secondAfter.from_addr, "second@example.com");
+  assert.equal(secondAfter.from_name, "Second Sender");
+  assert.equal(secondAfter.verified_at, secondVerifiedAt);
 });
 
 // --- Blank-password edit merge (SMTP-04 / D-07) + WR-09 host-change gate ------

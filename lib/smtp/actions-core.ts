@@ -23,9 +23,14 @@ import {
   setDefaultSmtpConfig,
   softDeleteSmtpConfig,
   updateSmtpConfigById,
+  updateSmtpConfigMeta,
 } from "../data/smtp";
 import { classifyVerifyError, type VerifyErrorField } from "./errors";
-import { smtpEditFormSchema, type SmtpFormValues } from "./schema";
+import {
+  smtpEditFormSchema,
+  smtpMetaFormSchema,
+  type SmtpFormValues,
+} from "./schema";
 import { verifySmtp, type VerifyOutcome } from "./verify";
 
 /**
@@ -212,6 +217,60 @@ export async function applyVerifiedConfig(
     return { ok: true, id: created.id };
   }
   const updated = await updateSmtpConfigById(userId, id, persistable);
+  // 0-length = the id was not owned / already deleted (IDOR / not-found).
+  if (updated.length === 0) {
+    return { ok: false, error: { kind: "not_found" } };
+  }
+  return { ok: true, id };
+}
+
+/**
+ * Meta-only edit seam (06.1 / D-08): persist ONLY the metadata fields (label +
+ * sender identity from_addr / from_name) of ONE owned config, addressed BY ID,
+ * WITHOUT a verify round-trip and WITHOUT touching `verified_at` — a rename or
+ * display-name/address change does not invalidate a proven connection (Pitfall 6).
+ * No SMTP dial happens, so there is no rate-limit here (the "use server" wrapper
+ * `updateServerMeta` omits it deliberately).
+ *
+ * Runs the SAME case-insensitive label-uniqueness check as
+ * {@link applyVerifiedConfig} — excluding the row being edited by id so an
+ * unchanged label is not a self-conflict — and returns the SAME validationError
+ * copy anchored on `label`. Delegates to the id-scoped `updateSmtpConfigMeta`; a
+ * 0-length result means the id was not owned / already deleted → `not_found`
+ * (T-061-06 IDOR). Replaces the retired userId-only updateFromFields, which
+ * clobbered from_addr/from_name on EVERY config the user owned.
+ */
+export async function updateMetaCore(
+  userId: string,
+  id: number,
+  input: unknown,
+): Promise<ActionResult> {
+  // Same subset validation as the full form (label/email/trimmed name), so the
+  // meta path can never diverge from the connection path (schema is a pick).
+  const parsed = smtpMetaFormSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: { kind: "validation", issues: parsed.error.issues } };
+  }
+
+  // Label uniqueness (LOCKED) — identical rule + copy to applyVerifiedConfig,
+  // EXCLUDING the row being edited (by id) so an unchanged label is not a clash.
+  const existingConfigs = await listSmtpConfigsForUser(userId);
+  const wantedLabel = parsed.data.label.trim().toLowerCase();
+  const labelClash = existingConfigs.some(
+    (c) => c.id !== id && (c.label ?? "").trim().toLowerCase() === wantedLabel,
+  );
+  if (labelClash) {
+    return validationError(
+      "label",
+      `You already have a server called '${parsed.data.label}'. Pick a different name.`,
+    );
+  }
+
+  const updated = await updateSmtpConfigMeta(userId, id, {
+    label: parsed.data.label,
+    from_addr: parsed.data.from_addr,
+    from_name: parsed.data.from_name ?? null,
+  });
   // 0-length = the id was not owned / already deleted (IDOR / not-found).
   if (updated.length === 0) {
     return { ok: false, error: { kind: "not_found" } };

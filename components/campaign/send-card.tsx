@@ -29,6 +29,13 @@ import { ConfirmSendDialog } from "@/components/campaign/confirm-send-dialog";
  * undismissable confirm gate to the currently selected recipient list, the
  * most-recently saved standalone template, AND the chosen verified SMTP server.
  *
+ * Ordering (06.1 walkthrough fix): the server block (no-servers gate / single-server
+ * static line / multi-server "Send with" picker) ALWAYS renders FIRST, independent
+ * of the template — the picker must be visible whenever multiple verified servers
+ * exist, not hidden behind a session template save. When no template is saved yet,
+ * a "Save your template above first." muted line renders BELOW it as the gate
+ * explaining why the send controls (test-send + Review and send) aren't available.
+ *
  * Server picker (06.1, CONTEXT.md LOCKED):
  *   - zero verified servers → the disabled add-and-verify gate;
  *   - exactly one verified server → a zero-click static "Sending over …" line (no
@@ -82,11 +89,7 @@ export function SendCard({
         <CardTitle className="text-xl">Send</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
-        {templateId === null ? (
-          <p className="text-sm text-muted-foreground">
-            Save your template above first.
-          </p>
-        ) : noServers ? (
+        {noServers ? (
           <p className="text-sm text-muted-foreground">
             Add and verify at least one SMTP server in{" "}
             <Link href="/settings/smtp" className="underline underline-offset-2">
@@ -118,6 +121,12 @@ export function SendCard({
             </Select>
           </div>
         )}
+
+        {templateId === null ? (
+          <p className="text-sm text-muted-foreground">
+            Save your template above first.
+          </p>
+        ) : null}
 
         {templateId !== null && smtpConfigId !== null ? (
           <TestSendPanel

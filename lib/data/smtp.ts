@@ -159,18 +159,34 @@ export function updateSmtpConfigById(
 }
 
 /**
- * Update ONLY the sender-identity fields (from_addr / from_name) for the caller.
- * Deliberately does NOT touch `verified_at`: changing the display name/address
- * does not invalidate a proven connection (D-08 / Pitfall 6). Scoped to `userId`.
+ * Update ONLY the metadata fields (label + sender identity from_addr / from_name)
+ * of ONE owned, non-deleted config, addressed BY ID. Deliberately does NOT touch
+ * `verified_at`: a rename or display-name/address edit does not invalidate a proven
+ * connection (D-08 / Pitfall 6). The `and(eq(id), eq(userId), isNull(deleted_at))`
+ * WHERE is the IDOR defense (T-061-01) — scoping by userId ALONE (the retired
+ * updateFromFields behaviour) would clobber from_addr/from_name on EVERY config the
+ * user owns. The returned `{ id }[]` length is the "did I own+update it?" signal.
  */
-export function updateFromFields(
+export function updateSmtpConfigMeta(
   userId: string,
-  values: { from_addr: string; from_name: string | null },
+  id: number,
+  values: { label: string; from_addr: string; from_name: string | null },
 ) {
   return db
     .update(smtp_configs)
-    .set({ from_addr: values.from_addr, from_name: values.from_name })
-    .where(eq(smtp_configs.userId, userId));
+    .set({
+      label: values.label,
+      from_addr: values.from_addr,
+      from_name: values.from_name,
+    })
+    .where(
+      and(
+        eq(smtp_configs.id, id),
+        eq(smtp_configs.userId, userId),
+        isNull(smtp_configs.deleted_at),
+      ),
+    )
+    .returning({ id: smtp_configs.id });
 }
 
 /**

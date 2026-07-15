@@ -68,6 +68,7 @@ import { SendCard } from "@/components/campaign/send-card";
 type EditorSet = {
   id: number;
   filename: string;
+  label: string | null;
   row_count: number;
   columns_json: string;
 };
@@ -379,7 +380,9 @@ export function ComposeEditor({
           <SelectContent>
             {sets.map((set) => (
               <SelectItem key={set.id} value={String(set.id)}>
-                {set.filename} — {set.row_count} recipients
+                {set.label
+                  ? `${set.label} (${set.filename}) — ${set.row_count} recipients`
+                  : `${set.filename} — ${set.row_count} recipients`}
               </SelectItem>
             ))}
           </SelectContent>

@@ -7,7 +7,7 @@ import { AlertCircle, CheckCircle2, ChevronDown, Loader2 } from "lucide-react";
 
 import type { SmtpFormValues } from "@/lib/smtp/schema";
 import {
-  updateFromFields,
+  updateServerMeta,
   type ActionError,
   type ActionResult,
 } from "@/lib/smtp/actions";
@@ -31,10 +31,11 @@ import {
  * a one-click "Switch to {mode} & verify". The WR-09 client gate blocks a
  * changed-host + blank-password save before any dial.
  *
- * EDIT shortcut (D-08): when only the sender-identity fields changed
- * (`connectionDirty === false`), the primary action becomes "Save changes",
- * which calls `updateFromFields` directly WITHOUT a verify round-trip — a
- * display-name/address edit does not invalidate a proven connection.
+ * EDIT shortcut (D-08): when only the metadata fields changed — the label and/or
+ * the sender identity, with NO connection field touched (`connectionDirty ===
+ * false`) — the primary action becomes "Save changes", which calls
+ * `updateServerMeta` for THIS config id directly WITHOUT a verify round-trip: a
+ * rename or display-name/address edit does not invalidate a proven connection.
  *
  * SECURITY (T-2-CRED / D-06): the "Show technical details" collapsible renders
  * `error.raw` — a message STRING only. The action contract never returns the
@@ -63,6 +64,7 @@ type FieldIssue = { path?: unknown[]; message?: string };
 export function StepVerify({
   form,
   isEdit,
+  configId,
   connectionDirty,
   pending,
   persist,
@@ -73,6 +75,9 @@ export function StepVerify({
 }: {
   form: UseFormReturn<SmtpFormValues>;
   isEdit: boolean;
+  /** The edited config's id — the meta-only save addresses THIS row. Non-null in
+   *  edit mode (the only mode the meta path runs in); guarded anyway. */
+  configId: number | null;
   connectionDirty: boolean;
   pending: boolean;
   /** verify-then-save via the id-scoped create/update action (owned by the wizard). */
@@ -85,8 +90,9 @@ export function StepVerify({
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
 
-  // Edit + only sender fields touched → save directly, no verify (D-08).
-  const fromOnly = isEdit && !connectionDirty;
+  // Edit + only metadata fields touched (label and/or sender, no connection
+  // field) → save directly, no verify (D-08).
+  const metaOnly = isEdit && !connectionDirty;
 
   function applyError(error: ActionError) {
     switch (error.kind) {
@@ -195,15 +201,23 @@ export function StepVerify({
     })();
   }
 
-  // Sender-identity-only save (D-08): no verify, verified_at untouched.
-  async function runFromOnly() {
+  // Meta-only save (D-08): label and/or sender fields, no verify, verified_at
+  // untouched. Scoped to THIS config id, so it can never clobber sibling configs.
+  async function runMetaOnly() {
     form.clearErrors();
     setDetail(null);
-    const ok = await form.trigger(["from_addr", "from_name"]);
+    // Guard: the meta path only runs in edit mode, where configId is non-null.
+    if (configId === null) {
+      setDetail({
+        message: "That server no longer exists. Refresh the page and try again.",
+      });
+      return;
+    }
+    const ok = await form.trigger(["label", "from_addr", "from_name"]);
     if (!ok) return;
-    const { from_addr, from_name } = form.getValues();
+    const { label, from_addr, from_name } = form.getValues();
     onPendingChange(true);
-    const res = await updateFromFields({ from_addr, from_name });
+    const res = await updateServerMeta(configId, { label, from_addr, from_name });
     onPendingChange(false);
     if (res.ok) {
       toast.success("Sender details saved.");
@@ -221,8 +235,8 @@ export function StepVerify({
     await runVerify();
   }
 
-  const primaryLabel = fromOnly ? "Save changes" : "Verify & continue";
-  const pendingLabel = fromOnly ? "Saving…" : "Verifying…";
+  const primaryLabel = metaOnly ? "Save changes" : "Verify & continue";
+  const pendingLabel = metaOnly ? "Saving…" : "Verifying…";
 
   return (
     <div className="flex flex-col gap-4">
@@ -272,7 +286,7 @@ export function StepVerify({
       ) : null}
 
       <div className="flex items-center justify-end gap-4">
-        {pending && !fromOnly ? (
+        {pending && !metaOnly ? (
           <span className="text-sm text-muted-foreground">
             Connecting to your server — this can take up to 15 seconds.
           </span>
@@ -280,7 +294,7 @@ export function StepVerify({
         <Button
           type="button"
           disabled={pending}
-          onClick={fromOnly ? runFromOnly : runVerify}
+          onClick={metaOnly ? runMetaOnly : runVerify}
         >
           {pending ? (
             <>
@@ -289,7 +303,7 @@ export function StepVerify({
             </>
           ) : (
             <>
-              {fromOnly ? null : <CheckCircle2 />}
+              {metaOnly ? null : <CheckCircle2 />}
               {primaryLabel}
             </>
           )}

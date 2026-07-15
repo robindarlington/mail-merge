@@ -100,3 +100,19 @@ export const smtpEditFormSchema = smtpFormSchema.extend({
 });
 
 export type SmtpEditFormValues = z.infer<typeof smtpEditFormSchema>;
+
+/**
+ * Meta-only edit schema (06.1): the subset of fields a "no connection change"
+ * edit may touch — the user-facing `label` plus the sender identity
+ * (from_addr / from_name). Picked from {@link smtpFormSchema} so the label,
+ * email and trimmed-name rules can NEVER diverge from the full form. Used by the
+ * meta-only save path (updateMetaCore / updateServerMeta), which skips verify and
+ * never re-dials SMTP, so no connection fields belong here.
+ */
+export const smtpMetaFormSchema = smtpFormSchema.pick({
+  label: true,
+  from_addr: true,
+  from_name: true,
+});
+
+export type SmtpMetaFormValues = z.infer<typeof smtpMetaFormSchema>;
