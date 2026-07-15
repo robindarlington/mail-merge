@@ -229,9 +229,9 @@ Plans:
 Plans:
 **Wave 1** *(foundation seams — parallel, exclusive file ownership)*
 
-- [ ] 06-01-PLAN.md — Worker campaign-lifecycle seams: atomic claim + orphan-recovery sweep + finalize (TDD)
-- [ ] 06-02-PLAN.md — Worker send-path seams: idempotent materialize + pending-row send loop with per-row commit (TDD)
-- [ ] 06-03-PLAN.md — userId-scoped read/service layer: campaigns list + drill-down + live-progress action (TDD)
+- [x] 06-01-PLAN.md — Worker campaign-lifecycle seams: atomic claim + orphan-recovery sweep + finalize (TDD)
+- [x] 06-02-PLAN.md — Worker send-path seams: idempotent materialize + pending-row send loop with per-row commit (TDD)
+- [x] 06-03-PLAN.md — userId-scoped read/service layer: campaigns list + drill-down + live-progress action (TDD)
 
 **Wave 2** *(blocked on Wave 1)*
 
