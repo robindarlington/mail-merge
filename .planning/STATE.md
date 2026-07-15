@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 6.1 UI-SPEC approved
-last_updated: "2026-07-14T15:44:19.616Z"
+status: ready_to_plan
+stopped_at: Phase 06.1 complete (4/4) — ready to discuss Phase 7
+last_updated: 2026-07-15T20:36:33.320Z
 last_activity: 2026-07-14 -- Phase 06.1 execution started
 progress:
   total_phases: 10
   completed_phases: 3
   total_plans: 41
-  completed_plans: 28
+  completed_plans: 32
   percent: 30
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-24)
 
 **Core value:** A signed-in user can reliably send a personalized email to every row of their CSV, using their own validated SMTP, with confidence (preview + test-send) and a record of exactly what was sent and to whom.
-**Current focus:** Phase 06.1 — Multiple SMTP servers per account
+**Current focus:** Phase 7 — per row attachments
 
 ## Current Position
 
-Phase: 06.1 (Multiple SMTP servers per account) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 06.1
-Last activity: 2026-07-14 -- Phase 06.1 execution started
+Phase: 7
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-15
 
 Progress: [██████████] 100%
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 19
+- Total plans completed: 23
 - Average duration: — min
 - Total execution time: 0.0 hours
 
@@ -47,6 +47,7 @@ Progress: [██████████] 100%
 | 01 | 5 | - | - |
 | 02 | 9 | - | - |
 | 03 | 5 | - | - |
+| 06.1 | 4 | - | - |
 
 **Recent Trend:**
 
@@ -106,6 +107,7 @@ None yet.
 | 260710-dzc | Apply approved go-to-market planning updates (9 items) to .planning docs and add MIT LICENSE | 2026-07-10 | 5ab57ee | [260710-dzc-apply-approved-go-to-market-planning-upd](./quick/260710-dzc-apply-approved-go-to-market-planning-upd/) |
 | 260713-v0t | Fix compose-editor bugs: merge fields with spaces in column names + caret-following autocomplete popover | 2026-07-13 | 9d1ccf9 | [260713-v0t-fix-compose-editor-bugs-merge-fields-wit](./quick/260713-v0t-fix-compose-editor-bugs-merge-fields-wit/) |
 | 260714-dxm | Rename Recipients page to Lists and add a CSV contents viewer (columns + rows detail page per upload) | 2026-07-14 | 892c0d9 | [260714-dxm-rename-recipients-page-to-lists-and-add-](./quick/260714-dxm-rename-recipients-page-to-lists-and-add-/) |
+| 260715-r8d | Make list info editable in the UX: rename the label of a previously uploaded list (Lists page + detail + compose selector) | 2026-07-15 | cdc7a49 | [260715-r8d-make-list-info-editable-in-the-ux-allow-](./quick/260715-r8d-make-list-info-editable-in-the-ux-allow-/) |
 
 ## Deferred Items
 
@@ -117,6 +119,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-14T15:19:20.776Z
-Stopped at: Phase 6.1 UI-SPEC approved
-Resume file: .planning/phases/06.1-multiple-smtp-servers-per-account-register-several-smtp-conf/06.1-UI-SPEC.md
+Last session: 2026-07-14T21:15:21.207Z
+Stopped at: Phase 6.1 complete (walkthrough approved, review CR-01 fixed, verification passed); quick task 260715-r8d complete
+Resume file: none
