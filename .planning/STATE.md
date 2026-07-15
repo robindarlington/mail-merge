@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 06.1 complete (4/4) — ready to discuss Phase 7
-last_updated: 2026-07-15T20:36:33.320Z
-last_activity: 2026-07-14 -- Phase 06.1 execution started
+status: planning
+stopped_at: Phase 6.1 complete (walkthrough approved, review CR-01 fixed, verification passed); quick task 260715-r8d complete
+last_updated: "2026-07-15T20:41:46.785Z"
+last_activity: 2026-07-15
 progress:
-  total_phases: 10
-  completed_phases: 3
+  total_phases: 11
+  completed_phases: 4
   total_plans: 41
   completed_plans: 32
-  percent: 30
+  percent: 36
 ---
 
 # Project State
@@ -66,6 +66,7 @@ Progress: [██████████] 100%
 ### Roadmap Evolution
 
 - Phase 6.1 inserted after Phase 6: Multiple SMTP servers per account — register several SMTP configs, choose one per send (URGENT)
+- Phase 08.1 inserted after Phase 8: Agent access: standalone CLI + MCP server (standalone-local, reuses lib/core; before Phase 9 so launch collateral documents it)
 
 ### Decisions
 

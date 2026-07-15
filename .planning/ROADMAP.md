@@ -299,18 +299,34 @@ Plans:
 **Plans**: TBD
 **Research flag**: Mostly standard; verify the exact Coolify `stop_grace_period` Compose field behavior in the target Coolify version (community-verified, version-dependent).
 
+### Phase 08.1: Agent access — standalone CLI + MCP server (INSERTED)
+
+**Goal:** An AI agent or developer can run mail merges without the web UI: a npm-installable CLI (bin: `mail-merge`) that reuses lib/core directly, plus a stdio MCP server exposing the same operations as tools, so agents can discover and drive the merge engine locally.
+**Mode:** mvp
+**Requirements**: TBD (extends BRAND-01 reach; standalone-local decision LOCKED 2026-07-15 — no API-token layer in this phase)
+**Depends on:** Phase 1 (lib/core only). Positioned after Phase 8 so Phase 9's launch collateral (README, /agents page) can document the shipped CLI/MCP.
+**Success Criteria** (what must be TRUE):
+
+  1. A npx-executable CLI (`mail-merge`) runs dry-run, `--test ADDR`, and send modes over a CSV + plain-text `{{column}}` template with user-supplied SMTP from env/flags — mirroring the original send-credentials.ts contract, with a per-send throttle.
+  2. The CLI is secret-safe: SMTP password comes from env (or hidden prompt) only, never from argv, and is never logged or echoed.
+  3. A stdio MCP server (same package) exposes validate-csv, preview-merge, test-send, and send tools with typed results, reusing the identical lib/core paths as the CLI.
+  4. Unit tests cover merge parity with lib/core and the CLI argument contract.
+  5. README documents both, including copy-paste agent-usage examples (MCP config snippet + CLI one-liners).
+
+**Plans**: TBD
+
 ### Phase 9: Launch Collateral
 
-**Goal**: The project is packaged as a public, niche-framed portfolio + lead-generation artifact — a README and landing copy that speak to the target niches, a "how it was built" write-up, and an in-app attribution + hire-me link.
+**Goal**: The project is packaged as a public, niche-framed portfolio + lead-generation artifact — public marketing/docs routes in the app, a README and landing copy that speak to the target niches, a "how it was built" write-up, and an in-app attribution + hire-me link.
 **Mode:** mvp
-**Depends on**: Phase 8
+**Depends on**: Phase 8, Phase 08.1 (the /agents page documents the shipped CLI/MCP)
 **Requirements**: BRAND-01
 **Success Criteria** (what must be TRUE):
 
-  1. A public README with at least one screenshot and run/deploy instructions exists at the repo root.
-  2. Landing-page copy frames the two core niches (credential delivery, per-row documents like payslips/certificates/invoices).
-  3. A "how it was built" write-up is published/committed.
-  4. The app UI footer shows Robin Darlington attribution and a working "hire me / custom work" link (satisfies BRAND-01).
+  1. A public README with at least one screenshot and run/deploy instructions exists at the repo root, linking the public repo (https://github.com/robindarlington/mail-merge).
+  2. Public signed-out routes exist in the app (decision LOCKED 2026-07-15 — same Next.js app, not a separate site): a landing page at `/` whose copy frames the two core niches (credential delivery, per-row documents like payslips/certificates/invoices), `/docs` (usage instructions), `/self-host` (host-your-own instructions: Docker/Coolify, env vars incl. CREDENTIAL_ENC_KEY, Clerk keys), and `/agents` (CLI + MCP instructions from Phase 08.1). Signed-in users still land on the dashboard.
+  3. A "how it was built" write-up draft is committed to the repo (docs/writeup.md), written to be published at https://robindarlington.com/thoughts/ — Rob publishes it manually.
+  4. The app UI footer (all pages, incl. public routes) shows Robin Darlington attribution and a working "hire me / custom work" link to https://robindarlington.com/contact/ (satisfies BRAND-01).
   5. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
 **Plans**: TBD
@@ -319,7 +335,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 6.1 → 7 → 8 → 8.1 → 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -329,6 +345,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Editor + Preview + Template Save | 5/6 | In Progress|  |
 | 5. Test-Send + Confirmation Gate | 4/5 | In Progress|  |
 | 6. Background Worker + Live Send + Progress + History | 0/TBD | Not started | - |
+| 6.1. Multiple SMTP servers per account | 4/4 | Complete   | 2026-07-15 |
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
 | 8. Docker / Coolify Packaging + Operational Hardening | 0/TBD | Not started | - |
+| 8.1. Agent access — standalone CLI + MCP server | 0/TBD | Not started | - |
 | 9. Launch Collateral | 0/TBD | Not started | - |
