@@ -50,6 +50,7 @@ export default async function ComposePage() {
   const editorSets = sets.map((set) => ({
     id: set.id,
     filename: set.filename,
+    label: set.label,
     row_count: set.row_count,
     columns_json: set.columns_json,
   }));
