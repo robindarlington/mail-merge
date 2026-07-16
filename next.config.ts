@@ -7,10 +7,15 @@ const nextConfig: NextConfig = {
   // better-sqlite3 is a native module used by lib/db and the worker; keep it
   // external from the server bundle so its native bindings load at runtime.
   serverExternalPackages: ["better-sqlite3"],
-  // Kept in step with MAX_UPLOAD_BYTES (4 MB) so the zod upload guard rejects an
-  // oversized CSV with a clear message BEFORE the platform body limit bites
-  // silently (03-03 Pitfall 1 / T-3-DOS).
-  experimental: { serverActions: { bodySizeLimit: "4mb" } },
+  // Raised to fit one 10 MB attachment + multipart overhead (ATCH-01 uploads are
+  // one-file-per-call). The platform limit is now the LOOSER of the two per-file
+  // caps, so the app-level zod guards remain authoritative: CSV uploads still
+  // enforce their own 4 MB via MAX_UPLOAD_BYTES (lib/csv/schema.ts, unchanged) and
+  // attachments enforce 10 MB via MAX_ATTACHMENT_BYTES (lib/attachments/schema.ts).
+  // Keeping the zod guards as the source of truth means each surface still rejects
+  // an oversized file with a clear message BEFORE the platform body limit bites
+  // silently (03-03 Pitfall 1 / T-3-DOS / T-07-06).
+  experimental: { serverActions: { bodySizeLimit: "11mb" } },
 };
 
 export default nextConfig;
