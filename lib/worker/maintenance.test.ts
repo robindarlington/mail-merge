@@ -290,6 +290,48 @@ test("deletes the DB row BEFORE unlinking; an unlink failure increments unlinkFa
   );
 });
 
+// --- sweepOrphanAttachments: TOCTOU guard (WR-01 regression) -------------------
+
+test("a draft campaign enqueued between the candidate SELECT and its DELETE keeps its attachment", () => {
+  // Two aged candidates: c1 (unstamped) sweeps first; c2 belongs to a draft
+  // campaign. While the sweep is busy unlinking c1's file, the "web process"
+  // (simulated inside the unlink callback) flips c2's campaign draft → queued —
+  // the exact TOCTOU window. The conditional DELETE must then be a no-op for
+  // c2: its row AND file survive, and it is not counted.
+  const draft = insertCampaign("draft");
+  const c1 = insertAttachment({ campaignId: null, ageDays: 10 });
+  const c2 = insertAttachment({ campaignId: draft, ageDays: 10 });
+
+  const unlinked: string[] = [];
+  const { logger } = makeLogger();
+  const res = sweepOrphanAttachments({
+    db,
+    now: NOW,
+    orphanDays: ORPHAN_DAYS,
+    unlink: (p) => {
+      // Concurrent writer lands mid-sweep: the user clicks Send on the draft.
+      db.update(campaigns)
+        .set({ status: "queued" })
+        .where(eq(campaigns.id, draft))
+        .run();
+      unlinked.push(p);
+    },
+    logger,
+  });
+
+  assert.equal(res.deletedRows, 1, "only the still-orphaned c1 was deleted");
+  assert.equal(unlinked.length, 1, "only c1's file was unlinked");
+  assert.equal(attachExists(c1), false, "c1 (still orphan) deleted");
+  assert.equal(
+    attachExists(c2),
+    true,
+    "c2 survived — its campaign was enqueued inside the sweep window",
+  );
+
+  // Restore for later tests: put the campaign back and clean up c2.
+  db.delete(attachments).where(eq(attachments.id, c2)).run();
+});
+
 // --- sweepOrphanAttachments: PRODUCTION unlink wiring (CR-01 regression) ------
 
 test("production wiring deletes the REAL file for a RELATIVE storage_path under UPLOADS_PATH", () => {

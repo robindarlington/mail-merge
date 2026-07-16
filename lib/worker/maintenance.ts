@@ -130,9 +130,32 @@ export function sweepOrphanAttachments(opts: SweepOptions): SweepResult {
     // Row-first: commit the DB delete (the quota source of truth) BEFORE touching
     // the file. better-sqlite3 transactions are synchronous, so this commits
     // atomically before the unlink runs.
-    db.transaction((tx) => {
-      tx.delete(attachments).where(eq(attachments.id, c.id)).run();
-    });
+    //
+    // TOCTOU guard (WR-01): the web process is a separate writer — it can flip a
+    // campaign draft → queued (user clicks Send) between the candidate SELECT
+    // above and this row's DELETE. An unconditional `WHERE id = ?` would then
+    // delete the attachment of a now-live campaign (silent data loss: every
+    // email sends without its attachment). So the FULL orphan predicate is
+    // re-asserted inside the DELETE itself; SQLite evaluates it atomically under
+    // the write lock. `changes === 0` means the row stopped being an orphan (or
+    // was already deleted) — skip it, and NEVER unlink its file.
+    const { changes } = db.transaction((tx) =>
+      tx
+        .delete(attachments)
+        .where(
+          and(
+            eq(attachments.id, c.id),
+            lt(attachments.created_at, cutoff),
+            or(
+              isNull(attachments.campaign_id),
+              inArray(attachments.campaign_id, draftCampaignIds),
+            ),
+          ),
+        )
+        .run(),
+    );
+    if (changes !== 1) continue; // no longer an orphan — keep the file
+
     deletedRows += 1;
 
     try {
