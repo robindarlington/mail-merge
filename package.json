@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "worker": "tsx worker/index.ts",
-    "build:worker": "esbuild worker/index.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --external:better-sqlite3 --external:pino --outfile=worker.js",
+    "build:worker": "esbuild worker/index.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --external:better-sqlite3 --external:pino --banner:js=\"import{createRequire as __cr}from'module';const require=__cr(import.meta.url);\" --outfile=worker.js",
     "build:migrate": "esbuild scripts/migrate.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --external:better-sqlite3 --external:pino --outfile=migrate.js",
     "test": "node --import tsx --test \"lib/**/*.test.ts\"",
     "db:generate": "drizzle-kit generate",

@@ -28,6 +28,15 @@ data/
 worker.js
 migrate.js
 
+# Test-only tooling (08-04 redeploy acceptance) — the stub runs on the HOST and
+# the harness is esbuild-bundled + `docker compose cp`'d in at test time, so none
+# of these belong in the production image. Excluding them also keeps edits to the
+# acceptance scripts from invalidating the build cache (the COPY . . layer).
+scripts/redeploy-acceptance.sh
+scripts/stub-smtp.ts
+scripts/acceptance-harness.ts
+scripts/concurrency-smoke.ts
+
 # VCS + planning + local tooling noise.
 .git
 .gitignore
