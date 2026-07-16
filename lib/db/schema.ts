@@ -101,6 +101,12 @@ export const recipient_sets = sqliteTable("recipient_sets", {
   // (like from_name/verified_at) because it was added additively: the single
   // pre-existing dev row predates the confirm step and has no known value.
   email_column: text("email_column"),
+  // The user-confirmed attachment-filename column (ATCH-01). Same contract as
+  // email_column above: the save path ALWAYS writes this, so the send path uses
+  // the column the user chose — never a re-run of detectAttachmentColumn that
+  // would silently drop an override. Nullable additive column (like
+  // email_column): pre-existing rows predate the attachment step and hold NULL.
+  attachment_column: text("attachment_column"),
   created_at: integer("created_at").notNull().default(unixNow),
 });
 
@@ -166,24 +172,45 @@ export const send_records = sqliteTable(
     error: text("error"),
     attempts: integer("attempts").notNull().default(0),
     sent_at: integer("sent_at"),
+    // The per-row attachment link (ATCH-01). NULLABLE: many send_records → one
+    // attachment; a file referenced by many CSV rows is linked from each row's
+    // send_record, not the other way around. Stamped at materialize (Plan 04); a
+    // blank attachment cell leaves this null (send without attachment).
+    attachment_id: integer("attachment_id").references(() => attachments.id),
   },
   (t) => [unique("send_records_campaign_addr_uq").on(t.campaign_id, t.to_addr)],
 );
 
 /**
  * attachments — per-row files (different file per CSV row). Bytes live on the
- * /data volume; only the path is stored. Tenancy inherited via campaign_id.
+ * /data volume; only the path is stored.
+ *
+ * PRE-CAMPAIGN WINDOW (ATCH-01): a file is uploaded on /compose BEFORE
+ * prepareCampaignCore creates the campaign row, so `campaign_id` is NULLABLE and
+ * gets stamped later at prepare time (mirroring how recipient_sets.email_column
+ * was added nullable-additively). Because AUTH-02 tenancy-via-campaign only works
+ * once campaign_id is set, the table carries a direct owner column `user_id` for
+ * the pre-campaign window — every DAL read/write scopes on it.
+ *
+ * LINK INVERSION (ATCH-01): there is NO send_record_id here. A file referenced by
+ * many CSV rows must link EVERY one of them, so the row↔attachment FK lives on
+ * send_records.attachment_id (many send_records → one attachment). A per-
+ * attachment send_record_id could only ever point at one row (last-stamped-wins,
+ * earlier rows silently sent without their file).
+ *
+ * `size_bytes` is persisted so the 15MB per-message validation sums row sizes
+ * without stat-ing disk per row.
  */
 export const attachments = sqliteTable("attachments", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  campaign_id: integer("campaign_id")
-    .notNull()
-    .references(() => campaigns.id),
-  send_record_id: integer("send_record_id")
-    .notNull()
-    .references(() => send_records.id),
+  // Direct owner scope for the pre-campaign window (AUTH-02 grep gate).
+  userId: text("user_id").notNull(),
+  // NULLABLE until prepareCampaignCore stamps it (uploaded before the campaign).
+  campaign_id: integer("campaign_id").references(() => campaigns.id),
   filename: text("filename").notNull(),
   storage_path: text("storage_path").notNull(),
+  // Persisted upload size — the per-message (15MB) validation sums these.
+  size_bytes: integer("size_bytes").notNull(),
   created_at: integer("created_at").notNull().default(unixNow),
 });
 
