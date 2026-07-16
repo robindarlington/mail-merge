@@ -29,10 +29,15 @@
  * D-04); it never constructs a Database.
  */
 
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { campaigns, send_records, type NewCampaign } from "@/lib/db/schema";
+import {
+  attachments,
+  campaigns,
+  send_records,
+  type NewCampaign,
+} from "@/lib/db/schema";
 
 /**
  * The persistable fields for a draft-campaign insert. `userId` is deliberately
@@ -119,6 +124,72 @@ export async function countActiveCampaignsForRecipientSet(
       ),
     );
   return row?.n ?? 0;
+}
+
+/** The result of a delete attempt: `ok:false` when the status guard (or owner
+ *  scope) blocked it, plus the removed attachments' storage paths for the caller
+ *  to unlink POST-commit (row-first discipline — never unlink inside the txn). */
+export type DeleteCampaignResult = { ok: boolean; storagePaths: string[] };
+
+/**
+ * Delete one of the caller's campaigns together with its dependents, transactionally
+ * (mdt). foreign_keys=ON with NO onDelete cascade anywhere, so the cascade is manual
+ * and in FK-safe order: send_records → attachments → campaign.
+ *
+ * STATUS GUARD (T-mdt-02 TOCTOU): the campaign DELETE re-asserts
+ * `status NOT IN ('queued','running')` AND owner scope INSIDE the transaction. If it
+ * affects !==1 row (an active campaign the worker may be processing, OR a cross-tenant
+ * / unknown id), a sentinel throw rolls the WHOLE cascade back — nothing is removed —
+ * and the function returns `{ ok:false, storagePaths: [] }`. A `draft`/`completed`/
+ * `failed` campaign owned by the caller deletes and returns its attachments' paths.
+ *
+ * ROW-FIRST (mirrors lib/worker/maintenance.ts): files are NOT unlinked here. The
+ * removed attachments' `storage_path` values are collected FIRST (before the rows go)
+ * and returned so the core seam can unlink them AFTER the DB commit — a failed unlink
+ * then leaves only a harmless disk-only file, never an orphaned row.
+ */
+export function deleteCampaignForUser(
+  userId: string,
+  id: number,
+): DeleteCampaignResult {
+  try {
+    return db.transaction((tx) => {
+      // Collect the attachment paths BEFORE deleting the rows (they vanish next).
+      const atts = tx
+        .select({ storage_path: attachments.storage_path })
+        .from(attachments)
+        .where(eq(attachments.campaign_id, id))
+        .all();
+      const storagePaths = atts.map((a) => a.storage_path);
+
+      // FK-safe order: children first, parent last (no onDelete cascade exists).
+      tx.delete(send_records).where(eq(send_records.campaign_id, id)).run();
+      tx.delete(attachments).where(eq(attachments.campaign_id, id)).run();
+
+      // Owner-scoped + status-guarded parent DELETE — the affected-row count IS the
+      // "am I allowed?" signal. notInArray keeps a queued/running campaign safe.
+      const removed = tx
+        .delete(campaigns)
+        .where(
+          and(
+            eq(campaigns.id, id),
+            eq(campaigns.userId, userId),
+            notInArray(campaigns.status, [...ACTIVE_CAMPAIGN_STATUSES]),
+          ),
+        )
+        .returning({ id: campaigns.id })
+        .all();
+
+      // 0 rows = active OR cross-tenant/unknown → roll the whole cascade back.
+      if (removed.length !== 1) throw new Error("CAMPAIGN_DELETE_BLOCKED");
+      return { ok: true, storagePaths };
+    });
+  } catch (e) {
+    if ((e as Error).message === "CAMPAIGN_DELETE_BLOCKED") {
+      return { ok: false, storagePaths: [] };
+    }
+    throw e;
+  }
 }
 
 // --- Phase-6 read layer (HIST-01 / HIST-02 / SEND-05) -----------------------

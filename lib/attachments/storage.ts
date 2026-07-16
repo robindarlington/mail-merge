@@ -23,7 +23,7 @@
  * `attachmentExists` (presence check) rather than a byte reader.
  */
 
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -80,4 +80,25 @@ export function resolveAttachmentPath(storagePath: string): string {
  */
 export function attachmentExists(storagePath: string): boolean {
   return existsSync(guardedResolve(storagePath));
+}
+
+/**
+ * Delete a previously-stored attachment file. Best-effort: a MISSING file (ENOENT)
+ * is tolerated silently so a caller can treat the unlink as idempotent (the DB row
+ * is the source of truth; a disk-only leftover is harmless — mirrors the worker's
+ * maintenance sweep discipline).
+ *
+ * SECURITY (T-07-02 / T-mdt-03): reuses the SAME {@link guardedResolve} traversal
+ * boundary as the resolver + presence check, so a traversal path THROWS before any
+ * unlink. The path MUST originate from a userId-scoped attachments row, never the
+ * client.
+ */
+export function deleteAttachment(storagePath: string): void {
+  const full = guardedResolve(storagePath);
+  try {
+    unlinkSync(full);
+  } catch (e) {
+    // A missing file is fine (already gone) — swallow ENOENT, rethrow anything else.
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
 }

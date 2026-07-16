@@ -38,11 +38,12 @@ process.env.CREDENTIAL_ENC_KEY = Buffer.from(
 
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
-const { campaigns, send_records } = await import("@/lib/db/schema");
+const { campaigns, send_records, attachments } = await import("@/lib/db/schema");
 const {
   createDraftCampaign,
   getCampaignForUser,
   enqueueCampaign,
+  deleteCampaignForUser,
   listCampaignsForUser,
   getSendRecordsForCampaign,
   getCampaignProgressRow,
@@ -281,4 +282,100 @@ test("getCampaignProgressRow reports a null current recipient when no row is 'se
   const progress = await getCampaignProgressRow(USER_A, camp.id);
   assert.ok(progress);
   assert.equal(progress!.current, null, "no 'sending' row → current is null");
+});
+
+// --- deleteCampaignForUser (mdt): transactional cascade + status/owner guards ---
+//
+// The cascade is manual and FK-ordered (send_records → attachments → campaign,
+// foreign_keys=ON with no onDelete). The status-guarded parent DELETE is the
+// TOCTOU defense (T-mdt-02): an active campaign the worker may claim is refused,
+// leaving every dependent intact; a cross-tenant id removes zero rows (T-mdt-01).
+
+test("deleteCampaignForUser removes a draft campaign, its send_records + attachments, and returns their storage paths", async () => {
+  const [camp] = await createDraftCampaign(USER_A, draftValues());
+  await db.insert(send_records).values([
+    { campaign_id: camp.id, to_addr: "one@example.com", merged_subject: "S", merged_body: "B", status: "sent" },
+    { campaign_id: camp.id, to_addr: "two@example.com", merged_subject: "S", merged_body: "B", status: "failed" },
+  ]);
+  await db.insert(attachments).values([
+    { userId: USER_A, campaign_id: camp.id, filename: "a.pdf", storage_path: "att-a.bin", size_bytes: 10 },
+    { userId: USER_A, campaign_id: camp.id, filename: "b.pdf", storage_path: "att-b.bin", size_bytes: 20 },
+  ]);
+
+  const res = deleteCampaignForUser(USER_A, camp.id);
+  assert.equal(res.ok, true, "a draft campaign is deletable");
+  assert.deepEqual(
+    [...res.storagePaths].sort(),
+    ["att-a.bin", "att-b.bin"],
+    "the removed attachments' storage paths come back for the caller to unlink",
+  );
+
+  // The campaign, its send_records, and its attachment rows are all gone.
+  assert.equal(await getCampaignForUser(USER_A, camp.id), undefined, "campaign removed");
+  const leftoverRecords = await db.query.send_records.findMany({
+    where: eq(send_records.campaign_id, camp.id),
+  });
+  assert.equal(leftoverRecords.length, 0, "send_records cascaded");
+  const leftoverAtts = await db.query.attachments.findMany({
+    where: eq(attachments.campaign_id, camp.id),
+  });
+  assert.equal(leftoverAtts.length, 0, "attachment rows cascaded");
+});
+
+test("deleteCampaignForUser BLOCKS an active (queued/running) campaign and leaves every dependent intact", async () => {
+  const [camp] = await createDraftCampaign(USER_A, draftValues());
+  await db.insert(send_records).values([
+    { campaign_id: camp.id, to_addr: "live@example.com", merged_subject: "S", merged_body: "B", status: "sending" },
+  ]);
+  await db.insert(attachments).values([
+    { userId: USER_A, campaign_id: camp.id, filename: "live.pdf", storage_path: "att-live.bin", size_bytes: 30 },
+  ]);
+  // Flip to running — the window in which the worker may be processing it.
+  await db.update(campaigns).set({ status: "running" }).where(eq(campaigns.id, camp.id));
+
+  const res = deleteCampaignForUser(USER_A, camp.id);
+  assert.equal(res.ok, false, "an active campaign is refused");
+  assert.deepEqual(res.storagePaths, [], "a blocked delete returns no paths to unlink");
+
+  // Nothing was removed — the transaction rolled the whole cascade back.
+  const still = await getCampaignForUser(USER_A, camp.id);
+  assert.ok(still, "the active campaign survives");
+  assert.equal(still.status, "running");
+  const records = await db.query.send_records.findMany({
+    where: eq(send_records.campaign_id, camp.id),
+  });
+  assert.equal(records.length, 1, "send_records are intact after a blocked delete");
+  const atts = await db.query.attachments.findMany({
+    where: eq(attachments.campaign_id, camp.id),
+  });
+  assert.equal(atts.length, 1, "attachment rows are intact after a blocked delete");
+});
+
+test("deleteCampaignForUser is owner-scoped: a cross-tenant id removes zero rows (IDOR)", async () => {
+  const [camp] = await createDraftCampaign(USER_A, draftValues());
+  await db.insert(send_records).values([
+    { campaign_id: camp.id, to_addr: "owned@example.com", merged_subject: "S", merged_body: "B", status: "sent" },
+  ]);
+
+  const res = deleteCampaignForUser(USER_B, camp.id);
+  assert.equal(res.ok, false, "a cross-tenant delete is refused");
+  assert.deepEqual(res.storagePaths, []);
+
+  // USER_A's campaign and its records are untouched.
+  const still = await getCampaignForUser(USER_A, camp.id);
+  assert.ok(still, "the owner's campaign survives a cross-tenant delete");
+  const records = await db.query.send_records.findMany({
+    where: eq(send_records.campaign_id, camp.id),
+  });
+  assert.equal(records.length, 1, "the owner's send_records are intact");
+});
+
+test("deleteCampaignForUser deletes a completed campaign that has no attachments (empty storagePaths)", async () => {
+  const [camp] = await createDraftCampaign(USER_A, draftValues());
+  await db.update(campaigns).set({ status: "completed" }).where(eq(campaigns.id, camp.id));
+
+  const res = deleteCampaignForUser(USER_A, camp.id);
+  assert.equal(res.ok, true, "a completed campaign is deletable");
+  assert.deepEqual(res.storagePaths, [], "no attachments → no paths to unlink");
+  assert.equal(await getCampaignForUser(USER_A, camp.id), undefined);
 });
