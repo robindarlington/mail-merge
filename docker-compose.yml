@@ -1,18 +1,28 @@
-# Phase 1 Docker Compose SKELETON (D-10) — success criterion #4.
+# Production-hardened Docker Compose (Phase 8, D-10) — success criterion #1 (compose half).
 #
 # Two services (web + worker) built from ONE image (the single Dockerfile),
 # BOTH mounting the SAME named volume `appdata` at /data. That shared mount is
 # what makes web-enqueue / worker-dequeue over one SQLite file work: app.db
-# (+ -wal/-shm sidecars) and later uploads all live on /data. WAL requires a
-# LOCAL volume on the SAME host — never NFS (PITFALLS #5/#9).
+# (+ -wal/-shm sidecars) and uploads all live on /data. WAL requires a LOCAL
+# volume on the SAME host — never NFS (PITFALLS #5/#9).
 #
-# SKELETON ONLY — full production hardening is Phase 8 (D-10):
-#   - stop_grace_period tuning + SIGTERM/graceful-shutdown handling
-#   - healthchecks, restart policies, PID1/tini init
-#   - WAL checkpointing between campaigns, volume backup/persistence acceptance
-#   - the worker built to a bundled worker.js (D-07) instead of `tsx`
-# This file declares the correct service/volume TOPOLOGY and is valid compose;
-# it is NOT a hardened production deployment.
+# Production hardening applied here (was a Phase-1 skeleton):
+#   - `init: true` on both services: Docker's tini becomes PID 1, forwards
+#     SIGTERM to the node process and reaps zombies. Without it a shell/npx
+#     PID 1 swallows SIGTERM and the orchestrator SIGKILLs mid-row (threat
+#     T-08-04 / RESEARCH Finding 1).
+#   - exec-form `node` commands (no `sh -c`, no `npx`): the node process is the
+#     direct child of tini so signals reach it cleanly.
+#   - `stop_grace_period`: 5m on the worker (ample for a between-rows drain even
+#     against a hung SMTP), 1m on web. Honored by `docker stop` / `docker compose
+#     stop` and the local acceptance test; Coolify's redeploy passes its own
+#     `docker stop --time` from a UI setting (set at the 08-05 checkpoint), so
+#     this key is belt-and-braces — it costs nothing (RESEARCH Finding 1 /
+#     Pitfall 2).
+#   - worker runs the bundled `worker.js` (D-07) instead of `npx tsx`; web runs
+#     its migrate-then-serve entrypoint (both produced by plan 08-01).
+#   - new worker maintenance tunables (WAL checkpoint + orphan sweep) declared
+#     with compose defaults so they are safe to omit.
 
 services:
   web:
@@ -20,19 +30,25 @@ services:
       context: .
       dockerfile: Dockerfile
       # Clerk NEXT_PUBLIC_* values are inlined by `next build` (Pitfall 3), so
-      # they must reach the build stage as ARGs. Primary path on Coolify is the
-      # "Build Variable" toggle (Assumption A2); this build.args block is the
-      # fallback that passes the same host env through at build time. These are
-      # client-safe. CLERK_SECRET_KEY is deliberately NOT here — it must never
-      # enter a build arg or image layer (threat T-2-BUILD).
+      # they must reach the build stage as ARGs. On Coolify these are plain UI
+      # env vars flowing through this build.args block — NOT the "Build
+      # Variable" toggle, which is a no-op for compose apps (RESEARCH Finding 5
+      # / Pitfall 4). A change to any NEXT_PUBLIC_* needs a REBUILD, not a
+      # restart. These are client-safe. CLERK_SECRET_KEY is deliberately NOT
+      # here — it must never enter a build arg or image layer (threat T-08-05).
       args:
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
         NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${NEXT_PUBLIC_CLERK_SIGN_IN_URL:-/sign-in}
         NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${NEXT_PUBLIC_CLERK_SIGN_UP_URL:-/sign-up}
         NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: ${NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL:-/dashboard}
         NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: ${NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL:-/dashboard}
-    image: mail-merge:skeleton
-    command: ["sh", "-c", "npx tsx scripts/migrate.ts && node server.js"]
+    image: mail-merge:latest
+    # tini (init:true) forwards SIGTERM to the entrypoint; the entrypoint
+    # migrates the DB (only web migrates — threat T-08-06) then exec's the
+    # standalone node server so signals reach node directly.
+    init: true
+    command: ["/app/web-entrypoint.sh"]
+    stop_grace_period: 1m
     environment:
       # Next.js standalone server must bind all interfaces in a container.
       HOSTNAME: "0.0.0.0"
@@ -41,9 +57,9 @@ services:
       # Single SQLite file on the shared /data volume.
       DATABASE_PATH: /data/app.db
       # Uploaded CSVs land under the SAME shared /data volume (durable across
-      # restarts, reachable by the Phase-6 worker) — never the ephemeral
-      # container FS. lib/csv/storage.ts creates /data/uploads on demand via
-      # mkdirSync, so no extra volume/mount is needed (only this env var).
+      # restarts, reachable by the worker) — never the ephemeral container FS.
+      # lib/csv/storage.ts creates /data/uploads on demand via mkdirSync, so no
+      # extra volume/mount is needed (only this env var).
       UPLOADS_PATH: /data/uploads
       # AES-256-GCM master key — injected from the host env / Coolify secret at
       # runtime, NEVER inlined here or baked into the image (PITFALLS #1/#2).
@@ -60,20 +76,34 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: mail-merge:skeleton
-    # Same image, different entrypoint (D-02). Phase 8 swaps tsx -> worker.js (D-07).
-    command: ["npx", "tsx", "worker/index.ts"]
+    image: mail-merge:latest
+    # tini (init:true) forwards SIGTERM to node so the Phase-6 graceful drain
+    # runs; exec-form `node worker.js` keeps node as tini's direct child (threat
+    # T-08-04). D-07 swapped `npx tsx worker/index.ts` for the bundled worker.js.
+    init: true
+    command: ["node", "worker.js"]
+    # Ample window for a between-rows drain even against a hung SMTP connection
+    # (RESEARCH Finding 1 sizing note).
+    stop_grace_period: 5m
     environment:
       NODE_ENV: production
       # Same DB file as web — both processes open the one app.db on /data.
       DATABASE_PATH: /data/app.db
       # Uploaded CSVs live on the SAME shared /data volume the web service wrote
       # them to. lib/csv/storage.ts resolves UPLOADS_PATH ?? "./data/uploads" at
-      # module load, so without this the Phase-6 worker would resolve
-      # storage_path values against the ephemeral container FS and ENOENT on
-      # every read. Must mirror web's UPLOADS_PATH exactly (WR-08).
+      # module load, so without this the worker would resolve storage_path
+      # values against the ephemeral container FS and ENOENT on every read.
+      # Must mirror web's UPLOADS_PATH exactly (WR-08).
       UPLOADS_PATH: /data/uploads
       CREDENTIAL_ENC_KEY: ${CREDENTIAL_ENC_KEY}
+      # --- Worker maintenance tunables (consumed by lib/worker, plan 08-03) ---
+      # Safe to omit → these compose defaults apply. Documented in .env.example.
+      # How often the worker forces a WAL checkpoint (ms) to keep -wal bounded.
+      WAL_CHECKPOINT_MS: ${WAL_CHECKPOINT_MS:-3600000}
+      # How often the worker sweeps orphaned upload/attachment files (ms).
+      ORPHAN_SWEEP_MS: ${ORPHAN_SWEEP_MS:-3600000}
+      # Age (days) after which an orphaned attachment file is eligible for sweep.
+      ATTACHMENT_ORPHAN_DAYS: ${ATTACHMENT_ORPHAN_DAYS:-7}
     volumes:
       - appdata:/data
     depends_on:
