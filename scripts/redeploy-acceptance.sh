@@ -249,16 +249,27 @@ start_stub
 # code). The race is transient, so retry the build a few times; a successful layer
 # is cached and reused by every later run.
 echo "[compose] building the hardened image (with retry for the SQLITE_BUSY build flake)"
+BUILD_ATTEMPTS=8
+BUILD_LOG="$TMPDIR_ACCEPT/build.log"
 build_ok=0
-for attempt in 1 2 3 4 5 6 7 8; do
-  if compose build >/dev/null 2>&1; then
+for attempt in $(seq 1 "$BUILD_ATTEMPTS"); do
+  # Capture EACH attempt's full output (WR-07): a genuine build break (bad
+  # Dockerfile edit, npm failure) must not burn $BUILD_ATTEMPTS silent builds
+  # and end with zero diagnostics. The log is overwritten per attempt so the
+  # tail printed below is always the LAST failure's output.
+  if compose build >"$BUILD_LOG" 2>&1; then
     echo "[compose] build succeeded on attempt $attempt"
     build_ok=1
     break
   fi
   echo "[compose] build attempt $attempt failed (likely the SQLITE_BUSY page-data race) — retrying"
 done
-[ "$build_ok" -eq 1 ] || { echo "ERROR: image build failed after 4 attempts" >&2; exit 1; }
+if [ "$build_ok" -ne 1 ]; then
+  echo "ERROR: image build failed after $BUILD_ATTEMPTS attempts" >&2
+  echo "----- build log (last attempt, tail) -----" >&2
+  tail -60 "$BUILD_LOG" >&2 || true
+  exit 1
+fi
 
 # Start WEB ALONE first and let it migrate before the worker exists. This
 # serializes DB initialization: web's entrypoint runs migrate.js (which sets
