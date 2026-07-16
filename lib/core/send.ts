@@ -52,6 +52,16 @@ export interface SmtpConfig {
   dnsTimeout?: number;
 }
 
+/**
+ * A single per-row attachment forwarded to nodemailer as `{ filename, path }`.
+ * The worker resolves `path` from a DB-sourced opaque storage path (never a
+ * CSV-provided path); `filename` is the original name shown to the recipient.
+ */
+export interface SendAttachment {
+  filename: string;
+  path: string;
+}
+
 /** Minimal duck-typed transport surface this module relies on. */
 export interface MailTransport {
   sendMail(message: {
@@ -59,6 +69,9 @@ export interface MailTransport {
     to: string;
     subject: string;
     text: string;
+    /** Optional, additive (Phase 7): omitted entirely when no attachment, so a
+     *  no-attachment send is a byte-for-byte identical nodemailer call. */
+    attachments?: SendAttachment[];
   }): Promise<{ messageId?: string }>;
   verify?(): Promise<unknown>;
 }
@@ -69,6 +82,8 @@ export interface SendArgs {
   to: string;
   subject: string;
   body: string;
+  /** Optional per-row attachments (Phase 7); forwarded ONLY when set. */
+  attachments?: SendAttachment[];
 }
 
 /** Structured result of a single send — the contract the Phase 6 worker reads. */
@@ -123,9 +138,18 @@ export async function verifyTransport(
  * continue (carries forward the CLI's per-row catch-and-continue).
  */
 export async function sendOne(args: SendArgs): Promise<SendResult> {
-  const { transport, from, to, subject, body } = args;
+  const { transport, from, to, subject, body, attachments } = args;
   try {
-    const info = await transport.sendMail({ from, to, subject, text: body });
+    // Spread `attachments` onto the call ONLY when set (copy the additive-optional
+    // idiom used in createSmtpTransport) so a no-attachment send is byte-for-byte
+    // the same nodemailer call the worker made before Phase 7.
+    const info = await transport.sendMail({
+      from,
+      to,
+      subject,
+      text: body,
+      ...(attachments !== undefined && { attachments }),
+    });
     return { ok: true, messageId: info.messageId ?? "" };
   } catch (err) {
     const e = err as { message?: string; code?: string };

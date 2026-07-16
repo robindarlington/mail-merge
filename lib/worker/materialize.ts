@@ -24,13 +24,23 @@
  * through the userId-scoped DAL — never a client-supplied value.
  */
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { send_records, campaigns, type Campaign } from "@/lib/db/schema";
-import { getRecipientSetForUser, getTemplateForUser } from "@/lib/data";
+import {
+  getRecipientSetForUser,
+  getTemplateForUser,
+  listAttachmentsForCampaign,
+} from "@/lib/data";
 import { readUpload } from "@/lib/csv";
-import { parseCsv, detectEmailColumn, fillMessage, isValidEmail } from "@/lib/core";
+import {
+  parseCsv,
+  detectEmailColumn,
+  detectAttachmentColumn,
+  fillMessage,
+  isValidEmail,
+} from "@/lib/core";
 
 /** The error stamped on a row whose address failed the shared validity gate. */
 const INVALID_ADDRESS_ERROR = "rejected: invalid address";
@@ -107,6 +117,47 @@ export async function materializeSendRecords(
     if (created.length > 0) {
       inserted++;
       if (!valid) invalidInserted++;
+    }
+  }
+
+  // Link each row to its attachment by stamping the INVERTED FK on the send_record
+  // (send_records.attachment_id), NOT on the attachment. Because the FK lives on
+  // send_records, MANY rows can point at the SAME attachment — a file referenced by
+  // many CSV rows links EVERY referencing row (BLOCKER-2 fix), where a per-attachment
+  // send_record_id would have carried it on only the last row. The user-confirmed
+  // column WINS; detection is only the fallback (mirrors emailColumn above).
+  const attachmentColumn =
+    set.attachment_column ?? detectAttachmentColumn(columns, rows);
+  if (attachmentColumn) {
+    const campaignAttachments = await listAttachmentsForCampaign(
+      campaign.userId,
+      campaign.id,
+    );
+    if (campaignAttachments.length > 0) {
+      // Match on the ORIGINAL filename, trimmed + case-insensitive (same key the
+      // shared computeAttachmentMatch uses — zero divergence).
+      const byName = new Map(
+        campaignAttachments.map((a) => [a.filename.trim().toLowerCase(), a.id]),
+      );
+      for (const row of rows) {
+        const addr = (row[emailColumn] ?? "").trim();
+        if (!addr) continue; // blank address was never materialized
+        const cell = (row[attachmentColumn] ?? "").trim();
+        if (!cell) continue; // empty cell → attachment_id stays null (no attachment)
+        const matchedId = byName.get(cell.toLowerCase());
+        if (matchedId === undefined) continue; // no matching upload → row un-linked
+        // Stamp the send_record for this address (the UNIQUE(campaign_id,to_addr)
+        // row). Every distinct address referencing a shared file is stamped here.
+        await db
+          .update(send_records)
+          .set({ attachment_id: matchedId })
+          .where(
+            and(
+              eq(send_records.campaign_id, campaign.id),
+              eq(send_records.to_addr, addr),
+            ),
+          );
+      }
     }
   }
 

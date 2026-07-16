@@ -58,6 +58,9 @@ const { createRecipientSet } = await import("@/lib/data");
 const { createTemplate } = await import("@/lib/data");
 const { createSmtpConfig } = await import("@/lib/data");
 const { createDraftCampaign } = await import("@/lib/data");
+const { createAttachment } = await import("@/lib/data");
+const { stampCampaignOnPendingAttachments } = await import("@/lib/data");
+const { setAttachmentColumnForUser } = await import("@/lib/data");
 const { encrypt } = await import("@/lib/crypto");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 const { eq } = await import("drizzle-orm");
@@ -218,6 +221,87 @@ function campaignFailedCount(campaignId: number): number {
     .get(campaignId) as { f: number };
   return row.f;
 }
+
+test("stamps send_records.attachment_id per matched row — a SHARED file links EVERY referencing row (inverted FK)", async () => {
+  const ATT_CSV = "attach.csv";
+  writeFileSync(
+    join(UPLOADS_DIR, ATT_CSV),
+    [
+      "email,file",
+      "amy@example.com,welcome.pdf",
+      "ben@example.com,welcome.pdf", // SAME file as amy — both rows must link it
+      "cat@example.com,other.pdf",
+      "dan@example.com,", // blank cell → attachment_id stays null
+      "eve@example.com,missing.pdf", // no matching upload → row un-linked (null)
+    ].join("\n"),
+    "utf8",
+  );
+
+  const [set] = await createRecipientSet(USER, {
+    filename: ATT_CSV,
+    columns_json: JSON.stringify(["email", "file"]),
+    row_count: 5,
+    storage_path: ATT_CSV,
+    email_column: "email",
+  });
+  // The user-confirmed attachment column wins at materialize (SEND path).
+  await setAttachmentColumnForUser(USER, set.id, "file");
+
+  const [c] = await createDraftCampaign(USER, {
+    recipient_set_id: set.id,
+    template_id: campaign.template_id,
+    smtp_config_id: campaign.smtp_config_id,
+  });
+
+  // Two campaign attachments: welcome.pdf (shared by amy + ben) and other.pdf (cat).
+  await createAttachment(USER, {
+    filename: "welcome.pdf",
+    storage_path: "w.bin",
+    size_bytes: 10,
+  });
+  await createAttachment(USER, {
+    filename: "other.pdf",
+    storage_path: "o.bin",
+    size_bytes: 20,
+  });
+  const stamped = await stampCampaignOnPendingAttachments(USER, c.id);
+  const welcome = stamped.find((a) => a.filename === "welcome.pdf")!;
+  const other = stamped.find((a) => a.filename === "other.pdf")!;
+
+  await materializeSendRecords(c);
+
+  const rows = await db
+    .select()
+    .from(send_records)
+    .where(eq(send_records.campaign_id, c.id));
+  const byAddr = new Map(rows.map((r) => [r.to_addr, r]));
+
+  assert.equal(
+    byAddr.get("amy@example.com")!.attachment_id,
+    welcome.id,
+    "amy links welcome.pdf",
+  );
+  assert.equal(
+    byAddr.get("ben@example.com")!.attachment_id,
+    welcome.id,
+    "ben ALSO links the SAME welcome.pdf — a shared file links every referencing row",
+  );
+  assert.equal(
+    byAddr.get("cat@example.com")!.attachment_id,
+    other.id,
+    "cat links other.pdf",
+  );
+  assert.equal(
+    byAddr.get("dan@example.com")!.attachment_id,
+    null,
+    "a blank attachment cell leaves attachment_id null (sends without one)",
+  );
+  assert.equal(
+    byAddr.get("eve@example.com")!.attachment_id,
+    null,
+    "a cell with no matching upload leaves the row un-linked (defense-in-depth)",
+  );
+});
 
 test("each send_record snapshots the per-row merged subject and body", async () => {
   const rows = await db
