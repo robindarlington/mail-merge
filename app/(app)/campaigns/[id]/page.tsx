@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/tooltip";
 import { CampaignStatusBadge } from "@/components/campaign/campaign-status-badge";
 import { CampaignSummaryLine } from "@/components/campaign/campaign-summary-line";
+import { DeleteCampaignButton } from "@/components/campaign/delete-campaign-button";
 import { ProgressPanel } from "@/components/campaign/progress-panel";
 import { RecipientResultsTable } from "@/components/campaign/recipient-results-table";
 
@@ -92,13 +93,14 @@ export default async function CampaignDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
+      <div className="flex items-center justify-between gap-3">
         <Button asChild variant="ghost" size="sm" className="-ml-2">
           <Link href="/campaigns">
             <ChevronLeft />
             Back to campaigns
           </Link>
         </Button>
+        <DeleteCampaignButton campaignId={campaign.id} />
       </div>
 
       <div className="flex flex-col gap-2">

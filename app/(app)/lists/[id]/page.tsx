@@ -9,6 +9,7 @@ import { parseCsv } from "@/lib/core/csv";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { ListRename } from "@/components/recipients/list-rename";
+import { ListDelete } from "@/components/recipients/list-delete";
 import {
   Table,
   TableBody,
@@ -86,6 +87,11 @@ export default async function ListDetailPage({
         </Link>
         <div className="flex items-center gap-2 text-[28px] font-semibold leading-[1.2]">
           <ListRename id={set.id} currentName={set.label ?? set.filename} />
+          <ListDelete
+            id={set.id}
+            name={set.label ?? set.filename}
+            showName={false}
+          />
         </div>
       </div>
 
