@@ -209,9 +209,11 @@ slopcheck was not available in this environment (pip install failed silently) �
 | A4 | esbuild legitimacy (slopcheck unavailable) — mitigated: already in lockfile, official project | Package Audit | Gate the explicit devDep add behind human verify if desired |
 | A5 | `init: true` supported by Coolify's compose deployment path | Finding 2 | Harmless if ignored; exec-form `node` CMD alone still fixes PID-1 signal delivery |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does Coolify's per-app Stop Grace Period UI setting appear for Docker-Compose build-pack applications (vs Dockerfile apps)?** PR #9746 covers the application stop paths broadly, but the UI surface for compose apps is unconfirmed. Verify at the staging checkpoint; fallback already locked (crash-safe resume). (MEDIUM confidence it applies.)
+**Resolution:** The one open question below is deferred to the **08-05 staging checkpoint** for on-platform confirmation. The fallback is already locked (Finding 1 / Assumption A1 — the worker's crash-safe resume is always correct; if the VPS is < v4.1.0, document the SIGKILL residual instead of fighting the platform). This is NOT a blocker to planning or execution.
+
+1. **Does Coolify's per-app Stop Grace Period UI setting appear for Docker-Compose build-pack applications (vs Dockerfile apps)?** PR #9746 covers the application stop paths broadly, but the UI surface for compose apps is unconfirmed. Verify at the 08-05 staging checkpoint; fallback already locked (crash-safe resume). (MEDIUM confidence it applies.)
 
 ## Sources
 
