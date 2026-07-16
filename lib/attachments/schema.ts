@@ -37,7 +37,17 @@ export const MAX_MESSAGE_BYTES =
  * exposes, so the client resolver and the server action share one source of truth.
  */
 export const uploadAttachmentSchema = z.object({
-  name: z.string().min(1, "That file has no name."),
+  // Normalize at the trust boundary (WR-06): a `File.name` is fully
+  // attacker-controlled (a scripted FormData can carry CR/LF, tabs, or NUL and
+  // other control bytes) and the stored original name is forwarded verbatim into
+  // nodemailer's `Content-Disposition`/`name` MIME header parameter. Strip control
+  // characters here so neither header injection nor a corrupt display name can ride
+  // an upload — defense-in-depth that no longer relies on nodemailer's own folding.
+  name: z
+    .string()
+    .min(1, "That file has no name.")
+    .transform((s) => s.replace(/[\r\n\t\x00-\x1f\x7f]/g, "").trim())
+    .pipe(z.string().min(1, "That file has no name.")),
   size: z
     .number()
     .max(

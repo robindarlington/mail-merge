@@ -98,7 +98,9 @@ function hasStructuralParseError(
  */
 function guardFile(
   formData: FormData,
-): { ok: true; file: File } | { ok: false; error: ActionError } {
+):
+  | { ok: true; file: File; name: string }
+  | { ok: false; error: ActionError } {
   const file = formData.get("file");
   if (!(file instanceof File)) {
     return { ok: false, error: { kind: "wrong_type" } };
@@ -111,7 +113,9 @@ function guardFile(
     const tooLarge = parsed.error.issues.some((i) => i.path[0] === "size");
     return { ok: false, error: { kind: tooLarge ? "too_large" : "wrong_type" } };
   }
-  return { ok: true, file };
+  // Carry the SANITIZED name (control chars stripped by the schema, WR-06) — the
+  // caller persists + matches on this, never the raw File.name.
+  return { ok: true, file, name: parsed.data.name };
 }
 
 /** Normalize a filename for duplicate comparison: trimmed + lower-cased. */
@@ -138,7 +142,7 @@ export async function uploadAttachmentCore(
     // Reject a duplicate ORIGINAL filename among the user's pending uploads
     // (case-insensitive, trimmed) BEFORE writing anything — no orphaned file.
     const pending = await listPendingAttachmentsForUser(userId);
-    const target = normName(guard.file.name);
+    const target = normName(guard.name);
     if (pending.some((a) => normName(a.filename) === target)) {
       return { ok: false, error: { kind: "duplicate_filename" } };
     }
@@ -146,7 +150,7 @@ export async function uploadAttachmentCore(
     // All guards passed — NOW write the bytes and insert the row together.
     const { storagePath } = writeAttachment(bytes);
     const values: PersistableAttachment = {
-      filename: guard.file.name,
+      filename: guard.name,
       storage_path: storagePath,
       size_bytes: guard.file.size,
     };

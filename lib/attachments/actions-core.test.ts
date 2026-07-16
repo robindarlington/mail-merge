@@ -125,6 +125,26 @@ test("uploadAttachmentCore rejects a duplicate original filename (case-insensiti
   assert.equal(uploadsCount(), before, "the duplicate does not write a file");
 });
 
+test("uploadAttachmentCore strips control characters from the stored filename (WR-06)", async () => {
+  // A scripted FormData carries CR/LF + tab + NUL in the File.name — the schema
+  // transform must strip them at the trust boundary so nothing rides the MIME
+  // Content-Disposition header (and the stored/matched name is clean).
+  const res = await uploadAttachmentCore(
+    USER_A,
+    fileForm("in\r\nvo\tice\x00.pdf", Buffer.from("bytes")),
+  );
+  assert.ok(res.ok, "the upload with a dirty name still succeeds");
+  if (!res.ok) return;
+  assert.ok(
+    res.data.some((a) => a.filename === "invoice.pdf"),
+    "the persisted filename has every control character stripped",
+  );
+  assert.ok(
+    !res.data.some((a) => /[\r\n\t\x00]/.test(a.filename)),
+    "no stored filename contains a control character",
+  );
+});
+
 test("deleteAttachmentCore removes the row + returns the updated list; cross-tenant is a benign no-op", async () => {
   const up = await uploadAttachmentCore(USER_A, fileForm("todelete.pdf", Buffer.from("x")));
   assert.ok(up.ok);
