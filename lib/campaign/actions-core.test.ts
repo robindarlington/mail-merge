@@ -102,6 +102,15 @@ const ATTACH_OVERSIZE_CSV_NAME = "attach-oversize-fixture.csv";
   writeFileSync(join(UPLOADS_DIR, ATTACH_OVERSIZE_CSV_NAME), lines.join("\n"), "utf8");
 }
 
+// A CSV with an unterminated quote — a genuine structural misparse (MissingQuotes)
+// that drives buildConfirmSummaryCore to `parse_error`. The enqueue gate (WR-04)
+// must BLOCK the draft→queued flip on this, never fall through to the DAL flip.
+const PARSE_ERROR_CSV_NAME = "parse-error-fixture.csv";
+{
+  const lines = ["email,name", 'alice@example.com,"Alice', "bob@example.com,Bob"];
+  writeFileSync(join(UPLOADS_DIR, PARSE_ERROR_CSV_NAME), lines.join("\n"), "utf8");
+}
+
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
 const { campaigns, send_records } = await import("@/lib/db/schema");
@@ -833,6 +842,36 @@ test("enqueueCampaignCore blocks when a referenced file is missing; resolving it
   assert.equal(ok.ok, true, "once every referenced file is present, enqueue succeeds");
   const queued = await getCampaignForUser(USER, c2.data.campaignId);
   assert.ok(queued && queued.status === "queued", "the campaign flips to queued");
+});
+
+test("enqueueCampaignCore blocks (never flips) when the confirm summary errors, e.g. parse_error (WR-04)", async () => {
+  const [set] = await createRecipientSet(USER, {
+    filename: PARSE_ERROR_CSV_NAME,
+    columns_json: JSON.stringify(["email", "name"]),
+    row_count: 2,
+    storage_path: PARSE_ERROR_CSV_NAME,
+    email_column: "email",
+  });
+  const prepared = await prepareCampaignCore(USER, {
+    recipientSetId: set.id,
+    templateId,
+    smtpConfigId,
+  });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+
+  // The CSV is a structural misparse → the gate must return the failure, NOT enqueue.
+  const blocked = await enqueueCampaignCore(USER, { campaignId: prepared.data.campaignId });
+  assert.equal(blocked.ok, false);
+  assert.ok(
+    !blocked.ok && blocked.error.kind === "parse_error",
+    "a summary parse_error blocks enqueue rather than falling through to the flip",
+  );
+  const stillDraft = await getCampaignForUser(USER, prepared.data.campaignId);
+  assert.ok(
+    stillDraft && stillDraft.status === "draft",
+    "the campaign never flipped to queued while the gate could not run",
+  );
 });
 
 test("enqueueCampaignCore blocks when a row's attachment exceeds the per-message limit", async () => {

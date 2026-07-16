@@ -563,12 +563,16 @@ export async function enqueueCampaignCore(
   // attachments, so a concurrent double-submit still sees them present and the block
   // cannot misfire; the atomic 0-row flip below still decides the single winner.
   //
-  // The gate only fires on a SUCCESSFULLY-summarized, owner-scoped campaign. A
-  // not_found (cross-tenant / bogus id) or parse_error is deliberately NOT
-  // short-circuited here — it falls through to the atomic DAL flip, whose 0-row
-  // guard yields the canonical `already_queued` for a cross-tenant/not-draft caller
-  // (T-5-IDOR / TEST-03), exactly as before this gate existed.
+  // The gate only lets a CLEAN summary flip the campaign (WR-04). A `not_found`
+  // (cross-tenant / bogus id) is deliberately allowed to fall through to the atomic
+  // DAL flip, whose 0-row guard yields the canonical `already_queued` for a
+  // cross-tenant/not-draft caller (T-5-IDOR / TEST-03), exactly as before this gate
+  // existed. But any OTHER summary failure — `parse_error`, `unknown` (a transient
+  // readUpload / listAttachmentsForCampaign error) — must BLOCK the flip and return
+  // the failure: enqueueing with the attachment gate un-run would (per CR-01) let
+  // materialize deliver rows missing the file the gate never got to verify.
   const summary = await buildConfirmSummaryCore(userId, { campaignId: idParsed.data });
+  if (!summary.ok && summary.error.kind !== "not_found") return summary;
   if (
     summary.ok &&
     (summary.data.missingAttachmentCount > 0 || summary.data.oversizeRowCount > 0)
