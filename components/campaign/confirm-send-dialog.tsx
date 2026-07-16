@@ -45,6 +45,13 @@ function formatTokens(tokens: string[]): string {
   return tokens.map((t) => `{{${t}}}`).join(", ");
 }
 
+/** Join a capped filename sample with an "and {k} more" tail when truncated. */
+function missingClause(names: string[], total: number): string {
+  const more = Math.max(0, total - names.length);
+  const joined = names.join(", ");
+  return more > 0 ? `${joined}, and ${more} more` : joined;
+}
+
 export function ConfirmSendDialog({
   recipientSetId,
   templateId,
@@ -134,7 +141,13 @@ export function ConfirmSendDialog({
   }
 
   const noneSendable = summary !== null && summary.sendableCount === 0;
-  const confirmDisabled = loading || !summary || noneSendable || submitting;
+  // The confirm block is server-authoritative (Plan 03 blocks enqueue too); this
+  // disable just mirrors it so the button is unmistakably off (never the gate).
+  const attachmentsBlocked =
+    summary !== null &&
+    (summary.missingAttachmentCount > 0 || summary.oversizeRowCount > 0);
+  const confirmDisabled =
+    loading || !summary || noneSendable || submitting || attachmentsBlocked;
   const n = summary?.recipientCount ?? 0;
 
   return (
@@ -180,6 +193,9 @@ export function ConfirmSendDialog({
                 ) : null}
               </p>
               <p>{`From: ${summary.senderIdentity}`}</p>
+              {summary.attachmentColumn ? (
+                <p>{`Attachments: ${summary.rowsWithAttachment} of ${n} rows include one`}</p>
+              ) : null}
             </div>
 
             <Separator />
@@ -190,6 +206,11 @@ export function ConfirmSendDialog({
               <p className="text-sm text-muted-foreground">
                 {`Subject: ${summary.sample.subject}`}
               </p>
+              {summary.sample.attachment ? (
+                <p className="text-sm text-muted-foreground">
+                  {`Attachment: ${summary.sample.attachment}`}
+                </p>
+              ) : null}
               <div className="mt-1 max-h-48 overflow-y-auto rounded-lg bg-muted p-3">
                 <p className="text-base whitespace-pre-wrap">{summary.sample.body}</p>
               </div>
@@ -244,6 +265,36 @@ export function ConfirmSendDialog({
                   <span>Every row has a value for each merge field.</span>
                 </div>
               )}
+
+              {summary.attachmentColumn && !attachmentsBlocked ? (
+                <div className="flex items-start gap-2 text-success">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+                  <span>Every attachment matched an uploaded file.</span>
+                </div>
+              ) : null}
+
+              {summary.missingAttachmentCount > 0 ? (
+                <Alert variant="destructive">
+                  <AlertCircle />
+                  <AlertTitle>Missing attachments</AlertTitle>
+                  <AlertDescription>
+                    {`${summary.missingAttachmentCount} rows reference files that weren't uploaded: ${missingClause(
+                      summary.missingAttachmentFilenames,
+                      summary.missingAttachmentCount,
+                    )}. Nothing was sent. Cancel, upload the missing files or fix your CSV, then review again.`}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {summary.oversizeRowCount > 0 ? (
+                <Alert variant="destructive">
+                  <AlertCircle />
+                  <AlertTitle>Attachments too large</AlertTitle>
+                  <AlertDescription>
+                    {`${summary.oversizeRowCount} rows are over the 15 MB per-email limit. Nothing was sent. Cancel and use smaller files for those rows.`}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
             </div>
 
             {enqueueError ? (

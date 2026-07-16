@@ -45,6 +45,12 @@ export type AttachmentMatch = {
   oversizeRowCount: number;
   /** The first row's matched filename, for a preview chip (null when none). */
   sampleAttachment: string | null;
+  /**
+   * Uploaded files not named by ANY row (non-blocking info). Server-computed here
+   * so the compose card can surface the "won't be sent" note WITHOUT re-deriving
+   * matches from the cosmetic sample rows on the client (display-only discipline).
+   */
+  unreferencedUploadCount: number;
 };
 
 const MISSING_SAMPLE_CAP = 5;
@@ -75,6 +81,8 @@ export function computeAttachmentMatch(
     missingAttachmentCount: 0,
     oversizeRowCount: 0,
     sampleAttachment: null,
+    // With no column, no upload is referenced by any row — all are unreferenced.
+    unreferencedUploadCount: attachments.length,
   };
 
   // No column (or a column that isn't in the CSV) → nothing to match.
@@ -96,6 +104,9 @@ export function computeAttachmentMatch(
   // Deduped missing sample (insertion order, capped for the UI).
   const missingSeen = new Set<string>();
   const missingSample: string[] = [];
+  // Normalized filenames named by at least one row — used to count the uploads
+  // that no row references (the non-blocking "won't be sent" note).
+  const referenced = new Set<string>();
 
   const addMissing = (name: string) => {
     missingAttachmentCount++;
@@ -113,6 +124,7 @@ export function computeAttachmentMatch(
     const att = byName.get(normName(cell));
     if (att) {
       // A referenced file that exists in the user's uploads.
+      referenced.add(normName(att.filename));
       rowsWithAttachment++;
       if (att.size_bytes > MAX_MESSAGE_BYTES) oversizeRowCount++;
       if (attachmentExists(att.storage_path)) {
@@ -128,6 +140,10 @@ export function computeAttachmentMatch(
     }
   });
 
+  const unreferencedUploadCount = attachments.filter(
+    (a) => !referenced.has(normName(a.filename)),
+  ).length;
+
   return {
     attachmentColumn,
     rowsWithAttachment,
@@ -136,5 +152,6 @@ export function computeAttachmentMatch(
     missingAttachmentCount,
     oversizeRowCount,
     sampleAttachment,
+    unreferencedUploadCount,
   };
 }

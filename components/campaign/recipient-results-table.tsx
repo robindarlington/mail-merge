@@ -35,6 +35,8 @@ import {
  */
 
 const INTERRUPTED_PREFIX = "interrupted:";
+/** The worker's stored reason for a row it skipped because the file was gone. */
+const ATTACHMENT_MISSING_PREFIX = "rejected: attachment missing";
 
 /** Human timestamp from unixepoch-seconds, e.g. "13 Jul 2026, 14:12"; "—" when null. */
 function formatSentAt(unixSeconds: number | null): string {
@@ -99,10 +101,20 @@ function reasonFor(record: SendRecord): string {
   if ((record.error ?? "").startsWith(INTERRUPTED_PREFIX)) {
     return "Interrupted — delivery status unknown; not retried to avoid a duplicate.";
   }
+  if ((record.error ?? "").startsWith(ATTACHMENT_MISSING_PREFIX)) {
+    return "Attachment missing — the file wasn't available at send time. This email wasn't sent.";
+  }
   return record.error ?? "—";
 }
 
-export function RecipientResultsTable({ records }: { records: SendRecord[] }) {
+export function RecipientResultsTable({
+  records,
+  attachmentNames,
+}: {
+  records: SendRecord[];
+  /** send_record id → original attachment filename (display-only, escaped). */
+  attachmentNames?: Map<number, string>;
+}) {
   if (records.length === 0) {
     return (
       <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
@@ -117,6 +129,7 @@ export function RecipientResultsTable({ records }: { records: SendRecord[] }) {
       <TableHeader>
         <TableRow>
           <TableHead>Recipient</TableHead>
+          <TableHead>Attachment</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Reason</TableHead>
           <TableHead>Sent at</TableHead>
@@ -126,6 +139,9 @@ export function RecipientResultsTable({ records }: { records: SendRecord[] }) {
         {records.map((record) => (
           <TableRow key={record.id}>
             <TableCell>{record.to_addr}</TableCell>
+            <TableCell className="text-muted-foreground">
+              {attachmentNames?.get(record.id) ?? "—"}
+            </TableCell>
             <TableCell>
               <StatusCell record={record} />
             </TableCell>

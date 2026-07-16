@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -43,6 +43,13 @@ import { MergeFieldMenu } from "@/components/compose/merge-field-menu";
 import { getCaretRect } from "@/components/compose/caret-coords";
 import { PreviewStepper } from "@/components/compose/preview-stepper";
 import { SendCard } from "@/components/campaign/send-card";
+import { AttachmentsCard } from "@/components/compose/attachments-card";
+import {
+  matchAttachments,
+  confirmAttachmentColumn,
+  type AttachmentListResult,
+  type AttachmentMatch,
+} from "@/lib/attachments/actions";
 
 /**
  * ComposeEditor — the client shell for the compose slice (EDIT-01/02/04). It
@@ -71,7 +78,14 @@ type EditorSet = {
   label: string | null;
   row_count: number;
   columns_json: string;
+  attachment_column: string | null;
 };
+
+/** The uploaded-attachment row shape the DAL returns (id + filename + size). */
+type UploadedAttachment = Extract<
+  AttachmentListResult,
+  { ok: true }
+>["data"][number];
 
 type FieldName = "subject" | "body";
 
@@ -110,10 +124,12 @@ export function ComposeEditor({
   sets,
   configs,
   defaultTestEmail,
+  initialAttachments,
 }: {
   sets: EditorSet[];
   configs: SmtpConfigDto[];
   defaultTestEmail: string;
+  initialAttachments: UploadedAttachment[];
 }) {
   const form = useForm<ComposeFormValues>({
     resolver: zodResolver(composeFormSchema),
@@ -146,6 +162,19 @@ export function ComposeEditor({
     destructive: boolean;
     message: string;
   } | null>(null);
+
+  // Attachment state (ATCH-01/02/03) lifted here so the compose card, the send
+  // gate, and the confirm dialog all see one source of truth. Uploaded files are
+  // user-global PENDING uploads (not per-list), so they survive a list switch (W3);
+  // the chosen column resets + re-detects per list. The `match` summary is ALWAYS
+  // the server AttachmentMatch from matchAttachments — never derived client-side.
+  const [attachments, setAttachments] =
+    useState<UploadedAttachment[]>(initialAttachments);
+  const [attachmentColumn, setAttachmentColumn] = useState<string | null>(
+    sets.length > 0 ? sets[0].attachment_column : null,
+  );
+  const [attachmentMatch, setAttachmentMatch] =
+    useState<AttachmentMatch | null>(null);
 
   // Field elements for caret-targeted insertion; the last-focused one is the
   // insert target after a chip click blurs the field.
@@ -184,6 +213,47 @@ export function ComposeEditor({
     () => (activeSet ? parseColumns(activeSet.columns_json) : []),
     [activeSet],
   );
+
+  // Re-fetch the server-authoritative attachment match for a set. The server
+  // resolves the column from the set's PERSISTED choice (else auto-detect), so we
+  // sync the local display column to whatever the server actually matched against
+  // — this gives the auto-detect + confirmed-column behavior for free.
+  const runMatch = useCallback(async (setId: string) => {
+    if (!setId) {
+      setAttachmentMatch(null);
+      return;
+    }
+    const res = await matchAttachments(Number(setId));
+    if (res.ok) {
+      setAttachmentMatch(res.data);
+      setAttachmentColumn(res.data.attachmentColumn);
+    } else {
+      setAttachmentMatch(null);
+    }
+  }, []);
+
+  // Match once per recipient-list change (mount + switch). The card triggers
+  // re-matches after upload/delete/column-change via the callbacks below.
+  useEffect(() => {
+    runMatch(selectedId);
+  }, [selectedId, runMatch]);
+
+  // After an upload/delete the card hands us the refreshed pending list; store it
+  // and re-run the server match so matched/missing/oversize stay authoritative.
+  function handleAttachmentsChange(list: UploadedAttachment[]) {
+    setAttachments(list);
+    void runMatch(selectedId);
+  }
+
+  // Persist the user's chosen column, THEN re-match (the server reads the persisted
+  // column, never a client-supplied one).
+  async function handleColumnChange(column: string) {
+    setAttachmentColumn(column);
+    if (selectedId) {
+      await confirmAttachmentColumn(Number(selectedId), column);
+      await runMatch(selectedId);
+    }
+  }
 
   // Fetch the preview rows + template-INDEPENDENT server fields ONCE per
   // recipient-list change (never per stepper step, never per keystroke — the
@@ -372,6 +442,10 @@ export function ComposeEditor({
           onValueChange={(value) => {
             setSelectedId(value);
             setAutocomplete(null);
+            // Keep uploaded files, but reset the column to the new list's persisted
+            // choice; the [selectedId] effect re-detects + re-matches (W3).
+            const next = sets.find((set) => String(set.id) === value);
+            setAttachmentColumn(next?.attachment_column ?? null);
           }}
         >
           <SelectTrigger id="recipient-list" className="w-full">
@@ -514,6 +588,19 @@ export function ComposeEditor({
           </Form>
         </CardContent>
       </Card>
+
+      {selectedId ? (
+        <AttachmentsCard
+          selectedSetId={Number(selectedId)}
+          columns={columns}
+          rowCount={activeSet?.row_count ?? 0}
+          attachments={attachments}
+          attachmentColumn={attachmentColumn}
+          match={attachmentMatch}
+          onAttachmentsChange={handleAttachmentsChange}
+          onColumnChange={handleColumnChange}
+        />
+      ) : null}
 
       {previewError ? (
         previewError.destructive ? (

@@ -30,10 +30,24 @@ export type ResultsCsvRow = {
   error: string | null;
   message_id: string | null;
   sent_at: number | null;
+  /**
+   * The row's original attachment filename (ATCH-03), or "" when the row has no
+   * attachment. The export route resolves it from send_records.attachment_id and
+   * spreads it onto each row; it runs through the SAME formula-injection guard as
+   * every other cell (T-07-15), since a filename is untrusted like a CSV cell.
+   */
+  attachment?: string;
 };
 
-/** Column headers, in output order. */
-const HEADER = ["Recipient", "Status", "Reason", "Message ID", "Sent at"];
+/** Column headers, in output order. Attachment is appended after the existing columns. */
+const HEADER = [
+  "Recipient",
+  "Status",
+  "Reason",
+  "Message ID",
+  "Sent at",
+  "Attachment",
+];
 
 /** Characters that make a spreadsheet treat a leading cell as a formula. */
 const FORMULA_LEADERS = new Set(["=", "+", "-", "@", "\t", "\r"]);
@@ -91,6 +105,7 @@ export function toResultsCsv(rows: ResultsCsvRow[]): string {
       row.error ?? "",
       row.message_id ?? "",
       renderSentAt(row.sent_at),
+      row.attachment ?? "",
     ];
     lines.push(fields.map(csvField).join(","));
   }
