@@ -27,8 +27,19 @@ export {
   listRecipientSetsForUser,
   getRecipientSetForUser,
   renameRecipientSet,
+  setAttachmentColumnForUser,
   type PersistableRecipientSet,
 } from "./recipients";
+
+export {
+  createAttachment,
+  listPendingAttachmentsForUser,
+  deleteAttachmentForUser,
+  listAttachmentsForCampaign,
+  stampCampaignOnPendingAttachments,
+  getAttachmentByIdForCampaign,
+  type PersistableAttachment,
+} from "./attachments";
 
 export {
   createTemplate,
