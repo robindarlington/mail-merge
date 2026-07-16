@@ -20,7 +20,7 @@
 
 import { attachmentExists } from "./storage";
 import { MAX_MESSAGE_BYTES } from "./schema";
-import type { Row } from "@/lib/core";
+import type { CsvRow } from "@/lib/core";
 
 /** The minimal attachment shape the matcher needs (a DAL row satisfies it). */
 export type MatchableAttachment = {
@@ -63,7 +63,7 @@ function normName(name: string): string {
  */
 export function computeAttachmentMatch(
   columns: string[],
-  rows: Row[],
+  rows: CsvRow[],
   attachmentColumn: string | null,
   attachments: MatchableAttachment[],
 ): AttachmentMatch {

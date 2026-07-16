@@ -54,7 +54,7 @@ let A_SET_ID = 0;
 /** Build a FormData carrying a File under the "file" field. */
 function fileForm(name: string, bytes: Buffer): FormData {
   const fd = new FormData();
-  fd.set("file", new File([bytes], name));
+  fd.set("file", new File([new Uint8Array(bytes)], name));
   return fd;
 }
 
@@ -172,8 +172,9 @@ test("matchAttachmentsCore re-reads the set's CSV and matches against pending up
     row_count: 2,
     storage_path: storagePath,
     email_column: "email",
-    attachment_column: "file",
   });
+  // Persist the user-confirmed attachment column (never re-detected at match time).
+  await confirmAttachmentColumnCore(USER_A, set.id, "file");
   // A pending upload that matches row 1's cell.
   await uploadAttachmentCore(USER_A, fileForm("invoice.pdf", Buffer.from("bytes")));
 
