@@ -73,9 +73,13 @@ services:
       - appdata:/data
 
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # NO build: block here — the web service is the SINGLE owner of the image
+    # build (CR-02). Declaring build: on both services makes `compose build`
+    # run the Dockerfile TWICE, and the worker's build (without the
+    # NEXT_PUBLIC_CLERK_* args) races web's for the mail-merge:latest tag —
+    # nondeterministically shipping a client bundle with an EMPTY Clerk
+    # publishable key. `depends_on: web` below already forces web's build
+    # first under `up --build`, so this image always exists.
     image: mail-merge:latest
     # tini (init:true) forwards SIGTERM to node so the Phase-6 graceful drain
     # runs; exec-form `node worker.js` keeps node as tini's direct child (threat
