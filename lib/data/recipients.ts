@@ -84,3 +84,25 @@ export function renameRecipientSet(userId: string, id: number, label: string) {
     .where(and(eq(recipient_sets.id, id), eq(recipient_sets.userId, userId)))
     .returning();
 }
+
+/**
+ * Persist the user-confirmed attachment-filename column on one of the caller's
+ * recipient sets and return the updated row(s). Same owner-filter as
+ * renameRecipientSet — the UPDATE is scoped by AND(id, userId), so a cross-tenant
+ * (or non-existent) id updates ZERO rows and returns an empty array (ATCH-01 /
+ * IDOR / AUTH-02). Persisting the column here means the send path uses the column
+ * the user chose, never a re-run of detectAttachmentColumn that would silently
+ * drop an override (mirrors email_column's "save path always writes it" contract).
+ */
+export function setAttachmentColumnForUser(
+  userId: string,
+  id: number,
+  attachmentColumn: string,
+) {
+  // UPDATE filtered by AND(id, userId) on this line — never update-by-id alone (owner-filter, AUTH-02 grep gate).
+  return db
+    .update(recipient_sets)
+    .set({ attachment_column: attachmentColumn })
+    .where(and(eq(recipient_sets.id, id), eq(recipient_sets.userId, userId)))
+    .returning();
+}

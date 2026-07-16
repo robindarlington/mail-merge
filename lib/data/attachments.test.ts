@@ -19,9 +19,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// --- Provision an isolated temp DB BEFORE any DB import -----------------------
+// --- Provision an isolated temp DB + encryption key BEFORE any DB import ------
 const TMP_DIR = mkdtempSync(join(tmpdir(), "attachments-dal-"));
 process.env.DATABASE_PATH = join(TMP_DIR, "app.db");
+process.env.CREDENTIAL_ENC_KEY = Buffer.from(
+  "0123456789abcdef0123456789abcdef",
+  "utf8",
+).toString("base64");
 
 // Dynamic imports so the env var above is in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
