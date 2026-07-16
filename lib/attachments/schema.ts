@@ -1,0 +1,49 @@
+/**
+ * lib/attachments/schema — shared zod guards + centralized size limits for
+ * per-row attachments (ATCH-01 / T-07-03).
+ *
+ * ONE schema, parsed on both the client (react-hook-form resolver) and the
+ * server (the upload action), so file-size validation can never diverge — the
+ * same idiom as `lib/csv/schema.ts`.
+ *
+ * The two byte limits are centralized here (CONTEXT: "centralized so Phase 8/ops
+ * can tune via env later") and read from an env var with a literal fallback,
+ * mirroring `lib/csv/storage.ts`'s `process.env.UPLOADS_PATH ?? ...` idiom:
+ *   - MAX_ATTACHMENT_BYTES — per-file cap (10 MB).
+ *   - MAX_MESSAGE_BYTES     — per-message cap (15 MB); the confirm gate sums a
+ *                             row's attachment sizes against this downstream.
+ *
+ * UI-SPEC W13: any file TYPE is attachable — there is NO extension/mime gate,
+ * so the schema validates the `{ name, size }` pair a Web `File` exposes only.
+ *
+ * zod 4 idioms only: exported schema object + `export type X = z.infer<...>`,
+ * sentence-case UI messages.
+ */
+
+import { z } from "zod";
+
+/** Per-file upload cap (T-07-03). Env-tunable; defaults to 10 MB. */
+export const MAX_ATTACHMENT_BYTES =
+  Number(process.env.MAX_ATTACHMENT_BYTES) || 10 * 1024 * 1024;
+
+/** Per-message cap — summed across a row's attachments downstream. Defaults to 15 MB. */
+export const MAX_MESSAGE_BYTES =
+  Number(process.env.MAX_MESSAGE_BYTES) || 15 * 1024 * 1024;
+
+/**
+ * File-metadata guard: a non-empty name + a size within the per-file cap. No
+ * extension/mime restriction (W13 — any file type is attachable). Validates the
+ * `{ name, size }` pair a real Server-Action `File` (or a client descriptor)
+ * exposes, so the client resolver and the server action share one source of truth.
+ */
+export const uploadAttachmentSchema = z.object({
+  name: z.string().min(1, "That file has no name."),
+  size: z
+    .number()
+    .max(
+      MAX_ATTACHMENT_BYTES,
+      "That file is larger than 10 MB. Attachments can be up to 10 MB each.",
+    ),
+});
+
+export type UploadAttachment = z.infer<typeof uploadAttachmentSchema>;
