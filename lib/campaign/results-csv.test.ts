@@ -26,9 +26,10 @@ type Row = {
   error: string | null;
   message_id: string | null;
   sent_at: number | null;
+  attachment?: string;
 };
 
-const HEADER = "Recipient,Status,Reason,Message ID,Sent at";
+const HEADER = "Recipient,Status,Reason,Message ID,Sent at,Attachment";
 
 /** Split a CSV string into its RFC-4180 CRLF-delimited lines. */
 function lines(csv: string): string[] {
@@ -134,8 +135,9 @@ test("sent_at renders as an ISO timestamp when set and empty when null", () => {
   const csv = toResultsCsv(rows);
   const parts = lines(csv);
   const iso = new Date(1_700_000_000 * 1000).toISOString();
-  assert.ok(parts[1].endsWith(iso), "set sent_at renders as ISO timestamp");
-  // Unsent row ends with an empty Sent-at field (trailing comma, nothing after).
+  // Sent at is the 5th field; the appended empty Attachment field trails it.
+  assert.ok(parts[1].endsWith(`${iso},`), "set sent_at renders as ISO timestamp");
+  // Unsent row ends with an empty Attachment field (trailing comma, nothing after).
   assert.ok(parts[2].endsWith(","), "null sent_at renders as an empty field");
 });
 
@@ -145,6 +147,20 @@ test("reason renders the message-only error string, empty when null", () => {
   ];
   const csv = toResultsCsv(rows);
   const parts = lines(csv);
-  // Recipient,Status,Reason,Message ID,Sent at → reason is the 3rd field, empty.
-  assert.equal(parts[1], "a@x.com,sent,,,");
+  // Recipient,Status,Reason,Message ID,Sent at,Attachment → reason is the 3rd
+  // field, empty; message id, sent at, and attachment are all empty too.
+  assert.equal(parts[1], "a@x.com,sent,,,,");
+});
+
+test("attachment renders as the trailing field and is formula-injection-safe", () => {
+  const rows: Row[] = [
+    { to_addr: "a@x.com", status: "sent", error: null, message_id: null, sent_at: null, attachment: "invoice.pdf" },
+    { to_addr: "b@x.com", status: "sent", error: null, message_id: null, sent_at: null, attachment: "=cmd().pdf" },
+    { to_addr: "c@x.com", status: "sent", error: null, message_id: null, sent_at: null },
+  ];
+  const csv = toResultsCsv(rows);
+  const parts = lines(csv);
+  assert.ok(parts[1].endsWith(",invoice.pdf"), "a plain filename is the trailing field");
+  assert.ok(parts[2].endsWith(",'=cmd().pdf"), "a formula-leader filename is neutralized with a single quote");
+  assert.ok(parts[3].endsWith(","), "a row with no attachment renders an empty trailing field");
 });

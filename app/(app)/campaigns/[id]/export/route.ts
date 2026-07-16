@@ -17,7 +17,11 @@
 
 import { auth } from "@clerk/nextjs/server";
 
-import { getCampaignForUser, getSendRecordsForCampaign } from "@/lib/data";
+import {
+  getCampaignForUser,
+  getSendRecordsForCampaign,
+  listAttachmentsForCampaign,
+} from "@/lib/data";
 import { toResultsCsv } from "@/lib/campaign/results-csv";
 
 export async function GET(
@@ -35,7 +39,23 @@ export async function GET(
   if (!campaign) return new Response("Not found", { status: 404 });
 
   // send_records read only through the ownership-gated DAL (never a raw by-id query).
-  const rows = await getSendRecordsForCampaign(userId, campaign.id);
+  const records = await getSendRecordsForCampaign(userId, campaign.id);
+
+  // Resolve each row's inverted attachment_id → original filename (ATCH-03),
+  // owner-scoped; toResultsCsv runs the filename through the formula-injection
+  // guard like every other cell (T-07-15).
+  const campaignAttachments = await listAttachmentsForCampaign(userId, campaign.id);
+  const attachmentById = new Map(
+    campaignAttachments.map((a) => [a.id, a.filename] as const),
+  );
+  const rows = records.map((record) => ({
+    ...record,
+    attachment:
+      record.attachment_id != null
+        ? attachmentById.get(record.attachment_id) ?? ""
+        : "",
+  }));
+
   const csv = toResultsCsv(rows);
 
   return new Response(csv, {

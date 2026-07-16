@@ -8,6 +8,7 @@ import {
   getSendRecordsForCampaign,
   getSmtpConfigByIdForUser,
   getTemplateForUser,
+  listAttachmentsForCampaign,
   toSmtpConfigDto,
 } from "@/lib/data";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -63,11 +64,25 @@ export default async function CampaignDetailPage({
     : undefined;
   if (!userId || !campaign) notFound();
 
-  const [records, template, configRow] = await Promise.all([
+  const [records, template, configRow, campaignAttachments] = await Promise.all([
     getSendRecordsForCampaign(userId, campaign.id),
     getTemplateForUser(userId, campaign.template_id),
     getSmtpConfigByIdForUser(userId, campaign.smtp_config_id),
+    listAttachmentsForCampaign(userId, campaign.id),
   ]);
+
+  // Resolve each send_record's inverted attachment_id → original filename (a file
+  // shared by many rows links every one). Owner-scoped read; display-only.
+  const attachmentById = new Map(
+    campaignAttachments.map((a) => [a.id, a.filename] as const),
+  );
+  const attachmentNames = new Map<number, string>();
+  for (const record of records) {
+    if (record.attachment_id != null) {
+      const filename = attachmentById.get(record.attachment_id);
+      if (filename) attachmentNames.set(record.id, filename);
+    }
+  }
 
   const title = template?.subject ?? `Campaign #${campaign.id}`;
   const smtp = configRow ? toSmtpConfigDto(configRow) : null;
@@ -164,7 +179,7 @@ export default async function CampaignDetailPage({
         )}
       </div>
 
-      <RecipientResultsTable records={records} />
+      <RecipientResultsTable records={records} attachmentNames={attachmentNames} />
     </div>
   );
 }
