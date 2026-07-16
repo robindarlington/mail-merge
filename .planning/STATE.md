@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 6.1 complete (walkthrough approved, review CR-01 fixed, verification passed); quick task 260715-r8d complete
-last_updated: "2026-07-15T20:44:05.276Z"
-last_activity: 2026-07-15 -- Phase 6 execution started
+stopped_at: Phase 8 plans 01-04 complete; code review done (2 critical + 7 warnings, all fixed, 341/341 tests); redeploy acceptance re-passed on fixed image; 08-05 staging deploy queued as human checkpoint
+last_updated: "2026-07-16T12:00:00.000Z"
+last_activity: 2026-07-16 -- Phase 8 review fixes + acceptance regression pass
 progress:
   total_phases: 11
-  completed_phases: 4
-  total_plans: 41
-  completed_plans: 32
-  percent: 36
+  completed_phases: 7
+  total_plans: 52
+  completed_plans: 47
+  percent: 90
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-24)
 
 **Core value:** A signed-in user can reliably send a personalized email to every row of their CSV, using their own validated SMTP, with confidence (preview + test-send) and a record of exactly what was sent and to whom.
-**Current focus:** Phase 6 — Background Worker + Live Send + Progress + History
+**Current focus:** Phase 8 — Docker / Coolify Packaging + Operational Hardening
 
 ## Current Position
 
-Phase: 6 (Background Worker + Live Send + Progress + History) — EXECUTING
-Plan: 1 of 7
-Status: Executing Phase 6
-Last activity: 2026-07-15 -- Phase 6 execution started
+Phase: 8 (Docker / Coolify Packaging + Operational Hardening) — EXECUTING
+Plan: 5 of 5 (08-05 staging deploy — QUEUED human checkpoint)
+Status: Plans 08-01..08-04 complete; code review findings (2 critical, 7 warning) all fixed; local redeploy acceptance re-passed post-fix. Awaiting 08-05 staging verification on Coolify.
+Last activity: 2026-07-16 -- Phase 8 review fixes + acceptance regression pass
 
-Progress: [██████████] 100%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
