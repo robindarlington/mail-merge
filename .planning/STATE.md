@@ -109,6 +109,7 @@ None yet.
 | 260713-v0t | Fix compose-editor bugs: merge fields with spaces in column names + caret-following autocomplete popover | 2026-07-13 | 9d1ccf9 | [260713-v0t-fix-compose-editor-bugs-merge-fields-wit](./quick/260713-v0t-fix-compose-editor-bugs-merge-fields-wit/) |
 | 260714-dxm | Rename Recipients page to Lists and add a CSV contents viewer (columns + rows detail page per upload) | 2026-07-14 | 892c0d9 | [260714-dxm-rename-recipients-page-to-lists-and-add-](./quick/260714-dxm-rename-recipients-page-to-lists-and-add-/) |
 | 260715-r8d | Make list info editable in the UX: rename the label of a previously uploaded list (Lists page + detail + compose selector) | 2026-07-15 | cdc7a49 | [260715-r8d-make-list-info-editable-in-the-ux-allow-](./quick/260715-r8d-make-list-info-editable-in-the-ux-allow-/) |
+| 260716-mdt | Add delete capability for campaigns and uploaded lists with confirm step and safe cleanup | 2026-07-16 | d7474d7 | [260716-mdt-add-delete-capability-for-campaigns-and-](./quick/260716-mdt-add-delete-capability-for-campaigns-and-/) |
 
 ## Deferred Items
 
