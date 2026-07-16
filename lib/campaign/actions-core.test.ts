@@ -781,6 +781,96 @@ test("enqueueCampaignCore cross-tenant: another tenant's id is refused (already_
   assert.ok(row && row.status === "draft", "the cross-tenant enqueue left the status untouched");
 });
 
+// --- Plan 03: enqueue is blocked on missing / oversize attachments (Task 2) ---
+//
+// enqueueCampaignCore re-runs the attachment gate server-side (never a dimmed
+// client button, ATCH-02 / T-07-08). A referenced-but-missing file or an oversize
+// row blocks the draft→queued flip; once resolved, enqueue succeeds.
+
+test("enqueueCampaignCore blocks when a referenced file is missing; resolving it allows enqueue", async () => {
+  const [set] = await createRecipientSet(USER, {
+    filename: ATTACH_BLOCK_CSV_NAME,
+    columns_json: JSON.stringify(["email", "name", "attachment"]),
+    row_count: 1,
+    storage_path: ATTACH_BLOCK_CSV_NAME,
+    email_column: "email",
+  });
+
+  // report.pdf is NOT uploaded yet → the confirm gate sees a missing file.
+  const c1 = await prepareCampaignCore(USER, {
+    recipientSetId: set.id,
+    templateId,
+    smtpConfigId,
+  });
+  assert.equal(c1.ok, true);
+  if (!c1.ok) return;
+
+  const blocked = await enqueueCampaignCore(USER, { campaignId: c1.data.campaignId });
+  assert.equal(blocked.ok, false);
+  assert.ok(
+    !blocked.ok && blocked.error.kind === "attachments_blocked",
+    "a missing referenced file blocks enqueue server-side",
+  );
+  const stillDraft = await getCampaignForUser(USER, c1.data.campaignId);
+  assert.ok(stillDraft && stillDraft.status === "draft", "the blocked campaign stays draft");
+
+  // Upload the referenced file, then re-open the dialog (a fresh draft re-claims it).
+  const { storagePath } = writeAttachment(Buffer.from("PDF-BYTES-report"));
+  await createAttachment(USER, {
+    filename: "report.pdf",
+    storage_path: storagePath,
+    size_bytes: 20,
+  });
+  const c2 = await prepareCampaignCore(USER, {
+    recipientSetId: set.id,
+    templateId,
+    smtpConfigId,
+  });
+  assert.equal(c2.ok, true);
+  if (!c2.ok) return;
+
+  const ok = await enqueueCampaignCore(USER, { campaignId: c2.data.campaignId });
+  assert.equal(ok.ok, true, "once every referenced file is present, enqueue succeeds");
+  const queued = await getCampaignForUser(USER, c2.data.campaignId);
+  assert.ok(queued && queued.status === "queued", "the campaign flips to queued");
+});
+
+test("enqueueCampaignCore blocks when a row's attachment exceeds the per-message limit", async () => {
+  const [set] = await createRecipientSet(USER, {
+    filename: ATTACH_OVERSIZE_CSV_NAME,
+    columns_json: JSON.stringify(["email", "name", "attachment"]),
+    row_count: 1,
+    storage_path: ATTACH_OVERSIZE_CSV_NAME,
+    email_column: "email",
+  });
+  // big.pdf is present on disk but recorded OVER the per-message cap.
+  const { storagePath } = writeAttachment(Buffer.from("small-on-disk"));
+  await createAttachment(USER, {
+    filename: "big.pdf",
+    storage_path: storagePath,
+    size_bytes: MAX_MESSAGE_BYTES + 1,
+  });
+
+  const prepared = await prepareCampaignCore(USER, {
+    recipientSetId: set.id,
+    templateId,
+    smtpConfigId,
+  });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+
+  const blocked = await enqueueCampaignCore(USER, {
+    campaignId: prepared.data.campaignId,
+  });
+  assert.equal(blocked.ok, false);
+  assert.ok(
+    !blocked.ok && blocked.error.kind === "attachments_blocked",
+    "an oversize row blocks enqueue server-side",
+  );
+  const row = await getCampaignForUser(USER, prepared.data.campaignId);
+  assert.ok(row && row.status === "draft", "the oversize campaign stays draft");
+});
+
 // --- SEND-05 live-progress service seam --------------------------------------
 //
 // getCampaignProgressCore is the userId-scoped read the polling UI (Plan 05) and
