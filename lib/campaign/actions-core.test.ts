@@ -70,6 +70,38 @@ const SUMMARY_ROW1_EMAIL = "alice@example.com";
   writeFileSync(join(UPLOADS_DIR, SUMMARY_CSV_NAME), lines.join("\n"), "utf8");
 }
 
+// --- Per-row attachment fixtures (Plan 03) -----------------------------------
+// A CSV that DESIGNATES an `attachment` column (auto-detected by name). Three rows:
+//   1) alice@…,Alice,alice.pdf  — references an uploaded, on-disk file (a match)
+//   2) bob@…,Bob,(empty)        — empty cell → send WITHOUT attachment (not a miss)
+//   3) carol@…,Carol,ghost.pdf  — references a file that is never uploaded (a MISS)
+const ATTACH_CSV_NAME = "attach-fixture.csv";
+{
+  const lines = [
+    "email,name,attachment",
+    "alice@example.com,Alice,alice.pdf",
+    "bob@example.com,Bob,",
+    "carol@example.com,Carol,ghost.pdf",
+  ];
+  writeFileSync(join(UPLOADS_DIR, ATTACH_CSV_NAME), lines.join("\n"), "utf8");
+}
+
+// A single-row CSV referencing report.pdf — the enqueue-block fixture: enqueue is
+// blocked until report.pdf is uploaded (Task 2).
+const ATTACH_BLOCK_CSV_NAME = "attach-block-fixture.csv";
+{
+  const lines = ["email,name,attachment", "dave@example.com,Dave,report.pdf"];
+  writeFileSync(join(UPLOADS_DIR, ATTACH_BLOCK_CSV_NAME), lines.join("\n"), "utf8");
+}
+
+// A single-row CSV referencing big.pdf — the oversize fixture: big.pdf is present on
+// disk but recorded with size_bytes over the per-message cap, so enqueue is blocked.
+const ATTACH_OVERSIZE_CSV_NAME = "attach-oversize-fixture.csv";
+{
+  const lines = ["email,name,attachment", "erin@example.com,Erin,big.pdf"];
+  writeFileSync(join(UPLOADS_DIR, ATTACH_OVERSIZE_CSV_NAME), lines.join("\n"), "utf8");
+}
+
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
 const { campaigns, send_records } = await import("@/lib/db/schema");
@@ -85,6 +117,8 @@ const { createRecipientSet } = await import("../data/recipients");
 const { createTemplate } = await import("../data/templates");
 const { createSmtpConfig } = await import("../data/smtp");
 const { getCampaignForUser } = await import("../data/campaigns");
+const { createAttachment } = await import("../data/attachments");
+const { writeAttachment, MAX_MESSAGE_BYTES } = await import("@/lib/attachments");
 const { encrypt } = await import("../crypto");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 type MailTransport = import("../core").MailTransport;
@@ -586,6 +620,133 @@ test("buildConfirmSummaryCore IDOR: another tenant's campaignId returns not_foun
   });
   assert.equal(result.ok, false);
   assert.ok(!result.ok && result.error.kind === "not_found");
+});
+
+// --- Plan 03: attachment presence/size in the confirm gate (Task 1) ----------
+//
+// buildConfirmSummaryCore must recompute the attachment aggregates server-side via
+// the SHARED computeAttachmentMatch (never trusting the client), and prepare must
+// IDEMPOTENTLY stamp the user's uploads onto the fresh draft (BLOCKER-1) so
+// re-opening the send dialog never strands files on an abandoned draft.
+
+test("buildConfirmSummaryCore reports attachment aggregates via the shared matcher", async () => {
+  // A recipient set whose CSV designates an `attachment` column (auto-detected).
+  const [set] = await createRecipientSet(USER, {
+    filename: ATTACH_CSV_NAME,
+    columns_json: JSON.stringify(["email", "name", "attachment"]),
+    row_count: 3,
+    storage_path: ATTACH_CSV_NAME,
+    email_column: "email",
+  });
+  // Upload ONLY alice.pdf (present on disk). ghost.pdf is never uploaded → a miss.
+  const { storagePath } = writeAttachment(Buffer.from("PDF-BYTES-alice"));
+  await createAttachment(USER, {
+    filename: "alice.pdf",
+    storage_path: storagePath,
+    size_bytes: 15,
+  });
+
+  const prepared = await prepareCampaignCore(USER, {
+    recipientSetId: set.id,
+    templateId,
+    smtpConfigId,
+  });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+
+  const result = await buildConfirmSummaryCore(USER, {
+    campaignId: prepared.data.campaignId,
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const s = result.data;
+
+  assert.equal(s.attachmentColumn, "attachment", "the attachment column is auto-detected");
+  assert.equal(s.rowsWithAttachment, 1, "one row references an uploaded file");
+  assert.equal(s.attachmentTotal, 1, "that file is present on disk");
+  assert.equal(s.missingAttachmentCount, 1, "the ghost.pdf reference is a blocking miss");
+  assert.ok(
+    s.missingAttachmentFilenames.includes("ghost.pdf"),
+    "the missing filename is surfaced (capped) for the UI",
+  );
+  assert.equal(s.oversizeRowCount, 0, "no row exceeds the per-message cap");
+  assert.equal(
+    s.sample.attachment,
+    "alice.pdf",
+    "row 1's sample carries its matched attachment filename",
+  );
+});
+
+test("re-prepare re-claims attachments onto the fresh draft (BLOCKER-1: nothing stranded)", async () => {
+  const [set] = await createRecipientSet(USER, {
+    filename: ATTACH_CSV_NAME,
+    columns_json: JSON.stringify(["email", "name", "attachment"]),
+    row_count: 3,
+    storage_path: ATTACH_CSV_NAME,
+    email_column: "email",
+  });
+  const { storagePath } = writeAttachment(Buffer.from("PDF-BYTES-alice-2"));
+  await createAttachment(USER, {
+    filename: "alice.pdf",
+    storage_path: storagePath,
+    size_bytes: 15,
+  });
+
+  // First dialog open — draft C1 claims the attachment.
+  const c1 = await prepareCampaignCore(USER, {
+    recipientSetId: set.id,
+    templateId,
+    smtpConfigId,
+  });
+  assert.equal(c1.ok, true);
+  if (!c1.ok) return;
+
+  // Re-open the dialog — a NEW draft C2. The idempotent stamp must re-claim the
+  // still-draft attachment onto C2 rather than stranding it on C1.
+  const c2 = await prepareCampaignCore(USER, {
+    recipientSetId: set.id,
+    templateId,
+    smtpConfigId,
+  });
+  assert.equal(c2.ok, true);
+  if (!c2.ok) return;
+  assert.notEqual(c2.data.campaignId, c1.data.campaignId, "each open mints a new draft");
+
+  const summary = await buildConfirmSummaryCore(USER, {
+    campaignId: c2.data.campaignId,
+  });
+  assert.equal(summary.ok, true);
+  if (!summary.ok) return;
+  assert.equal(
+    summary.data.rowsWithAttachment,
+    1,
+    "the fresh draft still sees its attachment (not stranded on the abandoned C1)",
+  );
+  assert.equal(summary.data.sample.attachment, "alice.pdf");
+});
+
+test("no attachment column → every attachment field is the zero/empty case", async () => {
+  // The summary fixture has no attachment column and none is detectable.
+  const prepared = await prepareCampaignCore(USER, {
+    recipientSetId: summarySetId,
+    templateId: summaryTemplateId,
+    smtpConfigId,
+  });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const result = await buildConfirmSummaryCore(USER, {
+    campaignId: prepared.data.campaignId,
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const s = result.data;
+  assert.equal(s.attachmentColumn, null, "no column chosen and none detectable");
+  assert.equal(s.rowsWithAttachment, 0);
+  assert.equal(s.attachmentTotal, 0);
+  assert.equal(s.missingAttachmentCount, 0);
+  assert.deepEqual(s.missingAttachmentFilenames, []);
+  assert.equal(s.oversizeRowCount, 0);
+  assert.equal(s.sample.attachment, undefined, "no sample attachment without a column");
 });
 
 test("enqueueCampaignCore flips a draft to queued exactly once; a second confirm is already_queued (TEST-03)", async () => {
