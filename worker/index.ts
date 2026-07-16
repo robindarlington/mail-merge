@@ -19,10 +19,17 @@
  * recoverable via the Plan 01 orphan sweep on the next claim.
  */
 
+import { unlinkSync } from "node:fs";
+
 import pino from "pino";
 
-import { db } from "@/lib/db";
+import { db, connection } from "@/lib/db";
 import { tick } from "@/lib/worker/loop";
+import {
+  checkpointWal,
+  sweepOrphanAttachments,
+  isDue,
+} from "@/lib/worker/maintenance";
 
 const logger = pino({ base: { component: "worker" } });
 
@@ -51,6 +58,12 @@ function envInt(name: string, fallback: number): number {
 const SEND_DELAY_MS = envInt("SEND_DELAY_MS", 1000);
 const WORKER_POLL_MS = envInt("WORKER_POLL_MS", 2000);
 const WORKER_LEASE_SEC = envInt("WORKER_LEASE_SEC", 300);
+// Idle-aware maintenance cadences (SC-4 / RESEARCH Finding 4). Low frequency,
+// env-tunable via the same fail-closed envInt helper. Defaults: hourly checkpoint,
+// hourly orphan sweep, 7-day orphan age threshold. No cron, no new deps.
+const WAL_CHECKPOINT_MS = envInt("WAL_CHECKPOINT_MS", 3_600_000);
+const ORPHAN_SWEEP_MS = envInt("ORPHAN_SWEEP_MS", 3_600_000);
+const ATTACHMENT_ORPHAN_DAYS = envInt("ATTACHMENT_ORPHAN_DAYS", 7);
 const workerId = process.env.WORKER_ID ?? `worker-${process.pid}`;
 
 function main(): void {
@@ -66,6 +79,12 @@ function main(): void {
 
   let stopping = false;
   let inFlight = false;
+  // Maintenance cadence stamps (ms). Start at 0 so a freshly-started worker runs
+  // one checkpoint + sweep on its first idle poll — this keeps the routines
+  // effective even when frequent redeploys restart the worker before an hour
+  // elapses (the exact "WAL grows unbounded between restarts" case, Finding 4).
+  let lastCheckpointAt = 0;
+  let lastSweepAt = 0;
 
   // A ref'd interval (NOT unref'd — the real worker must stay alive). Each poll,
   // if we are not stopping and no tick is already running, run one tick and log
@@ -73,6 +92,37 @@ function main(): void {
   // campaigns are never claimed concurrently by a single worker (T-06-13).
   const interval = setInterval(() => {
     if (stopping || inFlight) return;
+
+    // IDLE MAINTENANCE BRANCH (SC-4). We are provably idle here — `!stopping &&
+    // !inFlight` — so the worker is the single writer with no tick in flight
+    // (T-08-10). Run the two low-cadence routines when due, SYNCHRONOUSLY and
+    // BEFORE claiming any campaign, so they never overlap a send tick and never
+    // sit in the drain path (we already returned above when `stopping`). A
+    // maintenance failure logs its message only and never crashes the poll loop.
+    try {
+      const nowMs = Date.now();
+      if (isDue(lastCheckpointAt, WAL_CHECKPOINT_MS, nowMs)) {
+        checkpointWal(connection, logger);
+        lastCheckpointAt = nowMs;
+      }
+      if (isDue(lastSweepAt, ORPHAN_SWEEP_MS, nowMs)) {
+        sweepOrphanAttachments({
+          db,
+          now: Math.floor(nowMs / 1000),
+          orphanDays: ATTACHMENT_ORPHAN_DAYS,
+          unlink: unlinkSync,
+          logger,
+        });
+        lastSweepAt = nowMs;
+      }
+    } catch (err: unknown) {
+      // Message STRING only — never a raw Error that could carry config (T-06-12).
+      logger.error(
+        { err: (err as Error)?.message ?? String(err) },
+        "maintenance error",
+      );
+    }
+
     inFlight = true;
     // Thread the stop flag so a SIGTERM drains BETWEEN rows (WR-03) rather than
     // waiting for a whole campaign's tick — the graceful path stays inside the
