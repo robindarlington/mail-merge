@@ -11,6 +11,8 @@
     "build": "next build",
     "start": "next start",
     "worker": "tsx worker/index.ts",
+    "build:worker": "esbuild worker/index.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --external:better-sqlite3 --external:pino --outfile=worker.js",
+    "build:migrate": "esbuild scripts/migrate.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --external:better-sqlite3 --external:pino --outfile=migrate.js",
     "test": "node --import tsx --test \"lib/**/*.test.ts\"",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
@@ -55,6 +57,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/smtp-server": "^3.5.13",
     "drizzle-kit": "^0.31",
+    "esbuild": "^0.25.12",
     "smtp-server": "^3.19.2",
     "tailwindcss": "^4.3",
     "typescript": "~5.9"
