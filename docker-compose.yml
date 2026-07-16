@@ -48,6 +48,11 @@ services:
     # standalone node server so signals reach node directly.
     init: true
     command: ["/app/web-entrypoint.sh"]
+    # Recover from crashes automatically (WR-03) — compose defaults to `no`,
+    # which would leave a crashed service down until a manual redeploy.
+    # `unless-stopped` still honors explicit `compose stop` (acceptance script,
+    # operator intervention) and Coolify honors compose restart policies.
+    restart: unless-stopped
     stop_grace_period: 1m
     environment:
       # Next.js standalone server must bind all interfaces in a container.
@@ -106,6 +111,12 @@ services:
     # T-08-04). D-07 swapped `npx tsx worker/index.ts` for the bundled worker.js.
     init: true
     command: ["node", "worker.js"]
+    # WR-03: a dead worker silently halts ALL sending with no visible failure in
+    # the web UI — it must come back on its own after a crash (unhandled error,
+    # lost startup race, exit(1) on a malformed env var an operator then fixes).
+    # `unless-stopped` still honors explicit `compose stop` (the graceful-drain
+    # acceptance variant depends on a stopped worker STAYING stopped).
+    restart: unless-stopped
     # Ample window for a between-rows drain even against a hung SMTP connection
     # (RESEARCH Finding 1 sizing note).
     stop_grace_period: 5m
