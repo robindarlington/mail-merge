@@ -81,21 +81,27 @@ RUN npm run build \
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# Ownership is set AT COPY TIME (--chown) — never via a post-hoc `chown -R /app`:
+# that RUN walks the full node_modules tree and duplicates every chowned file
+# into a new image layer (several hundred MB), which is slow locally and killed
+# the build outright on the resource-constrained VPS (Coolify deploy died at
+# that step). --chown costs nothing and leaves each COPY as its own clean layer.
 # Standalone server output (server.js + minimal traced tree) + static assets.
-COPY --from=build /app/.next/standalone ./
-COPY --from=build /app/.next/static ./.next/static
+COPY --chown=node:node --from=build /app/.next/standalone ./
+COPY --chown=node:node --from=build /app/.next/static ./.next/static
 # Pruned prod dependencies — this is the ONLY node_modules the runtime ships
 # (no dev toolchain). Overlaid on the standalone tree so the worker externals
 # (better-sqlite3, pino) and every prod runtime dep are present and ABI-correct.
-COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
 # Bundled entrypoints + the SQL migrations migrate.js reads at runtime.
-COPY --from=build /app/worker.js ./worker.js
-COPY --from=build /app/migrate.js ./migrate.js
-COPY --from=build /app/drizzle ./drizzle
-COPY --from=build /app/docker/web-entrypoint.sh ./web-entrypoint.sh
+COPY --chown=node:node --from=build /app/worker.js ./worker.js
+COPY --chown=node:node --from=build /app/migrate.js ./migrate.js
+COPY --chown=node:node --from=build /app/drizzle ./drizzle
+COPY --chown=node:node --from=build /app/docker/web-entrypoint.sh ./web-entrypoint.sh
+# Only /data (empty mount point) needs a chown here — a one-inode operation.
 RUN chmod +x /app/web-entrypoint.sh \
   && mkdir -p /data \
-  && chown -R node:node /data /app
+  && chown node:node /data
 
 # Non-root: NO `USER node` here — deliberately (08-05 staging fix). The web
 # entrypoint must start as root to repair /data ownership on volumes that
