@@ -69,7 +69,18 @@ export default async function ListDetailPage({
   const set = await getRecipientSetForUser(userId, parsedId);
   if (!set) notFound();
 
-  const parsed = parseCsv(readUpload(set.storage_path));
+  // The stored file can be gone while the row survives (e.g. uploads written to
+  // a container's ephemeral disk by a pre-UPLOADS_PATH deployment, then lost on
+  // redeploy). Degrade to an explanatory state — with the delete action still in
+  // the header — instead of crashing the page with an unhandled ENOENT.
+  let fileBytes: Buffer | null = null;
+  try {
+    fileBytes = readUpload(set.storage_path);
+  } catch {
+    fileBytes = null;
+  }
+
+  const parsed = fileBytes ? parseCsv(fileBytes) : { columns: [], rows: [] };
   const columns = parsed.columns;
   const rows = parsed.rows;
   const shown = rows.slice(0, CAP);
@@ -131,7 +142,21 @@ export default async function ListDetailPage({
         </CardContent>
       </Card>
 
-      {columns.length === 0 ? (
+      {fileBytes === null ? (
+        <Card>
+          <CardContent className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-destructive">
+              The stored CSV file for this list is missing.
+            </span>
+            <span className="text-muted-foreground">
+              The list entry survived, but its file is no longer on the server —
+              this can happen to lists uploaded before durable file storage was
+              enabled. Sends can&apos;t use this list. Delete it and upload the
+              CSV again.
+            </span>
+          </CardContent>
+        </Card>
+      ) : columns.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           This CSV has no columns to display.
         </p>

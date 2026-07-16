@@ -141,7 +141,7 @@ export default async function CampaignDetailPage({
           <AlertDescription>
             {campaign.sent_count > 0
               ? `The send stopped after ${campaign.sent_count} of ${campaign.total} messages — your SMTP server stopped accepting the connection, or the settings were no longer valid. Delivered messages are listed below; nothing was sent twice. Check your SMTP settings and start a new send for the rest.`
-              : "Your SMTP server didn't accept the connection, or the settings were no longer valid. No emails were sent. Check your SMTP settings and start a new send."}
+              : "No emails were sent. Either the recipient list's stored file was missing, or your SMTP server didn't accept the connection. Check the list still opens under Lists and your SMTP settings, then start a new send."}
           </AlertDescription>
         </Alert>
       ) : (
@@ -181,7 +181,11 @@ export default async function CampaignDetailPage({
         )}
       </div>
 
-      <RecipientResultsTable records={records} attachmentNames={attachmentNames} />
+      <RecipientResultsTable
+        records={records}
+        attachmentNames={attachmentNames}
+        campaignStatus={campaign.status}
+      />
     </div>
   );
 }

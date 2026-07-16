@@ -110,16 +110,44 @@ function reasonFor(record: SendRecord): string {
 export function RecipientResultsTable({
   records,
   attachmentNames,
+  campaignStatus,
 }: {
   records: SendRecord[];
   /** send_record id → original attachment filename (display-only, escaped). */
   attachmentNames?: Map<number, string>;
+  /** The parent campaign's status — drives the zero-records state below. */
+  campaignStatus?: string;
 }) {
   if (records.length === 0) {
+    // Zero rows is NOT always "still preparing": a campaign that failed before
+    // materialization (e.g. its list file was missing) is terminal and must not
+    // spin forever, and a queued campaign is waiting on the worker, not preparing.
+    if (campaignStatus === "failed") {
+      return (
+        <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+          <XCircle className="size-4 shrink-0 text-destructive" />
+          <span>
+            No recipients were prepared — this send failed before any recipient
+            could be processed.
+          </span>
+        </div>
+      );
+    }
+    if (campaignStatus === "completed") {
+      return (
+        <div className="py-6 text-sm text-muted-foreground">
+          No recipients in this campaign.
+        </div>
+      );
+    }
     return (
       <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
         <Loader2 className="size-4 shrink-0 animate-spin" />
-        <span>Preparing recipients…</span>
+        <span>
+          {campaignStatus === "running"
+            ? "Preparing recipients…"
+            : "Waiting for the background sender to pick up this campaign…"}
+        </span>
       </div>
     );
   }
