@@ -10,7 +10,7 @@ CREATE TABLE `__new_attachments` (
 	FOREIGN KEY (`campaign_id`) REFERENCES `campaigns`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-INSERT INTO `__new_attachments`("id", "campaign_id", "filename", "storage_path", "created_at") SELECT "id", "campaign_id", "filename", "storage_path", "created_at" FROM `attachments`;--> statement-breakpoint
+INSERT INTO `__new_attachments`("id", "user_id", "campaign_id", "filename", "storage_path", "size_bytes", "created_at") SELECT "id", '' AS user_id, "campaign_id", "filename", "storage_path", 0 AS size_bytes, "created_at" FROM `attachments`;--> statement-breakpoint
 DROP TABLE `attachments`;--> statement-breakpoint
 ALTER TABLE `__new_attachments` RENAME TO `attachments`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint
