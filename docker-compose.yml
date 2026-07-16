@@ -100,13 +100,26 @@ services:
       start_period: 15s
 
   worker:
-    # NO build: block here — the web service is the SINGLE owner of the image
-    # build (CR-02). Declaring build: on both services makes `compose build`
-    # run the Dockerfile TWICE, and the worker's build (without the
-    # NEXT_PUBLIC_CLERK_* args) races web's for the mail-merge:latest tag —
-    # nondeterministically shipping a client bundle with an EMPTY Clerk
-    # publishable key. `depends_on: web` below already forces web's build
-    # first under `up --build`, so this image always exists.
+    # IDENTICAL build block to web's — deliberately, and load-bearing on BOTH
+    # platforms (CR-02 revisited at the 08-05 checkpoint):
+    #  - Coolify manages images PER SERVICE: an image:-only service is PULLED,
+    #    and mail-merge:latest exists on no registry — so the single-build-owner
+    #    pattern left the worker service undeployable there (never started, all
+    #    sends queued forever).
+    #  - The original CR-02 tag race was dangerous because the worker's argless
+    #    build produced a DIFFERENT image (empty Clerk publishable key) racing
+    #    web's for one tag. With byte-identical context + args, both builds
+    #    resolve to the same BuildKit cache and the same image content — the
+    #    "race" becomes two writers of the same value.
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${NEXT_PUBLIC_CLERK_SIGN_IN_URL:-/sign-in}
+        NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${NEXT_PUBLIC_CLERK_SIGN_UP_URL:-/sign-up}
+        NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: ${NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL:-/dashboard}
+        NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: ${NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL:-/dashboard}
     image: mail-merge:latest
     # tini (init:true) forwards SIGTERM to node so the Phase-6 graceful drain
     # runs; exec-form `node worker.js` keeps node as tini's direct child (threat
