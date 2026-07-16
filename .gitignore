@@ -13,3 +13,9 @@ next-env.d.ts
 *.db
 *.db-wal
 *.db-shm
+
+# esbuild bundle artifacts (08-01): build output emitted at the repo root, not
+# source. Produced by `npm run build:worker` / `build:migrate` and by the
+# Docker build stage — never committed.
+/worker.js
+/migrate.js

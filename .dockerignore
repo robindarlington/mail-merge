@@ -1,0 +1,39 @@
+# Build-context guard (08-01). Anything listed here NEVER enters the Docker
+# build context, so `docker build .` cannot leak a host secret or clobber the
+# runtime linux deps tree with host-compiled binaries.
+
+# Host node_modules is compiled for darwin (wrong ABI) — it would clobber the
+# linux better-sqlite3 binding if any stage COPYs `.`. Deps come only from the
+# in-image `npm ci` / `prod-deps` stage.
+node_modules
+**/node_modules
+
+# Next build output (regenerated in the build stage).
+.next
+**/.next
+
+# Live secrets — must never enter a build layer. Keep .env.example (docs).
+.env
+.env.*
+!.env.example
+
+# Local SQLite DB + WAL/SHM sidecars (D-09 runtime data, not build input).
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Root esbuild bundle artifacts — the in-image copies come ONLY from the build
+# stage, never a stale host bundle.
+worker.js
+migrate.js
+
+# VCS + planning + local tooling noise.
+.git
+.gitignore
+.planning
+.claude
+*.tsbuildinfo
+npm-debug.log*
+Dockerfile
+.dockerignore
