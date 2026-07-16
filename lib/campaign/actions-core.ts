@@ -40,6 +40,7 @@ import {
   analyzeMerge,
   countInvalidEmails,
   createSmtpTransport,
+  detectAttachmentColumn,
   detectEmailColumn,
   extractTokens,
   fillMessage,
@@ -48,6 +49,7 @@ import {
   throttle,
   verifyTransport,
 } from "@/lib/core";
+import { computeAttachmentMatch } from "@/lib/attachments";
 import { decrypt } from "@/lib/crypto";
 import {
   createDraftCampaign,
@@ -57,6 +59,8 @@ import {
   getRecipientSetForUser,
   getSmtpConfigByIdForUser,
   getTemplateForUser,
+  listAttachmentsForCampaign,
+  stampCampaignOnPendingAttachments,
   toSmtpConfigDto,
 } from "@/lib/data";
 import { readUpload } from "@/lib/csv";
@@ -82,6 +86,7 @@ export type ActionError =
   | { kind: "no_smtp_config" }
   | { kind: "parse_error" }
   | { kind: "already_queued" }
+  | { kind: "attachments_blocked" }
   | { kind: "send_failed"; raw: string }
   | { kind: "unknown"; raw: string };
 
@@ -296,11 +301,25 @@ export type ConfirmSummary = {
   campaignId: number;
   recipientCount: number;
   senderIdentity: string;
-  sample: { to: string; subject: string; body: string };
+  sample: { to: string; subject: string; body: string; attachment?: string };
   invalidEmailCount: number;
   rowsWithGaps: number;
   unknownTokens: string[];
   sendableCount: number;
+  // --- Attachment aggregates (Plan 03), recomputed server-side via the SHARED
+  // computeAttachmentMatch so they can never diverge from the compose card. ---
+  /** The resolved attachment column, or null when none is chosen/detected. */
+  attachmentColumn: string | null;
+  /** Rows whose non-empty cell matched an uploaded (DB-present) file. */
+  rowsWithAttachment: number;
+  /** Matched rows whose file is actually present on disk (ready to send). */
+  attachmentTotal: number;
+  /** Deduped sample of missing referenced filenames (capped at 5) for the UI. */
+  missingAttachmentFilenames: string[];
+  /** Total rows referencing a file that is missing (never-uploaded or off-disk). */
+  missingAttachmentCount: number;
+  /** Rows whose attachment exceeds the per-message cap (MAX_MESSAGE_BYTES). */
+  oversizeRowCount: number;
 };
 
 /** The untrusted input for prepare (ids the client selected). `smtpConfigId` is
@@ -372,6 +391,12 @@ export async function prepareCampaignCore(
       template_id: template.id,
       smtp_config_id: cfg.id,
     });
+    // Stamp the user's uploads onto the freshly-created draft (BLOCKER-1). The DAL
+    // is IDEMPOTENT (claims unstamped OR still-draft-owned rows, userId-scoped), so
+    // re-opening the send dialog — which mints a NEW draft on every open — re-claims
+    // the prior draft's attachments onto this one instead of stranding them
+    // (PATTERNS "Prepare-time stamping" / T-07-10 / T-07-17). Safe on every prepare.
+    await stampCampaignOnPendingAttachments(userId, created.id);
     return { ok: true, data: { campaignId: created.id } };
   } catch (e) {
     // raw is ALWAYS a string — never a raw Error (T-5-LOG / D-06).
@@ -443,6 +468,22 @@ export async function buildConfirmSummaryCore(
   const emailColumn = set.email_column ?? detectEmailColumn(columns, rows);
   const invalidEmailCount = emailColumn ? countInvalidEmails(rows, emailColumn) : 0;
 
+  // Attachment presence/size — recomputed SERVER-SIDE via the SHARED matcher the
+  // compose card also runs, so the confirm gate's numbers can never diverge from it
+  // (T-07-09). We match the campaign's OWN stamped attachments (never a client set):
+  // the column is the user's saved choice, else auto-detect — but auto-detect must
+  // NEVER co-opt the email column. Email values end in a TLD (".com"), which is
+  // filename-shaped, so detectAttachmentColumn can false-positive on the email
+  // column; a spurious pick would flag every row of a plain no-attachment send as a
+  // missing file and wrongly BLOCK enqueue. An explicit saved choice is honored
+  // as-is; empty cells are send-without-attachment (computeAttachmentMatch handles
+  // that). This recomputes NOTHING attachment-related by hand.
+  const detected = detectAttachmentColumn(columns, rows);
+  const attachmentColumn =
+    set.attachment_column ?? (detected === emailColumn ? null : detected);
+  const uploaded = await listAttachmentsForCampaign(userId, campaign.id);
+  const m = computeAttachmentMatch(columns, rows, attachmentColumn, uploaded);
+
   // Redacted sender identity — the DTO structurally omits the password triple.
   const dto = toSmtpConfigDto(cfg);
   const senderIdentity = dto.from_name
@@ -456,11 +497,13 @@ export async function buildConfirmSummaryCore(
     { subject: template.subject, body: template.body },
     firstRow,
   );
-  const sample = {
+  const sample: ConfirmSummary["sample"] = {
     to: emailColumn ? (firstRow[emailColumn] ?? "") : "",
     subject: merged.subject,
     body: merged.body,
   };
+  // The row-1 preview gains its attachment filename only when row 1 matched one.
+  if (m.sampleAttachment) sample.attachment = m.sampleAttachment;
 
   // Merge-gap aggregates. rowsWithGaps counts rows with ≥1 blank merge value;
   // unknownTokens is row-independent (a token is unknown iff it is not a column),
@@ -489,6 +532,13 @@ export async function buildConfirmSummaryCore(
       rowsWithGaps,
       unknownTokens,
       sendableCount,
+      // Attachment aggregates straight from the shared matcher (no hand-recompute).
+      attachmentColumn: m.attachmentColumn,
+      rowsWithAttachment: m.rowsWithAttachment,
+      attachmentTotal: m.attachmentTotal,
+      missingAttachmentFilenames: m.missingAttachmentFilenames,
+      missingAttachmentCount: m.missingAttachmentCount,
+      oversizeRowCount: m.oversizeRowCount,
     },
   };
 }
@@ -509,6 +559,29 @@ export async function enqueueCampaignCore(
   if (!idParsed.success) {
     return { ok: false, error: { kind: "validation", issues: idParsed.error.issues } };
   }
+
+  // Server-side attachment gate BEFORE the flip (ATCH-02 / T-07-08): recompute the
+  // campaign's own presence/size numbers via buildConfirmSummaryCore (which runs the
+  // SHARED matcher against the campaign's STAMPED attachments) and BLOCK when any
+  // referenced file is missing or any row is oversize. A dimmed client button is
+  // never the gate — the block is enforced here, on the server. Because attachments
+  // were stamped at PREPARE (not enqueue), this recheck reads the campaign's OWN
+  // attachments, so a concurrent double-submit still sees them present and the block
+  // cannot misfire; the atomic 0-row flip below still decides the single winner.
+  //
+  // The gate only fires on a SUCCESSFULLY-summarized, owner-scoped campaign. A
+  // not_found (cross-tenant / bogus id) or parse_error is deliberately NOT
+  // short-circuited here — it falls through to the atomic DAL flip, whose 0-row
+  // guard yields the canonical `already_queued` for a cross-tenant/not-draft caller
+  // (T-5-IDOR / TEST-03), exactly as before this gate existed.
+  const summary = await buildConfirmSummaryCore(userId, { campaignId: idParsed.data });
+  if (
+    summary.ok &&
+    (summary.data.missingAttachmentCount > 0 || summary.data.oversizeRowCount > 0)
+  ) {
+    return { ok: false, error: { kind: "attachments_blocked" } };
+  }
+
   const flipped = await enqueueCampaignDal(userId, idParsed.data);
   if (flipped.length !== 1) {
     return { ok: false, error: { kind: "already_queued" } };
