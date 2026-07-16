@@ -63,6 +63,7 @@ export type ActionError =
   | { kind: "too_large" }
   | { kind: "duplicate_filename" }
   | { kind: "quota_exceeded" }
+  | { kind: "invalid_column" }
   | { kind: "not_found" }
   | { kind: "unknown"; raw: string };
 
@@ -232,6 +233,24 @@ export async function confirmAttachmentColumnCore(
   column: string,
 ): Promise<ConfirmColumnResult> {
   try {
+    // Load the owner-scoped set FIRST (WR-07). A cross-tenant/bogus id → not_found,
+    // and the set's `columns_json` is the authority for which column names are
+    // valid — persisting an arbitrary string would silently disable attachments the
+    // user configured (the matcher's `columns.includes` degrades to a zero-case that
+    // masks the bad value forever). Mirrors how email_column confirmation validates.
+    const set = await getRecipientSetForUser(userId, setId);
+    if (!set) return { ok: false, error: { kind: "not_found" } };
+
+    let columns: unknown;
+    try {
+      columns = JSON.parse(set.columns_json);
+    } catch {
+      columns = null;
+    }
+    if (!Array.isArray(columns) || !columns.includes(column)) {
+      return { ok: false, error: { kind: "invalid_column" } };
+    }
+
     const updated = await setAttachmentColumnForUser(userId, setId, column);
     if (updated.length === 0) {
       return { ok: false, error: { kind: "not_found" } };

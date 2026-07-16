@@ -173,6 +173,18 @@ test("confirmAttachmentColumnCore persists the column for the owner", async () =
   assert.equal(reread?.attachment_column, "file");
 });
 
+test("confirmAttachmentColumnCore rejects a column that is not one of the set's columns (WR-07)", async () => {
+  // A_SET_ID's columns_json is ["email","file"] — "ghost_column" is not a real
+  // column, so it must be refused rather than silently persisted (which would
+  // disable attachments via the matcher's zero-case).
+  const res = await confirmAttachmentColumnCore(USER_A, A_SET_ID, "ghost_column");
+  assert.ok(!res.ok);
+  if (res.ok) return;
+  assert.equal(res.error.kind, "invalid_column");
+  const reread = await getRecipientSetForUser(USER_A, A_SET_ID);
+  assert.notEqual(reread?.attachment_column, "ghost_column", "the bogus column is never persisted");
+});
+
 test("confirmAttachmentColumnCore cross-tenant returns not_found and persists nothing", async () => {
   const res = await confirmAttachmentColumnCore(USER_B, A_SET_ID, "hijacked");
   assert.ok(!res.ok);
