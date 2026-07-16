@@ -283,11 +283,11 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 07-01-PLAN.md — Foundation: attachments-table migration (owner + nullable FKs + size_bytes) + traversal-proof storage + limit constants + column auto-detect (wave 1)
-- [ ] 07-02-PLAN.md — userId-scoped attachments DAL (IDOR) + upload/list/delete/confirm-column actions + attachment_column persistence + bodySizeLimit bump (wave 2)
-- [ ] 07-03-PLAN.md — Confirm-gate: prepare-time campaign stamping + server-authoritative match/presence/size validation + blocking enqueue (wave 3)
-- [ ] 07-04-PLAN.md — Worker send-path: additive transport attachments + send_record linkage at materialize + graceful rejected-attachment-missing per-row fail (wave 3)
-- [ ] 07-05-PLAN.md — UI: compose attachments card + confirm-dialog attachment lines/block + results table & CSV attachment column (wave 4)
+- [ ] 07-01-PLAN.md — Foundation: attachments-table migration (owner + nullable campaign_id + size_bytes; drop send_record_id) + INVERTED link (send_records.attachment_id) + traversal-proof storage + limit constants + column auto-detect (wave 1)
+- [ ] 07-02-PLAN.md — userId-scoped attachments DAL (IDOR, idempotent re-prepare-safe stamp, inverted-link resolver) + shared match seam (matchAttachments) + upload/list/delete/confirm-column actions + attachment_column persistence + bodySizeLimit bump (wave 2)
+- [ ] 07-03-PLAN.md — Confirm-gate: idempotent prepare-time stamping + server-authoritative match/presence/size validation (shared matcher) + blocking enqueue (wave 3)
+- [ ] 07-04-PLAN.md — Worker send-path: additive transport attachments + send_records.attachment_id linkage at materialize (shared file links every row) + graceful rejected-attachment-missing per-row fail (wave 3)
+- [ ] 07-05-PLAN.md — UI: compose attachments card (server match summary via matchAttachments) + editor/page host wiring + confirm-dialog attachment lines/block + results table & CSV attachment column (wave 4)
 - [ ] 07-06-PLAN.md — [CHECKPOINT] Coolify staging redeploy + per-row attachment walkthrough (wave 5)
 
 ### Phase 8: Docker / Coolify Packaging + Operational Hardening
