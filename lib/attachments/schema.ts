@@ -31,6 +31,20 @@ export const MAX_MESSAGE_BYTES =
   Number(process.env.MAX_MESSAGE_BYTES) || 15 * 1024 * 1024;
 
 /**
+ * Per-user upload quota (WR-02): a cap on how MANY pending/draft uploads and how
+ * many total bytes one tenant can hold on the shared UPLOADS_PATH volume before an
+ * upload is refused. Without this, an authenticated tenant can loop uploads and
+ * exhaust the disk that holds every tenant's files. Env-tunable like the size caps.
+ *   - MAX_PENDING_ATTACHMENTS       — max count of pending/draft uploads (100).
+ *   - MAX_PENDING_ATTACHMENT_BYTES  — max total pending/draft bytes (200 MB).
+ */
+export const MAX_PENDING_ATTACHMENTS =
+  Number(process.env.MAX_PENDING_ATTACHMENTS) || 100;
+
+export const MAX_PENDING_ATTACHMENT_BYTES =
+  Number(process.env.MAX_PENDING_ATTACHMENT_BYTES) || 200 * 1024 * 1024;
+
+/**
  * File-metadata guard: a non-empty name + a size within the per-file cap. No
  * extension/mime restriction (W13 — any file type is attachable). Validates the
  * `{ name, size }` pair a real Server-Action `File` (or a client descriptor)

@@ -159,6 +159,11 @@ export function AttachmentsCard({
             `'${file.name}' is larger than 10 MB. Attachments can be up to 10 MB each.`,
           );
           break;
+        case "quota_exceeded":
+          errors.push(
+            `'${file.name}' puts you over your upload limit. Remove some attachments you no longer need, then try again.`,
+          );
+          break;
         case "unauthenticated":
           setUploadAlert({
             title: "Your session has expired",

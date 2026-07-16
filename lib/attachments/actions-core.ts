@@ -40,7 +40,11 @@ import {
 } from "@/lib/data";
 import { readUpload } from "@/lib/csv";
 import { writeAttachment, attachmentExists, resolveAttachmentPath } from "./storage";
-import { uploadAttachmentSchema } from "./schema";
+import {
+  uploadAttachmentSchema,
+  MAX_PENDING_ATTACHMENTS,
+  MAX_PENDING_ATTACHMENT_BYTES,
+} from "./schema";
 import { computeAttachmentMatch, type AttachmentMatch } from "./match";
 
 /** A pending upload row as returned to the UI (the DAL select model). */
@@ -58,6 +62,7 @@ export type ActionError =
   | { kind: "wrong_type" }
   | { kind: "too_large" }
   | { kind: "duplicate_filename" }
+  | { kind: "quota_exceeded" }
   | { kind: "not_found" }
   | { kind: "unknown"; raw: string };
 
@@ -145,6 +150,18 @@ export async function uploadAttachmentCore(
     const target = normName(guard.name);
     if (pending.some((a) => normName(a.filename) === target)) {
       return { ok: false, error: { kind: "duplicate_filename" } };
+    }
+
+    // Per-user quota gate BEFORE any disk write (WR-02): cap the count and total
+    // bytes of the caller's pending/draft uploads so one tenant cannot loop uploads
+    // and exhaust the shared volume. `pending` already counts unstamped + still-draft
+    // rows (WR-01), which is exactly the on-disk-but-unconsumed set.
+    const pendingBytes = pending.reduce((sum, a) => sum + a.size_bytes, 0);
+    if (
+      pending.length >= MAX_PENDING_ATTACHMENTS ||
+      pendingBytes + guard.file.size > MAX_PENDING_ATTACHMENT_BYTES
+    ) {
+      return { ok: false, error: { kind: "quota_exceeded" } };
     }
 
     // All guards passed — NOW write the bytes and insert the row together.
