@@ -28,5 +28,6 @@ export type {
   SmtpConfig,
   MailTransport,
   SendArgs,
+  SendAttachment,
   SendResult,
 } from "./send";
