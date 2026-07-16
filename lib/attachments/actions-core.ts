@@ -34,8 +34,11 @@ import {
   createAttachment,
   listPendingAttachmentsForUser,
   deleteAttachmentForUser,
+  getAttachmentForUser,
   setAttachmentColumnForUser,
   getRecipientSetForUser,
+  getCampaignForUser,
+  countActiveCampaignsForRecipientSet,
   type PersistableAttachment,
 } from "@/lib/data";
 import { readUpload } from "@/lib/csv";
@@ -64,6 +67,7 @@ export type ActionError =
   | { kind: "duplicate_filename" }
   | { kind: "quota_exceeded" }
   | { kind: "invalid_column" }
+  | { kind: "in_use" }
   | { kind: "not_found" }
   | { kind: "unknown"; raw: string };
 
@@ -201,6 +205,20 @@ export async function deleteAttachmentCore(
   id: number,
 ): Promise<AttachmentListResult> {
   try {
+    // Mutation-window guard (CR-01): refuse to delete an upload that is stamped to a
+    // queued/running campaign. Before materialize no `send_records.attachment_id`
+    // exists yet, so the FK does NOT protect the bytes — a delete here would make the
+    // worker silently un-link (or, per the materialize fix, fail) every row that
+    // referenced this file, defeating the enqueue gate's "every attachment matched"
+    // promise. A draft-stamped or unstamped upload is still freely removable.
+    const existing = await getAttachmentForUser(userId, id);
+    if (existing?.campaign_id != null) {
+      const campaign = await getCampaignForUser(userId, existing.campaign_id);
+      if (campaign && (campaign.status === "queued" || campaign.status === "running")) {
+        return { ok: false, error: { kind: "in_use" } };
+      }
+    }
+
     const removed = await deleteAttachmentForUser(userId, id);
     // Best-effort byte cleanup for a genuinely removed row. A missing file is not
     // an error (the row is already gone); never surface a filesystem probe.
@@ -249,6 +267,15 @@ export async function confirmAttachmentColumnCore(
     }
     if (!Array.isArray(columns) || !columns.includes(column)) {
       return { ok: false, error: { kind: "invalid_column" } };
+    }
+
+    // Mutation-window guard (CR-01): refuse to change the attachment column while a
+    // campaign on this recipient set is queued/running. Changing the column in the
+    // enqueue→materialize window would make the worker link against a column the
+    // gate never validated (or send rows without their promised file).
+    const activeCampaigns = await countActiveCampaignsForRecipientSet(userId, setId);
+    if (activeCampaigns > 0) {
+      return { ok: false, error: { kind: "in_use" } };
     }
 
     const updated = await setAttachmentColumnForUser(userId, setId, column);

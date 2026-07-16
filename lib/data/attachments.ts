@@ -106,6 +106,18 @@ export function deleteAttachmentForUser(userId: string, id: number) {
 }
 
 /**
+ * Fetch one of the caller's attachments by id, owner-scoped (AND(id, userId)). Used
+ * by the delete seam to inspect the row's `campaign_id` before removing it (CR-01
+ * mutation-window guard). A cross-tenant/absent id resolves to undefined.
+ */
+export function getAttachmentForUser(userId: string, id: number) {
+  // findFirst filtered by AND(id, userId) on this line — never fetch-by-id alone (owner-filter, AUTH-02 grep gate).
+  return db.query.attachments.findFirst({
+    where: and(eq(attachments.id, id), eq(attachments.userId, userId)),
+  });
+}
+
+/**
  * List the attachments stamped to one campaign, owner-scoped. AND(campaign_id,
  * userId) so a cross-tenant caller sees nothing (AUTH-02).
  */

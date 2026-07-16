@@ -46,6 +46,17 @@ import {
 const INVALID_ADDRESS_ERROR = "rejected: invalid address";
 
 /**
+ * The error stamped on a row whose non-empty attachment cell has NO matching upload
+ * at link time (CR-01). The enqueue gate promised "every attachment matched", but
+ * the row↔attachment link is created HERE, later, and the inputs can change in the
+ * queued→materialize window (a deleted upload, a swapped column). Rather than
+ * silently un-linking such a row — which the send loop would treat as a legitimate
+ * "send without attachment" and deliver the email MISSING the promised file — we
+ * fail it terminally and visibly, mirroring the invalid-address idiom.
+ */
+const ATTACHMENT_MISSING_ERROR = "rejected: attachment missing";
+
+/**
  * Materialize one `pending` send_record per unique CSV recipient for a claimed
  * campaign. Returns how many NEW rows were inserted this call (0 on a resume) and
  * the reconciled `total` (== the current send_records count for the campaign).
@@ -128,44 +139,69 @@ export async function materializeSendRecords(
   // the SINGLE shared `resolveAttachmentColumn` helper (WR-03) — a confirmed column
   // wins, else auto-detect that never co-opts the email column.
   const attachmentColumn = resolveAttachmentColumn(set, columns, rows);
+  let attachmentMissingInserted = 0;
   if (attachmentColumn) {
     const campaignAttachments = await listAttachmentsForCampaign(
       campaign.userId,
       campaign.id,
     );
-    if (campaignAttachments.length > 0) {
-      // Match on the ORIGINAL filename, trimmed + case-insensitive (same key the
-      // shared computeAttachmentMatch uses — zero divergence).
-      const byName = new Map(
-        campaignAttachments.map((a) => [a.filename.trim().toLowerCase(), a.id]),
-      );
-      for (const row of rows) {
-        const addr = (row[emailColumn] ?? "").trim();
-        if (!addr) continue; // blank address was never materialized
-        const cell = (row[attachmentColumn] ?? "").trim();
-        if (!cell) continue; // empty cell → attachment_id stays null (no attachment)
-        const matchedId = byName.get(cell.toLowerCase());
-        if (matchedId === undefined) continue; // no matching upload → row un-linked
-        // Stamp the send_record for this address (the UNIQUE(campaign_id,to_addr)
-        // row). Every distinct address referencing a shared file is stamped here.
-        await db
+    // Match on the ORIGINAL filename, trimmed + case-insensitive (same key the
+    // shared computeAttachmentMatch uses — zero divergence). The map may be EMPTY
+    // (every upload deleted in the queued→materialize window): the loop below still
+    // runs so a non-empty cell with no match is FAILED, never silently un-linked.
+    const byName = new Map(
+      campaignAttachments.map((a) => [a.filename.trim().toLowerCase(), a.id]),
+    );
+    for (const row of rows) {
+      const addr = (row[emailColumn] ?? "").trim();
+      if (!addr) continue; // blank address was never materialized
+      const cell = (row[attachmentColumn] ?? "").trim();
+      if (!cell) continue; // empty cell → attachment_id stays null (no attachment)
+      const matchedId = byName.get(cell.toLowerCase());
+      if (matchedId === undefined) {
+        // A non-empty cell with no matching upload: the promised file is gone. FAIL
+        // this row terminally (CR-01) instead of leaving it null — never let the
+        // send loop deliver an email missing the file the enqueue gate verified. The
+        // `status='pending'` fence keeps this from re-failing an already-failed
+        // (invalid-address) row or double-counting a duplicate address.
+        const failedRow = await db
           .update(send_records)
-          .set({ attachment_id: matchedId })
+          .set({
+            status: "failed",
+            error: ATTACHMENT_MISSING_ERROR,
+            attempts: sql`${send_records.attempts} + 1`,
+          })
           .where(
             and(
               eq(send_records.campaign_id, campaign.id),
               eq(send_records.to_addr, addr),
+              eq(send_records.status, "pending"),
             ),
-          );
+          )
+          .returning({ id: send_records.id });
+        if (failedRow.length > 0) attachmentMissingInserted++;
+        continue;
       }
+      // Stamp the send_record for this address (the UNIQUE(campaign_id,to_addr)
+      // row). Every distinct address referencing a shared file is stamped here.
+      await db
+        .update(send_records)
+        .set({ attachment_id: matchedId })
+        .where(
+          and(
+            eq(send_records.campaign_id, campaign.id),
+            eq(send_records.to_addr, addr),
+          ),
+        );
     }
   }
 
   // Reconcile the counter to the MATERIALIZED count (dedup-honest) so progress
-  // math converges even when addresses collapsed. When we materialized invalid
-  // addresses as failed rows, bump failed_count by that many so
-  // remaining = total - sent - failed stays honest. Both writes are one
-  // synchronous transaction (WR-04-consistent) so the counters never tear.
+  // math converges even when addresses collapsed. Every row we materialized (or
+  // flipped) to `failed` — invalid addresses AND attachment-missing rows (CR-01) —
+  // bumps failed_count so remaining = total - sent - failed stays honest. Both
+  // writes are one synchronous transaction (WR-04-consistent) so counters never tear.
+  const failedInserted = invalidInserted + attachmentMissingInserted;
   db.transaction((tx) => {
     tx.update(campaigns)
       .set({
@@ -173,9 +209,9 @@ export async function materializeSendRecords(
       })
       .where(eq(campaigns.id, campaign.id))
       .run();
-    if (invalidInserted > 0) {
+    if (failedInserted > 0) {
       tx.update(campaigns)
-        .set({ failed_count: sql`${campaigns.failed_count} + ${invalidInserted}` })
+        .set({ failed_count: sql`${campaigns.failed_count} + ${failedInserted}` })
         .where(eq(campaigns.id, campaign.id))
         .run();
     }

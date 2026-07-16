@@ -43,13 +43,71 @@ const { MAX_ATTACHMENT_BYTES } = await import("./schema");
 const { createRecipientSet, getRecipientSetForUser } = await import(
   "@/lib/data/recipients"
 );
+const {
+  createTemplate,
+  createSmtpConfig,
+  createAttachment,
+  createDraftCampaign,
+  enqueueCampaign,
+  stampCampaignOnPendingAttachments,
+} = await import("@/lib/data");
+const { encrypt } = await import("@/lib/crypto");
 const { writeUpload } = await import("@/lib/csv");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 
 const USER_A = "user_aaaaaaaaaaaaaaaaaaaaaa";
 const USER_B = "user_bbbbbbbbbbbbbbbbbbbbbb";
+// A dedicated tenant for the mutation-window (queued-campaign) guard tests, so
+// stamping/enqueuing never disturbs USER_A's pending-upload state in other tests.
+const USER_C = "user_cccccccccccccccccccc";
 
 let A_SET_ID = 0;
+
+/**
+ * Seed a QUEUED campaign for USER_C whose recipient set names `filename` and whose
+ * single stamped attachment is that file — the CR-01 mutation-window fixture.
+ * Returns the set id + attachment id so the guard tests can target them.
+ */
+async function seedQueuedCampaignForC(
+  filename: string,
+): Promise<{ setId: number; attId: number }> {
+  const csv = `email,file\nx@example.com,${filename}\n`;
+  const { storagePath } = writeUpload(Buffer.from(csv, "utf8"));
+  const [set] = await createRecipientSet(USER_C, {
+    filename: "queued.csv",
+    columns_json: JSON.stringify(["email", "file"]),
+    row_count: 1,
+    storage_path: storagePath,
+    email_column: "email",
+  });
+  const [tpl] = await createTemplate(USER_C, { subject: "s", body: "b" });
+  const secret = encrypt("smtp-password");
+  const [cfg] = await createSmtpConfig(USER_C, {
+    label: "Default",
+    host: "smtp.example.com",
+    port: 587,
+    secure: false,
+    username: "sender",
+    password_enc: secret.enc,
+    password_iv: secret.iv,
+    password_tag: secret.tag,
+    from_addr: "noreply@example.com",
+    from_name: "Sender",
+  });
+  const [att] = await createAttachment(USER_C, {
+    filename,
+    storage_path: `${filename}.bin`,
+    size_bytes: 5,
+  });
+  const [camp] = await createDraftCampaign(USER_C, {
+    recipient_set_id: set.id,
+    template_id: tpl.id,
+    smtp_config_id: cfg.id,
+  });
+  await stampCampaignOnPendingAttachments(USER_C, camp.id);
+  await enqueueCampaign(USER_C, camp.id); // draft → queued (committed to a send)
+  return { setId: set.id, attId: att.id };
+}
 
 /** Build a FormData carrying a File under the "file" field. */
 function fileForm(name: string, bytes: Buffer): FormData {
@@ -247,6 +305,32 @@ test("matchAttachmentsCore never auto-detects the email column as the attachment
     "no spurious missing-file block on a plain no-attachment list",
   );
 });
+
+test("deleteAttachmentCore refuses to delete an upload stamped to a queued campaign (CR-01 in_use)", async () => {
+  const { attId } = await seedQueuedCampaignForC("locked.pdf");
+  const res = await deleteAttachmentCore(USER_C, attId);
+  assert.ok(!res.ok);
+  if (res.ok) return;
+  assert.equal(res.error.kind, "in_use", "a committed upload cannot be deleted in the send window");
+  // The row survives the refused delete.
+  const still = await getAttachmentForUserFromList(USER_C, attId);
+  assert.ok(still, "the queued campaign's attachment is untouched");
+});
+
+test("confirmAttachmentColumnCore refuses to change the column while a campaign on the set is queued (CR-01 in_use)", async () => {
+  const { setId } = await seedQueuedCampaignForC("locked2.pdf");
+  const res = await confirmAttachmentColumnCore(USER_C, setId, "file");
+  assert.ok(!res.ok);
+  if (res.ok) return;
+  assert.equal(res.error.kind, "in_use", "the attachment column is frozen while a campaign is in flight");
+});
+
+/** Helper: does USER_C still own an attachment with this id? (verifies non-deletion) */
+async function getAttachmentForUserFromList(userId: string, id: number): Promise<boolean> {
+  const { getAttachmentForUser } = await import("@/lib/data");
+  const row = await getAttachmentForUser(userId, id);
+  return !!row;
+}
 
 test("matchAttachmentsCore cross-tenant/bogus id resolves to not_found", async () => {
   const bogus = await matchAttachmentsCore(USER_A, 9_999_999);

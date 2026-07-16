@@ -29,7 +29,7 @@
  * D-04); it never constructs a Database.
  */
 
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { campaigns, send_records, type NewCampaign } from "@/lib/db/schema";
@@ -92,6 +92,33 @@ export function enqueueCampaign(userId: string, id: number) {
       ),
     )
     .returning({ id: campaigns.id });
+}
+
+/** The campaign statuses that mean "committed to a real send" — the window during
+ *  which a recipient set's attachment inputs must NOT be mutated (CR-01). */
+const ACTIVE_CAMPAIGN_STATUSES = ["queued", "running"] as const;
+
+/**
+ * Count the caller's queued/running campaigns that reference a given recipient set
+ * (CR-01 mutation-window guard). Owner-scoped. A non-zero count means an in-flight
+ * campaign is depending on this set, so its attachment column must not change and
+ * its uploads must not be deleted between enqueue and materialize.
+ */
+export async function countActiveCampaignsForRecipientSet(
+  userId: string,
+  recipientSetId: number,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(campaigns)
+    .where(
+      and(
+        eq(campaigns.userId, userId),
+        eq(campaigns.recipient_set_id, recipientSetId),
+        inArray(campaigns.status, [...ACTIVE_CAMPAIGN_STATUSES]),
+      ),
+    );
+  return row?.n ?? 0;
 }
 
 // --- Phase-6 read layer (HIST-01 / HIST-02 / SEND-05) -----------------------

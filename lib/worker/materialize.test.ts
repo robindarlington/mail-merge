@@ -296,11 +296,66 @@ test("stamps send_records.attachment_id per matched row — a SHARED file links 
     null,
     "a blank attachment cell leaves attachment_id null (sends without one)",
   );
-  assert.equal(
-    byAddr.get("eve@example.com")!.attachment_id,
-    null,
-    "a cell with no matching upload leaves the row un-linked (defense-in-depth)",
+  // CR-01: a non-empty cell with NO matching upload is now a TERMINAL failed record
+  // ("rejected: attachment missing"), never a silent un-linked send.
+  const eve = byAddr.get("eve@example.com")!;
+  assert.equal(eve.attachment_id, null, "the unmatched row is never linked to a file");
+  assert.equal(eve.status, "failed", "an unmatched non-empty cell fails the row");
+  assert.equal(eve.error, "rejected: attachment missing", "with the missing-attachment error");
+  assert.equal(eve.attempts, 1, "attempts is bumped on the terminal fail");
+
+  // failed_count reflects the one attachment-missing row (remaining stays honest).
+  assert.equal(campaignFailedCount(c.id), 1, "failed_count counts the attachment-missing row");
+});
+
+test("materialize fails EVERY non-empty attachment cell when NO uploads exist (CR-01 deleted-in-window)", async () => {
+  // The queued→materialize window let the user delete every upload: the attachment
+  // column still names files, but none are stamped. Each named row must FAIL, never
+  // silently send without its promised file.
+  const NONE_CSV = "attach-none.csv";
+  writeFileSync(
+    join(UPLOADS_DIR, NONE_CSV),
+    [
+      "email,file",
+      "one@example.com,a.pdf",
+      "two@example.com,b.pdf",
+      "three@example.com,", // blank cell → sends without an attachment (pending)
+    ].join("\n"),
+    "utf8",
   );
+
+  const [set] = await createRecipientSet(USER, {
+    filename: NONE_CSV,
+    columns_json: JSON.stringify(["email", "file"]),
+    row_count: 3,
+    storage_path: NONE_CSV,
+    email_column: "email",
+  });
+  await setAttachmentColumnForUser(USER, set.id, "file");
+  const [c] = await createDraftCampaign(USER, {
+    recipient_set_id: set.id,
+    template_id: campaign.template_id,
+    smtp_config_id: campaign.smtp_config_id,
+  });
+
+  // No attachments are stamped onto this campaign at all.
+  await materializeSendRecords(c);
+
+  const rows = await db
+    .select()
+    .from(send_records)
+    .where(eq(send_records.campaign_id, c.id));
+  const byAddr = new Map(rows.map((r) => [r.to_addr, r]));
+
+  assert.equal(byAddr.get("one@example.com")!.status, "failed", "named-but-missing row fails");
+  assert.equal(byAddr.get("one@example.com")!.error, "rejected: attachment missing");
+  assert.equal(byAddr.get("two@example.com")!.status, "failed", "second named-but-missing row fails");
+  assert.equal(
+    byAddr.get("three@example.com")!.status,
+    "pending",
+    "the blank-cell row still sends (no attachment promised)",
+  );
+  assert.equal(campaignFailedCount(c.id), 2, "failed_count counts both missing rows");
 });
 
 test("each send_record snapshots the per-row merged subject and body", async () => {

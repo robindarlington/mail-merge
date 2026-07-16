@@ -499,6 +499,44 @@ test("a linked, on-disk attachment is forwarded to sendMail (filename + resolved
   assert.ok(rows.every((r) => r.status === "sent"), "both rows delivered");
 });
 
+test("a dangling attachment_id (DB row gone) fails only that row and never sends attachment-less (CR-01)", async () => {
+  const c = await freshCampaign();
+  const ids = await seedPending(c.id, [
+    "dangling@ex.com", // attachment_id points at a row that does not exist
+    "after@ex.com", // must STILL send after the dangling row
+  ]);
+  // Point the first row at an attachment id that has no DB row (a deleted upload /
+  // dangling FK — reachable when foreign_keys isn't enforced). FK enforcement is ON
+  // in the shared connection, so toggle it OFF just for this write to reproduce the
+  // manually-opened-DB deployment the review calls out. getAttachmentByIdForCampaign
+  // then resolves it to undefined, which must FAIL the row, not fall through to a send.
+  connection.pragma("foreign_keys = OFF");
+  await linkAttachment(ids[0], 987654);
+  connection.pragma("foreign_keys = ON");
+
+  const stub = stubTransport({ verifyOk: true });
+  const result = await runCampaign(c, { transportOverride: stub, delayMs: 0 });
+
+  assert.deepEqual(result, { ok: true, sent: 1, failed: 1 });
+  assert.equal(stub.calls.send, 1, "the dangling row was NOT dialed; only the next row sent");
+  assert.deepEqual(
+    stub.sent.map((m) => m.to),
+    ["after@ex.com"],
+    "the campaign continued past the dangling-id row, and it was never sent attachment-less",
+  );
+
+  const rows = await recordsFor(c.id);
+  const dangling = rows.find((r) => r.to_addr === "dangling@ex.com")!;
+  assert.equal(dangling.status, "failed");
+  assert.equal(dangling.error, "rejected: attachment missing", "fenced dangling-id failure");
+  assert.equal(dangling.attempts, 1, "attempts incremented on the graceful fail");
+  assert.equal(rows.find((r) => r.to_addr === "after@ex.com")!.status, "sent");
+
+  const camp = await campaignRow(c.id);
+  assert.equal(camp!.failed_count, 1, "failed_count bumped for the dangling-id row");
+  assert.equal(camp!.sent_count, 1, "sent_count bumped only for the delivered row");
+});
+
 test("an attachment whose file is MISSING on disk fails only that row (rejected: attachment missing) and the campaign continues (ATCH-02 / poison-pill)", async () => {
   const c = await freshCampaign();
   const ids = await seedPending(c.id, [

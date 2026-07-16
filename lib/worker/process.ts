@@ -198,11 +198,15 @@ export async function runCampaign(
           ? await getAttachmentByIdForCampaign(campaign.id, rec.attachment_id)
           : null;
 
-      // A linked file that VANISHED from disk fails ONLY this row through the SAME
-      // fenced 'sending'→'failed' transaction (bumping failed_count) — sendOne is
-      // NOT called and nothing throws, so the campaign continues (poison-pill rule /
-      // T-07-12). The presence check runs the traversal guard on a DB-sourced path.
-      if (att && !attachmentExists(att.storage_path)) {
+      // A row that PROMISED an attachment but can't deliver it fails ONLY this row
+      // through the SAME fenced 'sending'→'failed' transaction (bumping failed_count)
+      // — sendOne is NOT called and nothing throws, so the campaign continues
+      // (poison-pill rule / T-07-12). Two cases collapse here (CR-01): the linked DB
+      // row is GONE (attachment_id set but resolves to undefined — a deleted row /
+      // dangling FK reachable when foreign_keys isn't enforced), OR the file VANISHED
+      // from disk. Either way we must NEVER fall through to a silent attachment-less
+      // send. The presence check runs the traversal guard on a DB-sourced path.
+      if (rec.attachment_id != null && (att == null || !attachmentExists(att.storage_path))) {
         const written = db.transaction((tx) => {
           const upd = tx
             .update(send_records)
