@@ -155,7 +155,7 @@ start_stub() {
 #     Read-only so it never contends with the worker's writes on the WAL'd db.
 terminal_count() {
   local id="$1"
-  compose exec -T web node -e "
+  compose exec -T --user node web node -e "
     const D = require('better-sqlite3')('/data/app.db', { readonly: true });
     const r = D.prepare(\"select count(*) c from send_records where campaign_id=? and status in ('sent','failed')\").get(${id});
     process.stdout.write(String(r.c));
@@ -167,7 +167,7 @@ wait_for_migrations() {
   echo "[wait] waiting for web to apply migrations"
   local i
   for i in $(seq 1 60); do
-    if compose exec -T web node -e "
+    if compose exec -T --user node web node -e "
       const D = require('better-sqlite3')('/data/app.db', { readonly: true });
       const r = D.prepare(\"select name from sqlite_master where type='table' and name='campaigns'\").get();
       process.exit(r ? 0 : 1);
@@ -186,7 +186,7 @@ wait_for_migrations() {
 # --- Seed a queued campaign; echo its id --------------------------------------
 seed_campaign() {
   local out id
-  out="$(compose exec -T web node /app/acceptance-harness.mjs seed \
+  out="$(compose exec -T --user node web node /app/acceptance-harness.mjs seed \
           --count "$N" --stub-port "$STUB_PORT")"
   id="$(printf '%s\n' "$out" | grep -E '^CAMPAIGN_ID=' | cut -d= -f2)"
   [ -n "$id" ] || { echo "ERROR: seed did not print a CAMPAIGN_ID" >&2; echo "$out" >&2; exit 1; }
@@ -226,7 +226,7 @@ wait_until_partial() {
 assert_campaign() {
   local id="$1"
   compose cp "$RCPT_LOG" web:/tmp/rcpt.jsonl
-  compose exec -T web node /app/acceptance-harness.mjs assert \
+  compose exec -T --user node web node /app/acceptance-harness.mjs assert \
     --campaign "$id" --expected "$N" --rcpt-log /tmp/rcpt.jsonl
 }
 

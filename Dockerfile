@@ -97,9 +97,14 @@ RUN chmod +x /app/web-entrypoint.sh \
   && mkdir -p /data \
   && chown -R node:node /data /app
 
-# Non-root: run as the built-in `node` user; /data (the SQLite volume mount) is
-# node-owned so a fresh named volume is writable without root.
-USER node
+# Non-root: NO `USER node` here — deliberately (08-05 staging fix). The web
+# entrypoint must start as root to repair /data ownership on volumes that
+# predate this hardened image (the pre-phase-8 staging volume is root-owned;
+# named volumes only inherit the image's node-owned /data on FIRST mount).
+# It immediately drops to `node` via setpriv before touching the DB — the
+# postgres/redis official-image pattern. The worker service never gets root:
+# docker-compose pins `user: node` on it. A fresh volume still seeds node-owned
+# from the chown above.
 
 EXPOSE 3000
 # Default to the web entrypoint (exec-form so the script is PID 1 and its

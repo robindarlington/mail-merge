@@ -118,6 +118,12 @@ services:
     # T-08-04). D-07 swapped `npx tsx worker/index.ts` for the bundled worker.js.
     init: true
     command: ["node", "worker.js"]
+    # Non-root (08-05): the image no longer sets USER (web's entrypoint needs
+    # root once to repair pre-hardening /data ownership, then drops to node).
+    # The worker has no such preamble, so pin it here. Safe ordering: worker is
+    # gated on web's healthcheck below, which only passes AFTER web repaired
+    # ownership and applied migrations.
+    user: node
     # WR-03: a dead worker silently halts ALL sending with no visible failure in
     # the web UI — it must come back on its own after a crash (unhandled error,
     # lost startup race, exit(1) on a malformed env var an operator then fixes).
