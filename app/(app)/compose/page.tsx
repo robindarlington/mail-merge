@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   listRecipientSetsForUser,
   listSmtpConfigsForUser,
+  listPendingAttachmentsForUser,
   toSmtpConfigDto,
 } from "@/lib/data";
 import { Button } from "@/components/ui/button";
@@ -47,12 +48,20 @@ export default async function ComposePage() {
     user?.emailAddresses?.[0]?.emailAddress ??
     "";
 
+  // The user's PENDING uploads (campaign_id IS NULL) prefill the attachments card
+  // so a refresh mid-compose keeps the already-uploaded files (ATCH-01). Scoped to
+  // userId by the DAL — never another tenant's uploads.
+  const initialAttachments = userId
+    ? await listPendingAttachmentsForUser(userId)
+    : [];
+
   const editorSets = sets.map((set) => ({
     id: set.id,
     filename: set.filename,
     label: set.label,
     row_count: set.row_count,
     columns_json: set.columns_json,
+    attachment_column: set.attachment_column,
   }));
 
   return (
@@ -81,6 +90,7 @@ export default async function ComposePage() {
           sets={editorSets}
           configs={configs}
           defaultTestEmail={defaultTestEmail}
+          initialAttachments={initialAttachments}
         />
       )}
     </div>
