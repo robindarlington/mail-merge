@@ -116,7 +116,11 @@ async function seed(flags: Record<string, string>): Promise<void> {
     password_tag: secret.tag,
     from_addr: "acceptance@stub.invalid",
     from_name: "Acceptance Harness",
-    is_default: true,
+    // NOT is_default: the campaign stores smtp_config_id and the worker resolves
+    // the config by id (getSmtpConfigByIdForUser), never by default — and the
+    // partial unique index allows only ONE is_default=1 per user, so a second seed
+    // for the same tenant (the crash variant) would otherwise collide.
+    is_default: false,
   });
 
   const [draft] = await createDraftCampaign(ACCEPTANCE_USER, {
