@@ -72,8 +72,15 @@ services:
       # Clerk server-only secret — RUNTIME injection only (never a build ARG,
       # never in an image layer). Mirrors CREDENTIAL_ENC_KEY handling.
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
-    ports:
-      - "3000:3000"
+    # No `ports:` (WR-05): publishing 3000:3000 binds 0.0.0.0 on the host,
+    # exposing the app as plaintext HTTP that bypasses Coolify's reverse proxy,
+    # TLS, and proxy-level protections — on a public VPS, an unauthenticated
+    # transport to a multi-tenant app that handles SMTP credentials. Coolify's
+    # proxy attaches over the Docker network; `expose` documents the container
+    # port without any host binding. For local dev, bind loopback explicitly:
+    #   docker compose up  # then add an override with "127.0.0.1:3000:3000"
+    expose:
+      - "3000"
     volumes:
       - appdata:/data
     # Readiness = "migrations applied" (WR-02): the probe passes only once the
