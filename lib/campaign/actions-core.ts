@@ -40,11 +40,11 @@ import {
   analyzeMerge,
   countInvalidEmails,
   createSmtpTransport,
-  detectAttachmentColumn,
   detectEmailColumn,
   extractTokens,
   fillMessage,
   parseCsv,
+  resolveAttachmentColumn,
   sendOne,
   throttle,
   verifyTransport,
@@ -470,17 +470,11 @@ export async function buildConfirmSummaryCore(
 
   // Attachment presence/size — recomputed SERVER-SIDE via the SHARED matcher the
   // compose card also runs, so the confirm gate's numbers can never diverge from it
-  // (T-07-09). We match the campaign's OWN stamped attachments (never a client set):
-  // the column is the user's saved choice, else auto-detect — but auto-detect must
-  // NEVER co-opt the email column. Email values end in a TLD (".com"), which is
-  // filename-shaped, so detectAttachmentColumn can false-positive on the email
-  // column; a spurious pick would flag every row of a plain no-attachment send as a
-  // missing file and wrongly BLOCK enqueue. An explicit saved choice is honored
-  // as-is; empty cells are send-without-attachment (computeAttachmentMatch handles
-  // that). This recomputes NOTHING attachment-related by hand.
-  const detected = detectAttachmentColumn(columns, rows);
-  const attachmentColumn =
-    set.attachment_column ?? (detected === emailColumn ? null : detected);
+  // (T-07-09). We match the campaign's OWN stamped attachments (never a client set).
+  // The column resolution is the SINGLE shared `resolveAttachmentColumn` helper the
+  // compose matcher + worker also use (WR-03) — a saved choice wins, else auto-detect
+  // that never co-opts the email column. This recomputes NOTHING by hand.
+  const attachmentColumn = resolveAttachmentColumn(set, columns, rows);
   const uploaded = await listAttachmentsForCampaign(userId, campaign.id);
   const m = computeAttachmentMatch(columns, rows, attachmentColumn, uploaded);
 

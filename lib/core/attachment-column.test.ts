@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { detectAttachmentColumn } from "./attachment-column";
+import { detectAttachmentColumn, resolveAttachmentColumn } from "./attachment-column";
 import type { Row } from "./csv";
 
 function rowsFrom(col: string, values: string[]): Row[] {
@@ -70,4 +70,48 @@ test("content sampling requires a majority of filename-shaped cells (> 0.7)", ()
   ];
   // Only 1/4 cells look like a filename → below threshold → null.
   assert.equal(detectAttachmentColumn(cols, rows), null);
+});
+
+// --- resolveAttachmentColumn: the SINGLE shared resolver (WR-03) --------------
+
+test("resolveAttachmentColumn honors a user-confirmed column verbatim", () => {
+  const cols = ["email", "file"];
+  const rows: Row[] = [{ email: "a@x.com", file: "a.pdf" }];
+  assert.equal(
+    resolveAttachmentColumn({ attachment_column: "file", email_column: "email" }, cols, rows),
+    "file",
+  );
+});
+
+test("resolveAttachmentColumn NEVER auto-detects the email column (WR-03)", () => {
+  // The only filename-shaped column is the email column itself (values end in
+  // ".com"). Auto-detect would false-positive on it; the resolver must return null.
+  const cols = ["email"];
+  const rows: Row[] = [
+    { email: "alice@example.com" },
+    { email: "bob@example.com" },
+    { email: "carol@example.com" },
+  ];
+  assert.equal(
+    detectAttachmentColumn(cols, rows),
+    "email",
+    "bare detection DOES false-positive on the email column",
+  );
+  assert.equal(
+    resolveAttachmentColumn({ attachment_column: null, email_column: "email" }, cols, rows),
+    null,
+    "the resolver excludes the email column from auto-detect",
+  );
+});
+
+test("resolveAttachmentColumn falls back to a genuine attachment column when it differs from email", () => {
+  const cols = ["email", "attachment"];
+  const rows: Row[] = [
+    { email: "a@x.com", attachment: "one.pdf" },
+    { email: "b@x.com", attachment: "two.pdf" },
+  ];
+  assert.equal(
+    resolveAttachmentColumn({ attachment_column: null, email_column: "email" }, cols, rows),
+    "attachment",
+  );
 });

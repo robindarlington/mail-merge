@@ -17,7 +17,7 @@
  * matching the rest of lib/core.
  */
 
-import type { Row } from "./csv";
+import { detectEmailColumn, type Row } from "./csv";
 
 // Header names that strongly imply an attachment-filename column.
 const NAME_HINTS = ["attachment", "file", "filename", "attachment_file"];
@@ -51,4 +51,31 @@ export function detectAttachmentColumn(
     if (!best || score > best.score) best = { col, score };
   }
   return best && best.score > 0.7 ? best.col : null;
+}
+
+/** The minimal recipient-set shape the resolver needs (a DAL row satisfies it). */
+export type AttachmentColumnSet = {
+  attachment_column: string | null;
+  email_column: string | null;
+};
+
+/**
+ * Resolve the attachment column for a recipient set — the SINGLE source of truth
+ * shared by the compose matcher, the confirm gate, and the worker's materialize
+ * step (WR-03). A user-confirmed column ALWAYS wins. Otherwise auto-detect, but
+ * NEVER co-opt the email column: email values end in a TLD (".com"), which is
+ * filename-shaped, so `detectAttachmentColumn`'s content heuristic can
+ * false-positive on the email column and wrongly flag every row of a plain
+ * no-attachment send as a missing file. Extracting this here means the three call
+ * sites can never diverge (the "zero divergence" invariant those surfaces claim).
+ */
+export function resolveAttachmentColumn(
+  set: AttachmentColumnSet,
+  columns: string[],
+  rows: Row[],
+): string | null {
+  if (set.attachment_column) return set.attachment_column;
+  const emailColumn = set.email_column ?? detectEmailColumn(columns, rows);
+  const detected = detectAttachmentColumn(columns, rows);
+  return detected === emailColumn ? null : detected;
 }

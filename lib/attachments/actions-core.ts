@@ -29,7 +29,7 @@
 
 import { z } from "zod";
 
-import { parseCsv, detectAttachmentColumn } from "@/lib/core";
+import { parseCsv, resolveAttachmentColumn } from "@/lib/core";
 import {
   createAttachment,
   listPendingAttachmentsForUser,
@@ -259,8 +259,11 @@ export async function matchAttachmentsCore(
       return { ok: false, error: { kind: "unknown", raw: "The recipient list could not be parsed." } };
     }
 
-    // Honor the user's confirmed column; fall back to detection only when null.
-    const attachmentColumn = set.attachment_column ?? detectAttachmentColumn(columns, rows);
+    // Resolve the attachment column via the SINGLE shared helper the confirm gate +
+    // worker also use (WR-03): a confirmed column wins, else auto-detect that never
+    // co-opts the email column — so the compose card can't false-positive on emails
+    // and show a spurious "missing attachments" block the confirm gate disagrees with.
+    const attachmentColumn = resolveAttachmentColumn(set, columns, rows);
     const pending = await listPendingAttachmentsForUser(userId);
     return {
       ok: true,

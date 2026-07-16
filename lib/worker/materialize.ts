@@ -37,7 +37,7 @@ import { readUpload } from "@/lib/csv";
 import {
   parseCsv,
   detectEmailColumn,
-  detectAttachmentColumn,
+  resolveAttachmentColumn,
   fillMessage,
   isValidEmail,
 } from "@/lib/core";
@@ -124,10 +124,10 @@ export async function materializeSendRecords(
   // (send_records.attachment_id), NOT on the attachment. Because the FK lives on
   // send_records, MANY rows can point at the SAME attachment — a file referenced by
   // many CSV rows links EVERY referencing row (BLOCKER-2 fix), where a per-attachment
-  // send_record_id would have carried it on only the last row. The user-confirmed
-  // column WINS; detection is only the fallback (mirrors emailColumn above).
-  const attachmentColumn =
-    set.attachment_column ?? detectAttachmentColumn(columns, rows);
+  // send_record_id would have carried it on only the last row. Column resolution is
+  // the SINGLE shared `resolveAttachmentColumn` helper (WR-03) — a confirmed column
+  // wins, else auto-detect that never co-opts the email column.
+  const attachmentColumn = resolveAttachmentColumn(set, columns, rows);
   if (attachmentColumn) {
     const campaignAttachments = await listAttachmentsForCampaign(
       campaign.userId,

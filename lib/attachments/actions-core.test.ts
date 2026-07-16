@@ -207,6 +207,35 @@ test("matchAttachmentsCore re-reads the set's CSV and matches against pending up
   assert.equal(res.data.missingAttachmentCount, 0, "the empty second row is not a miss");
 });
 
+test("matchAttachmentsCore never auto-detects the email column as the attachment column (WR-03)", async () => {
+  // A no-attachment CSV whose ONLY filename-shaped column is the email column
+  // (addresses end in ".com"). The shared resolver must NOT pick it, so the compose
+  // card shows no spurious "missing attachments" block that the confirm gate would
+  // disagree with.
+  const csv = "email\nalice@example.com\nbob@example.com\n";
+  const { storagePath } = writeUpload(Buffer.from(csv, "utf8"));
+  const [set] = await createRecipientSet(USER_A, {
+    filename: "emails-only.csv",
+    columns_json: JSON.stringify(["email"]),
+    row_count: 2,
+    storage_path: storagePath,
+    email_column: "email",
+  });
+  const res = await matchAttachmentsCore(USER_A, set.id);
+  assert.ok(res.ok);
+  if (!res.ok) return;
+  assert.equal(
+    res.data.attachmentColumn,
+    null,
+    "the email column is never chosen as the attachment column",
+  );
+  assert.equal(
+    res.data.missingAttachmentCount,
+    0,
+    "no spurious missing-file block on a plain no-attachment list",
+  );
+});
+
 test("matchAttachmentsCore cross-tenant/bogus id resolves to not_found", async () => {
   const bogus = await matchAttachmentsCore(USER_A, 9_999_999);
   assert.ok(!bogus.ok);
