@@ -646,11 +646,13 @@ export async function getCampaignProgressCore(
 
 // --- Delete seam (mdt) -------------------------------------------------------
 //
-// Operator-facing campaign delete. A draft/completed/failed campaign owned by the
-// caller is removed together with its send_records + attachment rows (the DAL's
-// transactional FK-ordered cascade), then its attachment FILES are unlinked
-// post-commit (row-first). A queued/running campaign is BLOCKED (in_use) — never
-// delete a campaign the worker may be processing (T-mdt-02).
+// Operator-facing campaign delete. A campaign owned by the caller is removed
+// together with its send_records + attachment rows (the DAL's transactional
+// FK-ordered cascade), then its attachment FILES are unlinked post-commit
+// (row-first). BLOCKED (in_use) only while a worker is provably sending it —
+// status 'running' with a live lease (T-mdt-02). Queued and abandoned-running
+// (expired/NULL lease) campaigns ARE deletable: a dead worker must never make a
+// campaign immortal.
 
 /** The closed error surface the delete action returns (message-only). Broader than
  *  the core needs — the "use server" wrapper also emits unauthenticated/validation. */
@@ -684,7 +686,11 @@ export async function deleteCampaignCore(
 ): Promise<DeleteCampaignResult> {
   const campaign = await getCampaignForUser(userId, id);
   if (!campaign) return { ok: false, error: { kind: "not_found" } };
-  if (campaign.status === "queued" || campaign.status === "running") {
+  // Actively sending = running with a live lease (the worker heartbeats it every
+  // row). Only that blocks; queued / expired-lease campaigns fall through to the
+  // DAL, whose transactional guard is the TOCTOU backstop for a concurrent claim.
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (campaign.status === "running" && (campaign.lease_expires_at ?? 0) > nowSec) {
     return { ok: false, error: { kind: "in_use" } };
   }
 

@@ -322,7 +322,7 @@ test("deleteCampaignForUser removes a draft campaign, its send_records + attachm
   assert.equal(leftoverAtts.length, 0, "attachment rows cascaded");
 });
 
-test("deleteCampaignForUser BLOCKS an active (queued/running) campaign and leaves every dependent intact", async () => {
+test("deleteCampaignForUser BLOCKS a running campaign with a LIVE lease and leaves every dependent intact", async () => {
   const [camp] = await createDraftCampaign(USER_A, draftValues());
   await db.insert(send_records).values([
     { campaign_id: camp.id, to_addr: "live@example.com", merged_subject: "S", merged_body: "B", status: "sending" },
@@ -330,8 +330,14 @@ test("deleteCampaignForUser BLOCKS an active (queued/running) campaign and leave
   await db.insert(attachments).values([
     { userId: USER_A, campaign_id: camp.id, filename: "live.pdf", storage_path: "att-live.bin", size_bytes: 30 },
   ]);
-  // Flip to running — the window in which the worker may be processing it.
-  await db.update(campaigns).set({ status: "running" }).where(eq(campaigns.id, camp.id));
+  // Flip to running WITH a live lease — a worker is provably sending right now.
+  await db
+    .update(campaigns)
+    .set({
+      status: "running",
+      lease_expires_at: Math.floor(Date.now() / 1000) + 300,
+    })
+    .where(eq(campaigns.id, camp.id));
 
   const res = deleteCampaignForUser(USER_A, camp.id);
   assert.equal(res.ok, false, "an active campaign is refused");
@@ -349,6 +355,40 @@ test("deleteCampaignForUser BLOCKS an active (queued/running) campaign and leave
     where: eq(attachments.campaign_id, camp.id),
   });
   assert.equal(atts.length, 1, "attachment rows are intact after a blocked delete");
+});
+
+test("deleteCampaignForUser DELETES a queued campaign (nothing is sending yet — a dead worker must not make it immortal)", async () => {
+  const [camp] = await createDraftCampaign(USER_A, draftValues());
+  await db.update(campaigns).set({ status: "queued" }).where(eq(campaigns.id, camp.id));
+
+  const res = deleteCampaignForUser(USER_A, camp.id);
+  assert.equal(res.ok, true, "a queued campaign is deletable");
+  const gone = await getCampaignForUser(USER_A, camp.id);
+  assert.equal(gone, undefined, "the queued campaign is removed");
+});
+
+test("deleteCampaignForUser DELETES an abandoned running campaign (expired lease) and its dependents", async () => {
+  const [camp] = await createDraftCampaign(USER_A, draftValues());
+  await db.insert(send_records).values([
+    { campaign_id: camp.id, to_addr: "stale@example.com", merged_subject: "S", merged_body: "B", status: "sending" },
+  ]);
+  // running but the lease is in the past — the claiming worker is dead.
+  await db
+    .update(campaigns)
+    .set({
+      status: "running",
+      lease_expires_at: Math.floor(Date.now() / 1000) - 60,
+    })
+    .where(eq(campaigns.id, camp.id));
+
+  const res = deleteCampaignForUser(USER_A, camp.id);
+  assert.equal(res.ok, true, "an expired-lease running campaign is deletable");
+  const gone = await getCampaignForUser(USER_A, camp.id);
+  assert.equal(gone, undefined, "the abandoned campaign is removed");
+  const records = await db.query.send_records.findMany({
+    where: eq(send_records.campaign_id, camp.id),
+  });
+  assert.equal(records.length, 0, "its send_records cascaded");
 });
 
 test("deleteCampaignForUser is owner-scoped: a cross-tenant id removes zero rows (IDOR)", async () => {

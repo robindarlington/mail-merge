@@ -1027,13 +1027,19 @@ test("deleteCampaignCore removes a draft campaign, its attachment rows, and unli
   assert.ok(!existsSync(fileB), "attachment file B unlinked");
 });
 
-test("deleteCampaignCore returns in_use for a running campaign and removes nothing", async () => {
+test("deleteCampaignCore returns in_use for a running campaign with a live lease and removes nothing", async () => {
   const [camp] = await createDraftCampaign(USER, {
     recipient_set_id: recipientSetId,
     template_id: templateId,
     smtp_config_id: smtpConfigId,
   });
-  await db.update(campaigns).set({ status: "running" }).where(eq(campaigns.id, camp.id));
+  await db
+    .update(campaigns)
+    .set({
+      status: "running",
+      lease_expires_at: Math.floor(Date.now() / 1000) + 300,
+    })
+    .where(eq(campaigns.id, camp.id));
   await db.insert(send_records).values([
     { campaign_id: camp.id, to_addr: "live@example.com", merged_subject: "S", merged_body: "B", status: "sending" },
   ]);
@@ -1048,6 +1054,34 @@ test("deleteCampaignCore returns in_use for a running campaign and removes nothi
     where: eq(send_records.campaign_id, camp.id),
   });
   assert.equal(records.length, 1, "send_records intact after a blocked delete");
+});
+
+test("deleteCampaignCore deletes a queued campaign and an expired-lease running campaign (dead-worker cleanup)", async () => {
+  const [queued] = await createDraftCampaign(USER, {
+    recipient_set_id: recipientSetId,
+    template_id: templateId,
+    smtp_config_id: smtpConfigId,
+  });
+  await db.update(campaigns).set({ status: "queued" }).where(eq(campaigns.id, queued.id));
+  const resQueued = await deleteCampaignCore(USER, queued.id);
+  assert.equal(resQueued.ok, true, "a queued campaign (nothing sent yet) is deletable");
+  assert.equal(await getCampaignForUser(USER, queued.id), undefined);
+
+  const [stale] = await createDraftCampaign(USER, {
+    recipient_set_id: recipientSetId,
+    template_id: templateId,
+    smtp_config_id: smtpConfigId,
+  });
+  await db
+    .update(campaigns)
+    .set({
+      status: "running",
+      lease_expires_at: Math.floor(Date.now() / 1000) - 60,
+    })
+    .where(eq(campaigns.id, stale.id));
+  const resStale = await deleteCampaignCore(USER, stale.id);
+  assert.equal(resStale.ok, true, "an abandoned running campaign (expired lease) is deletable");
+  assert.equal(await getCampaignForUser(USER, stale.id), undefined);
 });
 
 test("deleteCampaignCore returns not_found for a cross-tenant id and removes nothing (IDOR)", async () => {

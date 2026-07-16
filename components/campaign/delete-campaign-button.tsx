@@ -94,10 +94,11 @@ export function DeleteCampaignButton({ campaignId }: { campaignId: number }) {
         {inUse ? (
           <Alert variant="destructive">
             <AlertCircle />
-            <AlertTitle>Campaign in progress</AlertTitle>
+            <AlertTitle>Campaign is sending</AlertTitle>
             <AlertDescription>
-              This campaign is sending right now — wait for it to finish, then
-              delete it.
+              A sender is actively working on this campaign right now — wait
+              for it to finish (or, if it looks stuck, try again in a few
+              minutes once its claim expires), then delete it.
             </AlertDescription>
           </Alert>
         ) : null}

@@ -29,7 +29,7 @@
  * D-04); it never constructs a Database.
  */
 
-import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, not, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -136,12 +136,16 @@ export type DeleteCampaignResult = { ok: boolean; storagePaths: string[] };
  * (mdt). foreign_keys=ON with NO onDelete cascade anywhere, so the cascade is manual
  * and in FK-safe order: send_records → attachments → campaign.
  *
- * STATUS GUARD (T-mdt-02 TOCTOU): the campaign DELETE re-asserts
- * `status NOT IN ('queued','running')` AND owner scope INSIDE the transaction. If it
- * affects !==1 row (an active campaign the worker may be processing, OR a cross-tenant
+ * STATUS GUARD (T-mdt-02 TOCTOU): the campaign DELETE re-asserts owner scope AND
+ * "not actively sending" — `NOT (status='running' AND lease alive)` — INSIDE the
+ * transaction. If it affects !==1 row (a worker holds a live lease, OR a cross-tenant
  * / unknown id), a sentinel throw rolls the WHOLE cascade back — nothing is removed —
- * and the function returns `{ ok:false, storagePaths: [] }`. A `draft`/`completed`/
- * `failed` campaign owned by the caller deletes and returns its attachments' paths.
+ * and the function returns `{ ok:false, storagePaths: [] }`. Everything else deletes:
+ * draft/completed/failed, `queued` (nothing sent yet; a concurrent claim flips it to
+ * running+live-lease under the write lock and this guard then refuses), and abandoned
+ * `running` with an expired/NULL lease (a dead worker must not make campaigns
+ * immortal; a stalled worker that wakes later hits its ownership-checked heartbeat,
+ * matches zero rows, and aborts via LeaseLostError without finalizing).
  *
  * ROW-FIRST (mirrors lib/worker/maintenance.ts): files are NOT unlinked here. The
  * removed attachments' `storage_path` values are collected FIRST (before the rows go)
@@ -166,15 +170,31 @@ export function deleteCampaignForUser(
       tx.delete(send_records).where(eq(send_records.campaign_id, id)).run();
       tx.delete(attachments).where(eq(attachments.campaign_id, id)).run();
 
-      // Owner-scoped + status-guarded parent DELETE — the affected-row count IS the
-      // "am I allowed?" signal. notInArray keeps a queued/running campaign safe.
+      // Owner-scoped + guarded parent DELETE — the affected-row count IS the
+      // "am I allowed?" signal. Blocked ONLY while a worker is provably sending
+      // this campaign right now: status 'running' with a LIVE lease (the worker
+      // heartbeats the lease every row). Everything else is deletable, including
+      // `queued` (nothing sent yet; if the worker claims it concurrently, this
+      // guard sees the fresh live lease under SQLite's write lock and refuses)
+      // and abandoned `running` with an expired/NULL lease (dead worker — the
+      // old queued/running blanket block made such campaigns immortal). If a
+      // stalled worker later wakes, its ownership-checked heartbeat matches zero
+      // rows and aborts the run (LeaseLostError) without finalizing.
       const removed = tx
         .delete(campaigns)
         .where(
           and(
             eq(campaigns.id, id),
             eq(campaigns.userId, userId),
-            notInArray(campaigns.status, [...ACTIVE_CAMPAIGN_STATUSES]),
+            not(
+              and(
+                eq(campaigns.status, "running"),
+                gt(
+                  sql`coalesce(${campaigns.lease_expires_at}, 0)`,
+                  sql`unixepoch()`,
+                ),
+              )!,
+            ),
           ),
         )
         .returning({ id: campaigns.id })
