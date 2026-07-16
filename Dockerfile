@@ -1,17 +1,18 @@
 # syntax=docker/dockerfile:1
 #
-# Phase 1 SKELETON Dockerfile (D-10). ONE image, TWO entrypoints (web + worker)
-# selected by the compose service `command`. This builds the Next.js standalone
-# output (D-08) and keeps better-sqlite3's native binding loadable at runtime.
+# Phase 8 HARDENED Dockerfile (D-07/D-08/D-10). ONE image, TWO entrypoints:
+#   web    -> /app/web-entrypoint.sh  (node migrate.js && exec node server.js)
+#   worker -> node worker.js          (compose `command` override, exec form)
 #
-# DEFERRED TO PHASE 8 (D-10 — production hardening, NOT built here):
-#   - better-sqlite3 Node-ABI pin / explicit native rebuild in the runtime stage
-#   - a dedicated esbuild/tsup worker bundle to a single worker.js (D-07)
-#     (the skeleton runs the worker via `tsx worker/index.ts` instead)
-#   - raised stop_grace_period, PID1/tini init, SIGTERM handling, WAL checkpoint
-#   - non-root user, multi-arch, slimming/distroless runtime
-# This stage layout is intentionally minimal; it is a topology skeleton, not a
-# production-hardened build.
+# Hardening delivered here (RESEARCH Findings 2/3, Pitfalls 3/5/6, Security):
+#   - esbuild-bundled worker.js/migrate.js run as direct `node` (no tsx/npx at
+#     PID 1 — the SIGTERM path the phase-6 drain depends on now works)
+#   - pruned `npm ci --omit=dev` prod-deps REPLACE the full node_modules copy
+#     (no tsx/typescript/drizzle-kit in the runtime image)
+#   - better-sqlite3 ABI pinned by using the SAME glibc base (node:24-bookworm-slim)
+#     for BOTH build and run — NEVER Alpine/musl
+#   - non-root USER node with a node-owned /data volume mount point
+#   - the server-only Clerk secret + CREDENTIAL_ENC_KEY are NEVER a build ARG/ENV (no layer leak)
 
 # Pin Node to the host/runtime ABI (24 LTS) so better-sqlite3 prebuilds match.
 FROM node:24-bookworm-slim AS base
@@ -21,10 +22,19 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-# --- deps -------------------------------------------------------------------
+# --- deps (full, for the Next build + esbuild bundles) ----------------------
 FROM base AS deps
 COPY package.json package-lock.json ./
 RUN npm ci
+
+# --- prod-deps (pruned; carries the worker externals + web runtime deps) ----
+# `--omit=dev` drops tsx/typescript/drizzle-kit/esbuild and other devDeps. This
+# pruned tree is what the runtime image ships — it REPLACES the old full
+# node_modules copy (RESEARCH Pitfall 5) and still contains better-sqlite3 (with
+# its linux native binding) and pino, the two worker externals.
+FROM base AS prod-deps
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 # --- build ------------------------------------------------------------------
 FROM base AS build
@@ -35,9 +45,9 @@ COPY . .
 # during the build RUN below — a runtime env var is too late. In Coolify these
 # must be marked as BUILD VARIABLES (Assumption A2); the compose fallback passes
 # them via web.build.args. These are BUILD-TIME ONLY.
-# NOTE: CLERK_SECRET_KEY is intentionally ABSENT here — it is server-only and
-# must NEVER be a build ARG/ENV or baked into an image layer. It is injected at
-# runtime via docker-compose web.environment (Pitfall 1/2, threat T-2-BUILD).
+# NOTE: the server-only Clerk secret key is intentionally ABSENT here — it must
+# NEVER be a build ARG/ENV or baked into an image layer. It is injected at
+# runtime via docker-compose web.environment (Pitfall 1/2, threat T-08-01).
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ARG NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
 ARG NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
@@ -48,32 +58,41 @@ ENV NEXT_PUBLIC_CLERK_SIGN_IN_URL=${NEXT_PUBLIC_CLERK_SIGN_IN_URL}
 ENV NEXT_PUBLIC_CLERK_SIGN_UP_URL=${NEXT_PUBLIC_CLERK_SIGN_UP_URL}
 ENV NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=${NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL}
 ENV NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=${NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL}
-# Next.js standalone output (next.config.ts: output: 'standalone').
-RUN npm run build
+# Next.js standalone output (next.config.ts: output: 'standalone'), then the
+# esbuild worker + migrate bundles (single-file ESM, better-sqlite3/pino external).
+RUN npm run build \
+  && npm run build:worker \
+  && npm run build:migrate
 
 # --- runtime ----------------------------------------------------------------
 # One runtime image used by BOTH the web and worker compose services. The
 # service `command` chooses the entrypoint:
-#   web    -> node server.js   (Next.js standalone server)
-#   worker -> tsx worker/index.ts  (Phase 8 swaps to a bundled worker.js, D-07)
+#   web    -> /app/web-entrypoint.sh  (default CMD: migrate then exec server.js)
+#   worker -> node worker.js          (compose override, exec form)
 FROM base AS runtime
 ENV NODE_ENV=production
-# Standalone server output + static assets.
+# Standalone server output (server.js + minimal traced tree) + static assets.
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
-# The worker entrypoint + its lib/ deps run via tsx in this skeleton.
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/worker ./worker
-COPY --from=build /app/lib ./lib
+# Pruned prod dependencies — this is the ONLY node_modules the runtime ships
+# (no dev toolchain). Overlaid on the standalone tree so the worker externals
+# (better-sqlite3, pino) and every prod runtime dep are present and ABI-correct.
+COPY --from=prod-deps /app/node_modules ./node_modules
+# Bundled entrypoints + the SQL migrations migrate.js reads at runtime.
+COPY --from=build /app/worker.js ./worker.js
+COPY --from=build /app/migrate.js ./migrate.js
 COPY --from=build /app/drizzle ./drizzle
-COPY --from=build /app/scripts ./scripts
-COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
-COPY --from=build /app/tsconfig.json ./tsconfig.json
+COPY --from=build /app/docker/web-entrypoint.sh ./web-entrypoint.sh
+RUN chmod +x /app/web-entrypoint.sh \
+  && mkdir -p /data \
+  && chown -R node:node /data /app
+
+# Non-root: run as the built-in `node` user; /data (the SQLite volume mount) is
+# node-owned so a fresh named volume is writable without root.
+USER node
 
 EXPOSE 3000
-# Default to the web entrypoint; the worker service overrides `command`.
-# Apply pending Drizzle migrations before serving — idempotent (drizzle tracks
-# applied migrations), and only the web entrypoint migrates so the worker
-# never races it.
-CMD ["sh", "-c", "npx tsx scripts/migrate.ts && node server.js"]
+# Default to the web entrypoint (exec-form so the script is PID 1 and its
+# `exec node server.js` replaces it — clean SIGTERM path). The worker service
+# overrides `command` with exec-form `node worker.js`.
+CMD ["/app/web-entrypoint.sh"]

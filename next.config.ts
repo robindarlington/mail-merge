@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
   // better-sqlite3 is a native module used by lib/db and the worker; keep it
   // external from the server bundle so its native bindings load at runtime.
   serverExternalPackages: ["better-sqlite3"],
+  // Insurance that better-sqlite3's native .node binding is traced into the
+  // standalone output folder even if nft misses it (RESEARCH A3 / Finding 3).
+  outputFileTracingIncludes: {
+    "*": ["node_modules/better-sqlite3/**/*"],
+  },
   // Raised to fit one 10 MB attachment + multipart overhead (ATCH-01 uploads are
   // one-file-per-call). The platform limit is now the LOOSER of the two per-file
   // caps, so the app-level zod guards remain authoritative: CSV uploads still
