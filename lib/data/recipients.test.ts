@@ -24,11 +24,14 @@ process.env.DATABASE_PATH = join(TMP_DIR, "app.db");
 
 // Dynamic imports so the env var above is in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
+const { campaigns, templates, smtp_configs } = await import("@/lib/db/schema");
 const {
   createRecipientSet,
   listRecipientSetsForUser,
   getRecipientSetForUser,
   renameRecipientSet,
+  countCampaignsForRecipientSet,
+  deleteRecipientSetForUser,
 } = await import("./recipients");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 
@@ -161,4 +164,85 @@ test("renameRecipientSet by User B on User A's set updates zero rows (IDOR)", as
   // User A's row is untouched — its label is exactly what it was before.
   const after = await getRecipientSetForUser(USER_A, A_SECOND_ID);
   assert.equal(after?.label, before?.label ?? null, "the owner's label is unchanged");
+});
+
+// --- countCampaignsForRecipientSet + deleteRecipientSetForUser (mdt) ----------
+//
+// A list referenced by ANY campaign (any status) must NOT be deletable — the
+// recipient_set_id FK is NOT NULL with no cascade, so a raw delete would violate
+// the FK. The count spans ALL statuses (distinct from the queued/running-only
+// active count). The DELETE is owner-scoped: a cross-tenant id removes zero rows.
+
+/** Seed a campaign in a given status referencing `setId`, wiring the two other
+ *  NOT-NULL FKs directly (a throwaway template + smtp_config for the owner). */
+async function seedCampaign(userId: string, setId: number, status: string) {
+  const [tpl] = await db
+    .insert(templates)
+    .values({ userId, subject: "S", body: "B" })
+    .returning();
+  const [cfg] = await db
+    .insert(smtp_configs)
+    .values({
+      userId,
+      host: "smtp.example.com",
+      port: 587,
+      secure: false,
+      username: "u",
+      password_enc: Buffer.from("enc"),
+      password_iv: Buffer.from("iv"),
+      password_tag: Buffer.from("tag"),
+      from_addr: "noreply@example.com",
+    })
+    .returning();
+  const [camp] = await db
+    .insert(campaigns)
+    .values({
+      userId,
+      recipient_set_id: setId,
+      template_id: tpl.id,
+      smtp_config_id: cfg.id,
+      status,
+    })
+    .returning();
+  return camp;
+}
+
+test("countCampaignsForRecipientSet is 0 for an unreferenced set and for a cross-tenant set", async () => {
+  const [set] = await createRecipientSet(USER_A, recipientValues("count-none", ["email"], 1));
+  assert.equal(await countCampaignsForRecipientSet(USER_A, set.id), 0, "no campaigns → 0");
+  // Even once a campaign references it, USER_B (who does not own it) counts 0.
+  await seedCampaign(USER_A, set.id, "draft");
+  assert.equal(await countCampaignsForRecipientSet(USER_B, set.id), 0, "cross-tenant → 0");
+});
+
+test("countCampaignsForRecipientSet counts campaigns across ALL statuses", async () => {
+  const [set] = await createRecipientSet(USER_A, recipientValues("count-all", ["email"], 1));
+  await seedCampaign(USER_A, set.id, "draft");
+  await seedCampaign(USER_A, set.id, "completed");
+  await seedCampaign(USER_A, set.id, "failed");
+  assert.equal(
+    await countCampaignsForRecipientSet(USER_A, set.id),
+    3,
+    "draft + completed + failed all count toward the delete-guard",
+  );
+});
+
+test("deleteRecipientSetForUser removes the owner's row and returns it", async () => {
+  const [set] = await createRecipientSet(USER_A, recipientValues("del-me", ["email"], 2));
+  const removed = await deleteRecipientSetForUser(USER_A, set.id);
+  assert.equal(removed.length, 1, "the owner's row is returned by the DELETE");
+  assert.equal(removed[0].id, set.id);
+  assert.equal(
+    await getRecipientSetForUser(USER_A, set.id),
+    undefined,
+    "the set is gone after delete",
+  );
+});
+
+test("deleteRecipientSetForUser by User B on User A's set removes zero rows (IDOR)", async () => {
+  const [set] = await createRecipientSet(USER_A, recipientValues("del-guarded", ["email"], 1));
+  const removed = await deleteRecipientSetForUser(USER_B, set.id);
+  assert.equal(removed.length, 0, "a cross-tenant delete removes zero rows");
+  const still = await getRecipientSetForUser(USER_A, set.id);
+  assert.ok(still, "the owner's set survives a cross-tenant delete");
 });

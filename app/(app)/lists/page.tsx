@@ -6,6 +6,7 @@ import { listRecipientSetsForUser } from "@/lib/data";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CsvUploader } from "@/components/recipients/csv-uploader";
 import { ListRename } from "@/components/recipients/list-rename";
+import { ListDelete } from "@/components/recipients/list-delete";
 
 /**
  * /lists — the CSV upload + review + save surface (CSV-01/03/04/05, read side
@@ -80,6 +81,11 @@ export default async function ListsPage() {
                 <ListRename
                   id={set.id}
                   currentName={set.label ?? set.filename}
+                  showName={false}
+                />
+                <ListDelete
+                  id={set.id}
+                  name={set.label ?? set.filename}
                   showName={false}
                 />
               </div>

@@ -49,10 +49,11 @@ import {
   throttle,
   verifyTransport,
 } from "@/lib/core";
-import { computeAttachmentMatch } from "@/lib/attachments";
+import { computeAttachmentMatch, deleteAttachment } from "@/lib/attachments";
 import { decrypt } from "@/lib/crypto";
 import {
   createDraftCampaign,
+  deleteCampaignForUser,
   enqueueCampaign as enqueueCampaignDal,
   getCampaignForUser,
   getCampaignProgressRow,
@@ -641,4 +642,66 @@ export async function getCampaignProgressCore(
       current: row.current,
     },
   };
+}
+
+// --- Delete seam (mdt) -------------------------------------------------------
+//
+// Operator-facing campaign delete. A draft/completed/failed campaign owned by the
+// caller is removed together with its send_records + attachment rows (the DAL's
+// transactional FK-ordered cascade), then its attachment FILES are unlinked
+// post-commit (row-first). A queued/running campaign is BLOCKED (in_use) — never
+// delete a campaign the worker may be processing (T-mdt-02).
+
+/** The closed error surface the delete action returns (message-only). Broader than
+ *  the core needs — the "use server" wrapper also emits unauthenticated/validation. */
+export type DeleteCampaignError =
+  | { kind: "unauthenticated" }
+  | { kind: "validation"; issues: unknown }
+  | { kind: "not_found" }
+  | { kind: "in_use" }
+  | { kind: "unknown"; raw?: string };
+
+/** The uniform result the delete seam + action resolve to (never rejects). */
+export type DeleteCampaignResult =
+  | { ok: true }
+  | { ok: false; error: DeleteCampaignError };
+
+/**
+ * Delete seam (testable): userId-scoped pre-check → transactional cascade → unlink.
+ *
+ * Order: `getCampaignForUser` first (cross-tenant/bogus id → not_found; a
+ * queued/running status → in_use, deleting nothing). Then the DAL's
+ * `deleteCampaignForUser`, whose own status-guarded DELETE is the TOCTOU backstop:
+ * if the campaign flipped to queued/running between the pre-check and the guarded
+ * DELETE, the transaction refuses it and this maps the `{ ok:false }` to in_use.
+ * On success each removed attachment's file is unlinked BEST-EFFORT — a failed
+ * unlink leaves only a harmless disk-only file and never fails the action (the DB
+ * rows are already gone; row-first discipline mirrors the worker's sweep).
+ */
+export async function deleteCampaignCore(
+  userId: string,
+  id: number,
+): Promise<DeleteCampaignResult> {
+  const campaign = await getCampaignForUser(userId, id);
+  if (!campaign) return { ok: false, error: { kind: "not_found" } };
+  if (campaign.status === "queued" || campaign.status === "running") {
+    return { ok: false, error: { kind: "in_use" } };
+  }
+
+  const result = deleteCampaignForUser(userId, id);
+  if (!result.ok) {
+    // The guarded DELETE affected 0 rows — the campaign went active under us
+    // (TOCTOU) or vanished. Treat the race as in_use; nothing was removed.
+    return { ok: false, error: { kind: "in_use" } };
+  }
+
+  // Post-commit best-effort file cleanup — never fail the action on a unlink error.
+  for (const storagePath of result.storagePaths) {
+    try {
+      deleteAttachment(storagePath);
+    } catch {
+      // A disk-only leftover is harmless (the rows are already gone).
+    }
+  }
+  return { ok: true };
 }

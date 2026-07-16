@@ -26,9 +26,11 @@ import {
   parseUploadedCsvCore,
   saveRecipientSetCore,
   renameRecipientSetCore,
+  deleteRecipientSetCore,
   type ParseResult,
   type SaveResult,
   type RenameResult,
+  type DeleteResult,
 } from "./actions-core";
 
 // Type-only re-exports are erased at compile time, so they are NOT registered as
@@ -38,6 +40,7 @@ export type {
   ParseResult,
   SaveResult,
   RenameResult,
+  DeleteResult,
   ActionError,
 } from "./actions-core";
 
@@ -89,6 +92,27 @@ export async function renameList(
   if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
 
   const result = await renameRecipientSetCore(userId, id, label);
+  if (result.ok) {
+    const { revalidatePath } = await import("next/cache");
+    revalidatePath("/lists");
+  }
+  return result;
+}
+
+/**
+ * deleteList (mdt): auth → owner-scoped delete. Rejects unauthenticated callers
+ * before any work, then delegates to `deleteRecipientSetCore`, which guards the
+ * in-use case (a campaign references the list → blocked), owner-scopes the DELETE
+ * by AND(id, userId) (a client `id` is only a proposal — T-mdt-01 / IDOR), and
+ * unlinks the stored CSV. On success revalidates the Lists surface so the removed
+ * list drops off the next render. A referenced list returns `in_use`.
+ */
+export async function deleteList(id: unknown): Promise<DeleteResult> {
+  const { auth } = await import("@clerk/nextjs/server");
+  const { userId } = await auth();
+  if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
+
+  const result = await deleteRecipientSetCore(userId, id);
   if (result.ok) {
     const { revalidatePath } = await import("next/cache");
     revalidatePath("/lists");

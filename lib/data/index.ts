@@ -28,6 +28,8 @@ export {
   getRecipientSetForUser,
   renameRecipientSet,
   setAttachmentColumnForUser,
+  countCampaignsForRecipientSet,
+  deleteRecipientSetForUser,
   type PersistableRecipientSet,
 } from "./recipients";
 
@@ -54,8 +56,10 @@ export {
   getCampaignForUser,
   enqueueCampaign,
   countActiveCampaignsForRecipientSet,
+  deleteCampaignForUser,
   listCampaignsForUser,
   getSendRecordsForCampaign,
   getCampaignProgressRow,
   type PersistableCampaign,
+  type DeleteCampaignResult,
 } from "./campaigns";

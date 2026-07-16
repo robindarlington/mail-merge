@@ -18,10 +18,14 @@
  * D-04); it never constructs a Database.
  */
 
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { recipient_sets, type NewRecipientSet } from "@/lib/db/schema";
+import {
+  campaigns,
+  recipient_sets,
+  type NewRecipientSet,
+} from "@/lib/db/schema";
 
 /**
  * The persistable fields for a recipient-set insert. `userId` is deliberately
@@ -103,6 +107,48 @@ export function setAttachmentColumnForUser(
   return db
     .update(recipient_sets)
     .set({ attachment_column: attachmentColumn })
+    .where(and(eq(recipient_sets.id, id), eq(recipient_sets.userId, userId)))
+    .returning();
+}
+
+/**
+ * Count the caller's campaigns that reference a recipient set, across ALL statuses
+ * (draft, queued, running, completed, failed) — the delete-guard for a list (mdt).
+ * DISTINCT from `countActiveCampaignsForRecipientSet` (queued/running only): a list
+ * referenced by ANY campaign cannot be deleted, because `campaigns.recipient_set_id`
+ * is NOT NULL with no cascade, so a raw delete would violate the FK and nulling the
+ * reference is impossible — blocking is the only safe, history-preserving option.
+ * Owner-scoped: a cross-tenant set counts zero (AUTH-02).
+ */
+export async function countCampaignsForRecipientSet(
+  userId: string,
+  setId: number,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(campaigns)
+    .where(
+      and(
+        eq(campaigns.userId, userId),
+        eq(campaigns.recipient_set_id, setId),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
+/**
+ * Delete one of the caller's recipient sets and return the removed row(s). The
+ * DELETE is scoped by AND(id, userId) — a cross-tenant (or absent) id removes ZERO
+ * rows and returns an empty array (T-mdt-01 / IDOR). There is deliberately NO
+ * delete-by-id-alone path. The caller MUST first consult
+ * {@link countCampaignsForRecipientSet} to refuse deleting a list any campaign
+ * references (the FK block above), and unlink the stored CSV only on a non-empty
+ * result (row-first).
+ */
+export function deleteRecipientSetForUser(userId: string, id: number) {
+  // DELETE filtered by AND(id, userId) on this line — never delete-by-id alone (owner-filter, AUTH-02 grep gate).
+  return db
+    .delete(recipient_sets)
     .where(and(eq(recipient_sets.id, id), eq(recipient_sets.userId, userId)))
     .returning();
 }

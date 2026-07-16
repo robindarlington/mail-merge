@@ -115,6 +115,12 @@ function parseFailureFor(error: ActionError): ParseFailure {
         target: "file",
         message: "That file isn't a CSV. Upload a file that ends in .csv.",
       };
+    // `in_use` / `not_found` belong to the list-DELETE action (deleteList); the
+    // upload/parse/save flow here never produces them, but the shared ActionError
+    // union includes them, so the exhaustive switch handles them with a neutral
+    // retry message rather than falling through.
+    case "in_use":
+    case "not_found":
     case "unknown":
       return {
         target: "alert",

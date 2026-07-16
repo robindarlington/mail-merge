@@ -13,7 +13,7 @@
  * dev→container boundary).
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -53,4 +53,28 @@ export function readUpload(storagePath: string): Buffer {
     throw new Error("resolved upload path escaped the uploads directory");
   }
   return readFileSync(full);
+}
+
+/**
+ * Delete a previously-stored CSV file. Best-effort: a MISSING file (ENOENT) is
+ * tolerated silently so a caller can treat the unlink as idempotent (the DB row
+ * is the source of truth; a disk-only leftover is harmless — mirrors the worker's
+ * maintenance sweep discipline).
+ *
+ * SECURITY (V12 / T-mdt-03): `storagePath` is resolved against UPLOADS_DIR with the
+ * SAME prefix guard as {@link readUpload}, so a traversal name like
+ * `../../etc/passwd` (which would resolve outside the dir) THROWS before any unlink.
+ * The path MUST originate from a userId-scoped recipient_sets row, never the client.
+ */
+export function deleteUpload(storagePath: string): void {
+  const full = resolve(UPLOADS_DIR, storagePath);
+  if (full !== UPLOADS_DIR && !full.startsWith(UPLOADS_DIR + sep)) {
+    throw new Error("resolved upload path escaped the uploads directory");
+  }
+  try {
+    unlinkSync(full);
+  } catch (e) {
+    // A missing file is fine (already gone) — swallow ENOENT, rethrow anything else.
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
 }

@@ -22,7 +22,7 @@ const TMP_DIR = mkdtempSync(join(tmpdir(), "csv-storage-"));
 const UPLOADS_DIR = join(TMP_DIR, "uploads");
 process.env.UPLOADS_PATH = UPLOADS_DIR;
 
-const { writeUpload, readUpload } = await import("./storage");
+const { writeUpload, readUpload, deleteUpload } = await import("./storage");
 
 after(() => {
   rmSync(TMP_DIR, { recursive: true, force: true });
@@ -74,4 +74,26 @@ test("readUpload rejects a traversal path that escapes UPLOADS_DIR (V12 / T-4-TR
 test("readUpload accepts a relative name that stays inside UPLOADS_DIR", () => {
   const { storagePath } = writeUpload(Buffer.from("email\nc@x.com\n", "utf8"));
   assert.doesNotThrow(() => readUpload(storagePath));
+});
+
+test("deleteUpload removes the stored file (mdt)", () => {
+  const { storagePath } = writeUpload(Buffer.from("email\nd@x.com\n", "utf8"));
+  const full = resolve(UPLOADS_DIR, storagePath);
+  assert.ok(existsSync(full), "file exists before delete");
+  deleteUpload(storagePath);
+  assert.ok(!existsSync(full), "file is gone after delete");
+});
+
+test("deleteUpload tolerates a missing file (idempotent, no throw)", () => {
+  const { storagePath } = writeUpload(Buffer.from("email\ne@x.com\n", "utf8"));
+  deleteUpload(storagePath);
+  // A second delete of the now-missing file must NOT throw (ENOENT swallowed).
+  assert.doesNotThrow(() => deleteUpload(storagePath));
+});
+
+test("deleteUpload rejects a traversal path before any unlink (T-mdt-03)", () => {
+  assert.throws(
+    () => deleteUpload("../../etc/passwd"),
+    /resolved upload path escaped the uploads directory/,
+  );
 });

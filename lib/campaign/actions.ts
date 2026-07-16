@@ -27,6 +27,7 @@ import {
   buildConfirmSummaryCore,
   enqueueCampaignCore,
   getCampaignProgressCore,
+  deleteCampaignCore,
   type TestSendInput,
   type TestSendResult,
   type PrepareInput,
@@ -35,8 +36,9 @@ import {
   type SummaryResult,
   type EnqueueResult,
   type ProgressResult,
+  type DeleteCampaignResult,
 } from "./actions-core";
-import { TEST_SEND_DELAY_MS } from "./schema";
+import { campaignIdSchema, TEST_SEND_DELAY_MS } from "./schema";
 
 // Type-only re-exports are erased at compile time, so they are NOT registered as
 // server actions — the campaign UI imports its contract from here.
@@ -50,6 +52,8 @@ export type {
   EnqueueResult,
   ProgressData,
   ProgressResult,
+  DeleteCampaignError,
+  DeleteCampaignResult,
 } from "./actions-core";
 
 /**
@@ -129,4 +133,32 @@ export async function getCampaignProgress(
   const { userId } = await auth();
   if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
   return getCampaignProgressCore(userId, input);
+}
+
+/**
+ * deleteCampaign (mdt): auth → validate id → delete. Re-derives `userId`
+ * server-side; a client-supplied `id` is only a proposal — the core owner-scopes it
+ * (T-mdt-01 IDOR). Coerces the id with the shared `campaignIdSchema` (a
+ * missing/non-numeric/0/negative id fails as `validation` before any DB touch), then
+ * delegates to `deleteCampaignCore`. On success revalidates /campaigns so the gone
+ * campaign drops off the history list. A queued/running campaign returns `in_use`.
+ */
+export async function deleteCampaign(
+  id: unknown,
+): Promise<DeleteCampaignResult> {
+  const { auth } = await import("@clerk/nextjs/server");
+  const { userId } = await auth();
+  if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
+
+  const parsed = campaignIdSchema.safeParse(id);
+  if (!parsed.success) {
+    return { ok: false, error: { kind: "validation", issues: parsed.error.issues } };
+  }
+
+  const result = await deleteCampaignCore(userId, parsed.data);
+  if (result.ok) {
+    const { revalidatePath } = await import("next/cache");
+    revalidatePath("/campaigns");
+  }
+  return result;
 }

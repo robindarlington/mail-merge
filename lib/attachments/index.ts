@@ -24,6 +24,7 @@ export {
   writeAttachment,
   resolveAttachmentPath,
   attachmentExists,
+  deleteAttachment,
 } from "./storage";
 
 export { computeAttachmentMatch } from "./match";
