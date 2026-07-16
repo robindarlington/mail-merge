@@ -59,14 +59,34 @@ export function createAttachment(userId: string, values: PersistableAttachment) 
 }
 
 /**
- * List the caller's PENDING uploads (campaign_id IS NULL), newest first. Scoped to
- * `userId` — the only pre-campaign list path, so USER_B's uploads never surface in
- * USER_A's compose window (AUTH-02).
+ * List the caller's PENDING uploads, newest first — an upload is "pending" for the
+ * compose surface when it is either UNSTAMPED (campaign_id IS NULL) OR stamped to
+ * one of THIS user's still-DRAFT campaigns (WR-01). Opening the confirm dialog runs
+ * prepare, which stamps every pending upload onto a fresh draft; if the user then
+ * cancels and reloads /compose, an unstamped-only filter would make those files
+ * vanish (empty list, spurious "missing attachments" block, and a duplicate-name
+ * guard that lets a second copy through). Treating draft-stamped rows as still
+ * pending — the EXACT predicate `stampCampaignOnPendingAttachments` re-claims on —
+ * keeps cancel/refresh non-destructive. A queued/running campaign's attachments
+ * (committed to a real send) are never surfaced here. Scoped to `userId` — USER_B's
+ * uploads never surface in USER_A's compose window (AUTH-02).
  */
 export function listPendingAttachmentsForUser(userId: string) {
-  // findMany scoped to userId + unstamped on this line (owner-filter, AUTH-02 grep gate).
+  // The user's still-draft campaign ids — the re-claim window (matches the stamp).
+  const stillDraftCampaigns = db
+    .select({ id: campaigns.id })
+    .from(campaigns)
+    .where(and(eq(campaigns.userId, userId), eq(campaigns.status, "draft")));
+
+  // findMany scoped to userId + unstamped-or-still-draft (owner-filter, AUTH-02 grep gate).
   return db.query.attachments.findMany({
-    where: and(eq(attachments.userId, userId), isNull(attachments.campaign_id)),
+    where: and(
+      eq(attachments.userId, userId),
+      or(
+        isNull(attachments.campaign_id),
+        inArray(attachments.campaign_id, stillDraftCampaigns),
+      ),
+    ),
     orderBy: desc(attachments.created_at),
   });
 }

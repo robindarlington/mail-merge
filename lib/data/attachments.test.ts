@@ -263,6 +263,39 @@ test("getAttachmentByIdForCampaign resolves the inverted link scoped by campaign
   assert.equal(wrong, undefined, "a mismatched campaign_id resolves to not-found");
 });
 
+test("listPendingAttachmentsForUser includes draft-stamped uploads but excludes queued-stamped ones (WR-01)", async () => {
+  // Draft-stamped: prepare stamps pending uploads onto a fresh draft; cancel/refresh
+  // must NOT hide them, so a draft-stamped row is still "pending" for compose.
+  const draftC = await seedDraftCampaign(USER_A, "wr01-draft");
+  const [draftRow] = await createAttachment(USER_A, {
+    filename: "wr01-draft.pdf",
+    storage_path: "uuid-wr01-draft.bin",
+    size_bytes: 3,
+  });
+  await stampCampaignOnPendingAttachments(USER_A, draftC);
+  const afterDraftStamp = await listPendingAttachmentsForUser(USER_A);
+  assert.ok(
+    afterDraftStamp.some((a) => a.id === draftRow.id),
+    "a draft-stamped upload is still pending (cancel/refresh keeps it visible)",
+  );
+
+  // Queued-stamped: committed to a real send → no longer pending. Stamp a NEW upload
+  // onto a fresh draft, enqueue it, and confirm that specific row drops out.
+  const queuedC = await seedDraftCampaign(USER_A, "wr01-queued");
+  const [queuedRow] = await createAttachment(USER_A, {
+    filename: "wr01-queued.pdf",
+    storage_path: "uuid-wr01-queued.bin",
+    size_bytes: 4,
+  });
+  await stampCampaignOnPendingAttachments(USER_A, queuedC);
+  await enqueueCampaign(USER_A, queuedC);
+  const afterQueue = await listPendingAttachmentsForUser(USER_A);
+  assert.ok(
+    !afterQueue.some((a) => a.id === queuedRow.id),
+    "a queued campaign's attachment is no longer pending (committed to a send)",
+  );
+});
+
 test("setAttachmentColumnForUser persists the column for the owner and reads back", async () => {
   const [updated] = await setAttachmentColumnForUser(USER_A, A_SET_ID, "file");
   assert.ok(updated, "the owner's row is returned by the UPDATE");
