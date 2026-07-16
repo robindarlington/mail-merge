@@ -86,6 +86,7 @@ export type ActionError =
   | { kind: "no_smtp_config" }
   | { kind: "parse_error" }
   | { kind: "already_queued" }
+  | { kind: "attachments_blocked" }
   | { kind: "send_failed"; raw: string }
   | { kind: "unknown"; raw: string };
 
@@ -470,11 +471,16 @@ export async function buildConfirmSummaryCore(
   // Attachment presence/size — recomputed SERVER-SIDE via the SHARED matcher the
   // compose card also runs, so the confirm gate's numbers can never diverge from it
   // (T-07-09). We match the campaign's OWN stamped attachments (never a client set):
-  // the column is the user's saved choice or the auto-detect, and empty cells are
-  // send-without-attachment (not a miss — computeAttachmentMatch handles that). This
-  // recomputes NOTHING attachment-related by hand.
+  // the column is the user's saved choice, else auto-detect — but auto-detect must
+  // NEVER co-opt the email column. Email values end in a TLD (".com"), which is
+  // filename-shaped, so detectAttachmentColumn can false-positive on the email
+  // column; a spurious pick would flag every row of a plain no-attachment send as a
+  // missing file and wrongly BLOCK enqueue. An explicit saved choice is honored
+  // as-is; empty cells are send-without-attachment (computeAttachmentMatch handles
+  // that). This recomputes NOTHING attachment-related by hand.
+  const detected = detectAttachmentColumn(columns, rows);
   const attachmentColumn =
-    set.attachment_column ?? detectAttachmentColumn(columns, rows);
+    set.attachment_column ?? (detected === emailColumn ? null : detected);
   const uploaded = await listAttachmentsForCampaign(userId, campaign.id);
   const m = computeAttachmentMatch(columns, rows, attachmentColumn, uploaded);
 
@@ -553,6 +559,29 @@ export async function enqueueCampaignCore(
   if (!idParsed.success) {
     return { ok: false, error: { kind: "validation", issues: idParsed.error.issues } };
   }
+
+  // Server-side attachment gate BEFORE the flip (ATCH-02 / T-07-08): recompute the
+  // campaign's own presence/size numbers via buildConfirmSummaryCore (which runs the
+  // SHARED matcher against the campaign's STAMPED attachments) and BLOCK when any
+  // referenced file is missing or any row is oversize. A dimmed client button is
+  // never the gate — the block is enforced here, on the server. Because attachments
+  // were stamped at PREPARE (not enqueue), this recheck reads the campaign's OWN
+  // attachments, so a concurrent double-submit still sees them present and the block
+  // cannot misfire; the atomic 0-row flip below still decides the single winner.
+  //
+  // The gate only fires on a SUCCESSFULLY-summarized, owner-scoped campaign. A
+  // not_found (cross-tenant / bogus id) or parse_error is deliberately NOT
+  // short-circuited here — it falls through to the atomic DAL flip, whose 0-row
+  // guard yields the canonical `already_queued` for a cross-tenant/not-draft caller
+  // (T-5-IDOR / TEST-03), exactly as before this gate existed.
+  const summary = await buildConfirmSummaryCore(userId, { campaignId: idParsed.data });
+  if (
+    summary.ok &&
+    (summary.data.missingAttachmentCount > 0 || summary.data.oversizeRowCount > 0)
+  ) {
+    return { ok: false, error: { kind: "attachments_blocked" } };
+  }
+
   const flipped = await enqueueCampaignDal(userId, idParsed.data);
   if (flipped.length !== 1) {
     return { ok: false, error: { kind: "already_queued" } };
