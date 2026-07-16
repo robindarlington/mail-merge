@@ -23,7 +23,11 @@ findings:
   warning: 7
   info: 4
   total: 13
-status: issues_found
+status: fixed
+fixed_at: 2026-07-16
+fix_scope: critical+warning
+fixed: 9
+remaining: 4 info (out of fix scope)
 ---
 
 # Phase 8: Code Review Report
@@ -60,6 +64,7 @@ port published on all host interfaces).
 
 ### CR-01: Orphan sweep unlinks a relative `storage_path` against the process CWD — files are never deleted, producing a permanent, untracked disk leak
 
+**Status:** FIXED — commit `2917e45` (unlink routes through `resolveAttachmentPath`; tests use relative paths + real-file integration tests incl. traversal rejection)
 **File:** `worker/index.ts:113` (root cause), `lib/worker/maintenance.ts:139` (call site)
 **Severity:** BLOCKER
 **Issue:** Attachment rows store `storage_path` as a **relative** opaque name
@@ -101,6 +106,7 @@ the file is actually gone after the sweep with the production `unlink` wiring.
 
 ### CR-02: docker-compose builds the shared image twice with divergent build args — the `mail-merge:latest` tag race can ship a web image with an empty Clerk publishable key
 
+**Status:** FIXED — commit `6a7bf21` (worker `build:` block removed; web is the single build owner)
 **File:** `docker-compose.yml:75-79` (worker `build:` block), cf. lines 29-45 (web)
 **Severity:** BLOCKER
 **Issue:** Both services declare `build:` AND `image: mail-merge:latest`, but
@@ -131,6 +137,7 @@ on the worker but duplicate the exact `args:` block — worse, still two builds.
 
 ### WR-01: TOCTOU race in `sweepOrphanAttachments` — a draft campaign enqueued between the candidate SELECT and the per-row DELETE loses its attachment
 
+**Status:** FIXED — commit `b0aa5fa` (full orphan predicate re-asserted in the DELETE; unlink/count only when `changes === 1`; deterministic regression test added)
 **File:** `lib/worker/maintenance.ts:111-146`
 **Issue:** Candidates are selected once (unstamped OR draft-stamped, aged), then
 deleted one-by-one with an **unconditional** `DELETE ... WHERE id = ?`
@@ -157,6 +164,7 @@ and only count/unlink when `changes === 1`.
 
 ### WR-02: Production `compose up` has the exact web-migrate vs worker-startup race the acceptance script had to serialize around
 
+**Status:** FIXED — commit `7b9f6c2` (web healthcheck probes the `campaigns` table read-only; worker gated with `depends_on: { web: { condition: service_healthy } }`)
 **File:** `docker-compose.yml:109-110`; cf. `scripts/redeploy-acceptance.sh:263-275`
 **Issue:** `depends_on: [web]` only orders container **start**, not readiness.
 On a fresh volume, the worker's `lib/db` opens `/data/app.db` at import and sets
@@ -175,6 +183,7 @@ open retry with backoff on SQLITE_BUSY.
 
 ### WR-03: No `restart:` policy on either service — a crashed worker silently halts all sending
 
+**Status:** FIXED — commit `740114b` (`restart: unless-stopped` on both services)
 **File:** `docker-compose.yml:28-110`
 **Issue:** Compose's default restart policy is `no`. The worker deliberately
 `process.exit(1)`s on a malformed env var (`worker/index.ts:53`), can lose the
@@ -187,6 +196,7 @@ restart policies; `init: true` and the drain path are unaffected).
 
 ### WR-04: The "hardened" runtime image ships the C/C++ build toolchain
 
+**Status:** FIXED — commit `ab9d608` (runtime stage now `FROM node:24-bookworm-slim` directly; toolchain'd `base` used only by deps/prod-deps/build stages)
 **File:** `Dockerfile:18-23`, `Dockerfile:72`
 **Issue:** `base` installs `python3 make g++` (needed only for `npm ci`'s
 native builds), and the `runtime` stage is `FROM base` — so the production
@@ -205,6 +215,7 @@ Only `deps`/`prod-deps`/`build` need the toolchain (keep those `FROM base`).
 
 ### WR-05: Web port published on all host interfaces — bypasses the Coolify proxy/TLS on the VPS
 
+**Status:** FIXED — commit `f733ce5` (`ports:` removed; `expose: ["3000"]` for the Coolify proxy network; acceptance override verified to still compose)
 **File:** `docker-compose.yml:70-71`
 **Issue:** `ports: ["3000:3000"]` binds 0.0.0.0:3000 on the host. Deployed via
 Coolify on a public VPS, this exposes the app as plaintext HTTP directly on
@@ -218,6 +229,7 @@ Docker network (`expose: ["3000"]` if documentation of the port is wanted).
 
 ### WR-06: One try/catch couples the two maintenance routines — a persistently failing checkpoint starves the orphan sweep and retries at poll cadence
 
+**Status:** FIXED — commit `f8fb532` (per-routine try/catch; stamps advanced in `finally` so failures retry at their interval, not per poll)
 **File:** `worker/index.ts:102-124`
 **Issue:** `checkpointWal` and `sweepOrphanAttachments` share a single `try`
 block, and the `lastCheckpointAt`/`lastSweepAt` stamps are advanced only after
@@ -238,6 +250,7 @@ if (isDue(lastCheckpointAt, WAL_CHECKPOINT_MS, nowMs)) {
 
 ### WR-07: Acceptance build retry loop discards all build output and misreports the attempt count
 
+**Status:** FIXED — commit `8ef8dc8` (each attempt logged to `$TMPDIR_ACCEPT/build.log`; tail printed on final failure; attempt count derived from `$BUILD_ATTEMPTS`)
 **File:** `scripts/redeploy-acceptance.sh:251-261`
 **Issue:** `compose build >/dev/null 2>&1` swallows stdout AND stderr for all 8
 attempts. The retry exists for one specific transient flake (SQLITE_BUSY page
