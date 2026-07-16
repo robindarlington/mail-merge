@@ -304,7 +304,12 @@ Plans:
   4. WAL checkpointing and attachment-orphan cleanup run as defined operational routines.
   5. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
-**Plans**: TBD
+**Plans**: 5 plans (4 + staging checkpoint)
+- [ ] 08-01-PLAN.md — Hardened Dockerfile: esbuild worker/migrate bundle, prod-deps prune, exec-form node CMD, non-root, ABI pin
+- [ ] 08-02-PLAN.md — Production docker-compose: init:true, raised stop_grace_period, exec-form commands, env/secret contract (.env.example)
+- [ ] 08-03-PLAN.md — Operational routines: idle-aware WAL wal_checkpoint(TRUNCATE) + attachment-orphan sweep (TDD, wired into worker loop)
+- [ ] 08-04-PLAN.md — Scripted redeploy acceptance test: compose stop/up + docker-kill, stub SMTP, no-double-send + data-survival assertions
+- [ ] 08-05-PLAN.md — [CHECKPOINT] Coolify staging deploy: env/secrets + Stop Grace Period, redeploy no-double-send verification (queued human checkpoint)
 **Research flag**: Mostly standard; verify the exact Coolify `stop_grace_period` Compose field behavior in the target Coolify version (community-verified, version-dependent).
 
 ### Phase 08.1: Agent access — standalone CLI + MCP server (INSERTED)
