@@ -38,7 +38,8 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { send_records, campaigns, type Campaign } from "@/lib/db/schema";
-import { getSmtpConfigByIdForUser } from "@/lib/data";
+import { getSmtpConfigByIdForUser, getAttachmentByIdForCampaign } from "@/lib/data";
+import { resolveAttachmentPath, attachmentExists } from "@/lib/attachments";
 import { decrypt } from "@/lib/crypto";
 import {
   createSmtpTransport,
@@ -47,6 +48,13 @@ import {
   throttle,
   type MailTransport,
 } from "@/lib/core";
+
+/**
+ * The error stamped on a row whose linked attachment vanished from disk before
+ * send time (ATCH-02). Copied from materialize's INVALID_ADDRESS_ERROR idiom: a
+ * fenced terminal failure, never a throw that aborts the batch (poison-pill rule).
+ */
+const ATTACHMENT_MISSING_ERROR = "rejected: attachment missing";
 
 /**
  * SMTP dial timeouts for the worker's transport (CR-01). Every phase is capped
@@ -182,15 +190,66 @@ export async function runCampaign(
         .all();
       if (claimedRow.length === 0) continue; // row taken by another worker — do NOT send
 
+      // Resolve this row's attachment STRICTLY via its own send_record FK
+      // (attachment_id → opaque storage_path), never a CSV-provided path (ATCH-03 /
+      // T-07-11). A null attachment_id means the row sends without an attachment.
+      const att =
+        rec.attachment_id != null
+          ? await getAttachmentByIdForCampaign(campaign.id, rec.attachment_id)
+          : null;
+
+      // A linked file that VANISHED from disk fails ONLY this row through the SAME
+      // fenced 'sending'→'failed' transaction (bumping failed_count) — sendOne is
+      // NOT called and nothing throws, so the campaign continues (poison-pill rule /
+      // T-07-12). The presence check runs the traversal guard on a DB-sourced path.
+      if (att && !attachmentExists(att.storage_path)) {
+        const written = db.transaction((tx) => {
+          const upd = tx
+            .update(send_records)
+            .set({
+              status: "failed",
+              error: ATTACHMENT_MISSING_ERROR,
+              attempts: sql`${send_records.attempts} + 1`,
+            })
+            .where(
+              and(
+                eq(send_records.id, rec.id),
+                eq(send_records.status, "sending"),
+              ),
+            )
+            .returning({ id: send_records.id })
+            .all();
+          if (upd.length === 0) return false;
+          tx.update(campaigns)
+            .set({ failed_count: sql`${campaigns.failed_count} + 1` })
+            .where(eq(campaigns.id, campaign.id))
+            .run();
+          return true;
+        });
+        if (written) failed++;
+        // Still heartbeat + throttle for this processed row (invariants below).
+        opts.onHeartbeat?.(campaign.id);
+        if (i < pending.length - 1) await throttle(delayMs);
+        continue;
+      }
+
       // sendOne NEVER throws — a failure comes back as a structured value, so one
       // bad recipient cannot abort the batch (SEND-04). The await is deliberately
-      // NOT inside any db.transaction(...) — better-sqlite3 is synchronous.
+      // NOT inside any db.transaction(...) — better-sqlite3 is synchronous. When a
+      // present attachment is linked, forward it as { filename, path } — the
+      // resolved path is the traversal-checked absolute path; a null `att` omits the
+      // key entirely so a no-attachment send is byte-for-byte unchanged.
       const res = await sendOne({
         transport,
         from,
         to: rec.to_addr,
         subject: rec.merged_subject,
         body: rec.merged_body,
+        ...(att && {
+          attachments: [
+            { filename: att.filename, path: resolveAttachmentPath(att.storage_path) },
+          ],
+        }),
       });
 
       // The terminal row write + counter bump are one synchronous transaction so a
