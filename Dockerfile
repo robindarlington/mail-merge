@@ -15,9 +15,12 @@
 #   - the server-only Clerk secret + CREDENTIAL_ENC_KEY are NEVER a build ARG/ENV (no layer leak)
 
 # Pin Node to the host/runtime ABI (24 LTS) so better-sqlite3 prebuilds match.
+# `base` (toolchain'd) is used ONLY by the build-side stages below; the runtime
+# stage starts from the clean slim image so no compiler ever ships (WR-04).
 FROM node:24-bookworm-slim AS base
 WORKDIR /app
 # better-sqlite3 compiles a native addon; ship build tooling for npm ci.
+# BUILD STAGES ONLY — the runtime stage must NEVER inherit this layer.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
@@ -69,7 +72,14 @@ RUN npm run build \
 # service `command` chooses the entrypoint:
 #   web    -> /app/web-entrypoint.sh  (default CMD: migrate then exec server.js)
 #   worker -> node worker.js          (compose override, exec form)
-FROM base AS runtime
+# Clean slim base — NOT `base` (WR-04): the toolchain'd `base` stage would ship
+# python3/make/g++ in the production image of an internet-facing multi-tenant
+# app, widening the post-exploit attack surface (+~250-300 MB) and contradicting
+# the hardening goal. The native better-sqlite3 addon is already compiled in
+# `prod-deps` (same node:24-bookworm-slim glibc ABI), so nothing at runtime
+# needs a compiler.
+FROM node:24-bookworm-slim AS runtime
+WORKDIR /app
 ENV NODE_ENV=production
 # Standalone server output (server.js + minimal traced tree) + static assets.
 COPY --from=build /app/.next/standalone ./
