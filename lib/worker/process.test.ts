@@ -19,24 +19,30 @@
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// --- Provision an isolated temp DB + key BEFORE any DB import ------------------
+// --- Provision an isolated temp DB + key + uploads dir BEFORE any DB import ----
 const TMP_DIR = mkdtempSync(join(tmpdir(), "worker-process-"));
 process.env.DATABASE_PATH = join(TMP_DIR, "app.db");
 process.env.CREDENTIAL_ENC_KEY = Buffer.from(
   "0123456789abcdef0123456789abcdef",
   "utf8",
 ).toString("base64");
+const UPLOADS_DIR = join(TMP_DIR, "uploads");
+process.env.UPLOADS_PATH = UPLOADS_DIR;
+mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // A distinctive marker so a redaction assertion can grep for a credential leak.
 const MARKER_PASSWORD = "MARKER-SECRET-PASSWORD-06-02";
 
 // Dynamic imports so the env vars above are in effect at module-eval time.
-const { db, connection, send_records, campaigns } = await import("@/lib/db");
+const { db, connection, send_records, campaigns, attachments } = await import(
+  "@/lib/db"
+);
 const { runCampaign, WORKER_TRANSPORT_TIMEOUTS } = await import("./process");
+const { createAttachment } = await import("@/lib/data");
 const { createRecipientSet } = await import("@/lib/data");
 const { createTemplate } = await import("@/lib/data");
 const { createSmtpConfig } = await import("@/lib/data");
@@ -61,7 +67,13 @@ let smtpConfigId = 0;
  */
 function stubTransport(opts: { verifyOk?: boolean; failOnSend?: number } = {}) {
   const calls = { verify: 0, send: 0 };
-  const sent: { from: string; to: string; subject: string; text: string }[] = [];
+  const sent: {
+    from: string;
+    to: string;
+    subject: string;
+    text: string;
+    attachments?: { filename: string; path: string }[];
+  }[] = [];
   const order: string[] = [];
   const transport = {
     calls,
@@ -75,7 +87,13 @@ function stubTransport(opts: { verifyOk?: boolean; failOnSend?: number } = {}) {
       }
       return true;
     },
-    async sendMail(m: { from: string; to: string; subject: string; text: string }) {
+    async sendMail(m: {
+      from: string;
+      to: string;
+      subject: string;
+      text: string;
+      attachments?: { filename: string; path: string }[];
+    }) {
       const idx = calls.send;
       calls.send++;
       order.push("send");
@@ -87,6 +105,40 @@ function stubTransport(opts: { verifyOk?: boolean; failOnSend?: number } = {}) {
     },
   };
   return transport as typeof transport & MailTransport;
+}
+
+/**
+ * Seed a campaign-scoped attachment. Writes real bytes to UPLOADS_DIR unless
+ * `onDisk:false` (the send-time missing-file case). Returns the attachment id +
+ * relative storage path so a caller can stamp send_records.attachment_id.
+ */
+async function seedAttachment(
+  campaignId: number,
+  filename: string,
+  onDisk = true,
+): Promise<{ id: number; storage_path: string }> {
+  const storage_path = `${filename}-${Date.now()}-${Math.random().toString(36).slice(2)}.bin`;
+  if (onDisk) writeFileSync(join(UPLOADS_DIR, storage_path), "PDF-BYTES");
+  const [row] = await createAttachment(USER, {
+    filename,
+    storage_path,
+    size_bytes: 9,
+  });
+  // Stamp campaign_id directly (mirrors what prepare/stamp does) so the worker's
+  // getAttachmentByIdForCampaign resolves the inverted link.
+  await db
+    .update(attachments)
+    .set({ campaign_id: campaignId })
+    .where(eq(attachments.id, row.id));
+  return { id: row.id, storage_path };
+}
+
+/** Point a seeded send_record at an attachment (the inverted FK materialize stamps). */
+async function linkAttachment(sendRecordId: number, attachmentId: number) {
+  await db
+    .update(send_records)
+    .set({ attachment_id: attachmentId })
+    .where(eq(send_records.id, sendRecordId));
 }
 
 before(async () => {
@@ -407,4 +459,77 @@ test("onHeartbeat fires once per processed row", async () => {
 
   assert.equal(beats, 3, "heartbeat fires once per row");
   assert.ok(seen.every((id) => id === c.id), "heartbeat carries the campaign id");
+});
+
+test("a linked, on-disk attachment is forwarded to sendMail (filename + resolved path) and the row sends (ATCH-01)", async () => {
+  const c = await freshCampaign();
+  const [idPlain, idWithAtt] = await seedPending(c.id, [
+    "plain@ex.com", // no attachment_id → unchanged send
+    "att@ex.com", // linked to a real on-disk file
+  ]);
+  const att = await seedAttachment(c.id, "welcome.pdf", true);
+  await linkAttachment(idWithAtt, att.id);
+
+  const stub = stubTransport({ verifyOk: true });
+  const result = await runCampaign(c, { transportOverride: stub, delayMs: 0 });
+
+  assert.deepEqual(result, { ok: true, sent: 2, failed: 0 });
+
+  const plainSent = stub.sent.find((m) => m.to === "plain@ex.com")!;
+  assert.equal(
+    plainSent.attachments,
+    undefined,
+    "a row with no attachment_id sends with NO attachments key (byte-for-byte unchanged)",
+  );
+
+  const attSent = stub.sent.find((m) => m.to === "att@ex.com")!;
+  assert.ok(attSent.attachments, "the linked row carries an attachments array");
+  assert.equal(attSent.attachments!.length, 1);
+  assert.equal(
+    attSent.attachments![0].filename,
+    "welcome.pdf",
+    "the ORIGINAL filename is forwarded to nodemailer",
+  );
+  assert.ok(
+    attSent.attachments![0].path.endsWith(att.storage_path),
+    "the resolved absolute path (from the opaque storage path) is forwarded, never a CSV path",
+  );
+
+  const rows = await recordsFor(c.id);
+  assert.ok(rows.every((r) => r.status === "sent"), "both rows delivered");
+});
+
+test("an attachment whose file is MISSING on disk fails only that row (rejected: attachment missing) and the campaign continues (ATCH-02 / poison-pill)", async () => {
+  const c = await freshCampaign();
+  const ids = await seedPending(c.id, [
+    "gone@ex.com", // linked to a DB attachment whose file was never written
+    "next@ex.com", // must STILL send after the missing-file row
+  ]);
+  // onDisk:false → the DB row exists but the file is absent at send time.
+  const missing = await seedAttachment(c.id, "gone.pdf", false);
+  await linkAttachment(ids[0], missing.id);
+
+  const stub = stubTransport({ verifyOk: true });
+  const result = await runCampaign(c, { transportOverride: stub, delayMs: 0 });
+
+  assert.deepEqual(result, { ok: true, sent: 1, failed: 1 });
+  // sendOne is NEVER called for the missing-file row — only the next row is sent.
+  assert.equal(stub.calls.send, 1, "the missing-file row was NOT dialed; only the next row sent");
+  assert.deepEqual(
+    stub.sent.map((m) => m.to),
+    ["next@ex.com"],
+    "the campaign continued past the poison-pill row",
+  );
+
+  const rows = await recordsFor(c.id);
+  const gone = rows.find((r) => r.to_addr === "gone@ex.com")!;
+  const next = rows.find((r) => r.to_addr === "next@ex.com")!;
+  assert.equal(gone.status, "failed");
+  assert.equal(gone.error, "rejected: attachment missing", "fenced missing-file failure");
+  assert.equal(gone.attempts, 1, "attempts incremented on the graceful fail");
+  assert.equal(next.status, "sent", "the following row still delivered");
+
+  const camp = await campaignRow(c.id);
+  assert.equal(camp!.failed_count, 1, "failed_count bumped for the missing-file row");
+  assert.equal(camp!.sent_count, 1, "sent_count bumped only for the delivered row");
 });
