@@ -15,6 +15,8 @@ export type { MergeAnalysis } from "./merge";
 export { parseCsv, detectEmailColumn, countInvalidEmails, isValidEmail } from "./csv";
 export type { ParsedCsv, Row as CsvRow } from "./csv";
 
+export { detectAttachmentColumn } from "./attachment-column";
+
 export {
   createSmtpTransport,
   verifyTransport,
