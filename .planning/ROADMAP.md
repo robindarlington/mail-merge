@@ -287,7 +287,7 @@ Plans:
 - [x] 07-02-PLAN.md — userId-scoped attachments DAL (IDOR, idempotent re-prepare-safe stamp, inverted-link resolver) + shared match seam (matchAttachments) + upload/list/delete/confirm-column actions + attachment_column persistence + bodySizeLimit bump (wave 2)
 - [x] 07-03-PLAN.md — Confirm-gate: idempotent prepare-time stamping + server-authoritative match/presence/size validation (shared matcher) + blocking enqueue (wave 3)
 - [x] 07-04-PLAN.md — Worker send-path: additive transport attachments + send_records.attachment_id linkage at materialize (shared file links every row) + graceful rejected-attachment-missing per-row fail (wave 3)
-- [ ] 07-05-PLAN.md — UI: compose attachments card (server match summary via matchAttachments) + editor/page host wiring + confirm-dialog attachment lines/block + results table & CSV attachment column (wave 4)
+- [x] 07-05-PLAN.md — UI: compose attachments card (server match summary via matchAttachments) + editor/page host wiring + confirm-dialog attachment lines/block + results table & CSV attachment column (wave 4)
 - [ ] 07-06-PLAN.md — [CHECKPOINT] Coolify staging redeploy + per-row attachment walkthrough (wave 5)
 
 ### Phase 8: Docker / Coolify Packaging + Operational Hardening
