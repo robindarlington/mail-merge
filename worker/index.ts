@@ -98,15 +98,30 @@ function main(): void {
     // !inFlight` — so the worker is the single writer with no tick in flight
     // (T-08-10). Run the two low-cadence routines when due, SYNCHRONOUSLY and
     // BEFORE claiming any campaign, so they never overlap a send tick and never
-    // sit in the drain path (we already returned above when `stopping`). A
-    // maintenance failure logs its message only and never crashes the poll loop.
-    try {
-      const nowMs = Date.now();
-      if (isDue(lastCheckpointAt, WAL_CHECKPOINT_MS, nowMs)) {
+    // sit in the drain path (we already returned above when `stopping`).
+    //
+    // WR-06: each routine gets its OWN try/catch, and its cadence stamp is
+    // advanced in `finally` — success OR failure. A shared try block would let a
+    // persistently failing checkpoint (a) skip the sweep in the same block and
+    // (b) never advance its stamp, retrying at POLL cadence (every ~2 s of log
+    // spam) instead of its intended interval. Failures log the message STRING
+    // only — never a raw Error that could carry config (T-06-12) — and never
+    // crash the poll loop.
+    const nowMs = Date.now();
+    if (isDue(lastCheckpointAt, WAL_CHECKPOINT_MS, nowMs)) {
+      try {
         checkpointWal(connection, logger);
-        lastCheckpointAt = nowMs;
+      } catch (err: unknown) {
+        logger.error(
+          { err: (err as Error)?.message ?? String(err) },
+          "wal checkpoint error",
+        );
+      } finally {
+        lastCheckpointAt = nowMs; // retry next INTERVAL, not next poll
       }
-      if (isDue(lastSweepAt, ORPHAN_SWEEP_MS, nowMs)) {
+    }
+    if (isDue(lastSweepAt, ORPHAN_SWEEP_MS, nowMs)) {
+      try {
         sweepOrphanAttachments({
           db,
           now: Math.floor(nowMs / 1000),
@@ -121,14 +136,14 @@ function main(): void {
           unlink: (p) => unlinkSync(resolveAttachmentPath(p)),
           logger,
         });
-        lastSweepAt = nowMs;
+      } catch (err: unknown) {
+        logger.error(
+          { err: (err as Error)?.message ?? String(err) },
+          "orphan sweep error",
+        );
+      } finally {
+        lastSweepAt = nowMs; // retry next INTERVAL, not next poll
       }
-    } catch (err: unknown) {
-      // Message STRING only — never a raw Error that could carry config (T-06-12).
-      logger.error(
-        { err: (err as Error)?.message ?? String(err) },
-        "maintenance error",
-      );
     }
 
     inFlight = true;
