@@ -21,19 +21,32 @@
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // --- Provision an isolated temp DB + encryption key BEFORE any DB import ------
 const TMP_DIR = mkdtempSync(join(tmpdir(), "worker-maintenance-"));
 process.env.DATABASE_PATH = join(TMP_DIR, "app.db");
+// UPLOADS_PATH must be pinned BEFORE lib/attachments/storage is imported — the
+// module resolves it once at load. The integration test below writes REAL files
+// here and sweeps them with the production unlink wiring (CR-01 regression).
+const UPLOADS_DIR = join(TMP_DIR, "uploads");
+process.env.UPLOADS_PATH = UPLOADS_DIR;
 process.env.CREDENTIAL_ENC_KEY = Buffer.from(
   "0123456789abcdef0123456789abcdef",
   "utf8",
 ).toString("base64");
 
 const { db, connection, attachments, campaigns } = await import("@/lib/db");
+const { resolveAttachmentPath } = await import("@/lib/attachments/storage");
 const { checkpointWal, sweepOrphanAttachments, isDue } = await import(
   "./maintenance"
 );
@@ -134,7 +147,10 @@ function insertAttachment(opts: {
       userId: USER,
       campaign_id: opts.campaignId,
       filename: `secret-file-${attachSeq}.pdf`,
-      storage_path: opts.path ?? `/data/uploads/secret-${attachSeq}.pdf`,
+      // RELATIVE opaque name — matches the production contract
+      // (lib/attachments/storage stores `<uuid>.bin`, never an absolute path).
+      // Absolute test paths previously masked the CR-01 resolution bug.
+      storage_path: opts.path ?? `secret-${attachSeq}.bin`,
       size_bytes: 1234,
       created_at: NOW - opts.ageDays * DAY,
     })
@@ -242,7 +258,7 @@ test("deletes the DB row BEFORE unlinking; an unlink failure increments unlinkFa
   const orphan = insertAttachment({
     campaignId: null,
     ageDays: 10,
-    path: "/data/uploads/will-fail.pdf",
+    path: "will-fail.bin",
   });
 
   const { logger } = makeLogger();
@@ -274,10 +290,63 @@ test("deletes the DB row BEFORE unlinking; an unlink failure increments unlinkFa
   );
 });
 
+// --- sweepOrphanAttachments: PRODUCTION unlink wiring (CR-01 regression) ------
+
+test("production wiring deletes the REAL file for a RELATIVE storage_path under UPLOADS_PATH", () => {
+  // Seed a real file under the temp UPLOADS_PATH using the RELATIVE opaque name
+  // exactly as lib/attachments/storage stores it. The sweep must resolve that
+  // relative name against UPLOADS_PATH (via resolveAttachmentPath) — a bare
+  // unlinkSync(storage_path) resolves against the process CWD, ENOENTs, and
+  // leaves the file permanently untracked (the CR-01 disk leak).
+  mkdirSync(UPLOADS_DIR, { recursive: true });
+  const relName = "cr01-regression.bin";
+  const absPath = join(UPLOADS_DIR, relName);
+  writeFileSync(absPath, "payload");
+  const orphan = insertAttachment({ campaignId: null, ageDays: 10, path: relName });
+
+  const { logger } = makeLogger();
+  const res = sweepOrphanAttachments({
+    db,
+    now: NOW,
+    orphanDays: ORPHAN_DAYS,
+    // EXACT production wiring from worker/index.ts — resolve then unlink.
+    unlink: (p) => unlinkSync(resolveAttachmentPath(p)),
+    logger,
+  });
+
+  assert.equal(res.unlinkFailures, 0, "the real unlink succeeded (no ENOENT)");
+  assert.equal(res.deletedFiles >= 1, true, "the file counted as deleted");
+  assert.equal(attachExists(orphan), false, "the DB row is gone");
+  assert.equal(existsSync(absPath), false, "the REAL file is gone from the uploads dir");
+});
+
+test("production wiring rejects a traversal storage_path without touching disk", () => {
+  const outside = join(TMP_DIR, "escape-me.bin");
+  writeFileSync(outside, "must survive");
+  const orphan = insertAttachment({
+    campaignId: null,
+    ageDays: 10,
+    path: "../escape-me.bin", // hostile/corrupt DB content — must be rejected
+  });
+
+  const { logger } = makeLogger();
+  const res = sweepOrphanAttachments({
+    db,
+    now: NOW,
+    orphanDays: ORPHAN_DAYS,
+    unlink: (p) => unlinkSync(resolveAttachmentPath(p)),
+    logger,
+  });
+
+  assert.equal(res.unlinkFailures >= 1, true, "the traversal path counted as a failure");
+  assert.equal(existsSync(outside), true, "the file OUTSIDE the uploads dir was NOT deleted");
+  assert.equal(attachExists(orphan), false, "the hostile row itself is still removed");
+});
+
 // --- sweepOrphanAttachments: count-only logging ------------------------------
 
 test("logs COUNTS ONLY — never a filename, storage path, or userId", () => {
-  const secretPath = "/data/uploads/TOP-SECRET-USER-DATA.pdf";
+  const secretPath = "TOP-SECRET-USER-DATA.bin";
   insertAttachment({ campaignId: null, ageDays: 10, path: secretPath });
 
   const { logger, calls } = makeLogger();

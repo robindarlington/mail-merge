@@ -23,6 +23,7 @@ import { unlinkSync } from "node:fs";
 
 import pino from "pino";
 
+import { resolveAttachmentPath } from "@/lib/attachments/storage";
 import { db, connection } from "@/lib/db";
 import { tick } from "@/lib/worker/loop";
 import {
@@ -110,7 +111,14 @@ function main(): void {
           db,
           now: Math.floor(nowMs / 1000),
           orphanDays: ATTACHMENT_ORPHAN_DAYS,
-          unlink: unlinkSync,
+          // storage_path is stored RELATIVE (`<uuid>.bin`) — resolve it against
+          // UPLOADS_PATH via the traversal-guarded resolver, exactly like every
+          // other consumer (CR-01). A bare unlinkSync(storage_path) would
+          // resolve against the process CWD and silently ENOENT every unlink,
+          // leaving permanently untracked files on /data/uploads. The guard is
+          // also defense-in-depth: a hostile storage_path like `../../app.db`
+          // is rejected before any disk access.
+          unlink: (p) => unlinkSync(resolveAttachmentPath(p)),
           logger,
         });
         lastSweepAt = nowMs;
