@@ -55,6 +55,8 @@ However, the phase's central guarantee — "an enqueue-gated campaign either att
 
 ### CR-01: Silent no-attachment send — materialize un-links unmatched rows instead of failing them, and the queued→materialize window is mutable
 
+**Fixed:** 8f68823
+
 **File:** `lib/worker/materialize.ts:148` (root), `lib/data/attachments.ts:80-86` (`deleteAttachmentForUser`), `lib/attachments/actions-core.ts:208-222` (`confirmAttachmentColumnCore`), `lib/worker/process.ts:196-205` (contributing)
 
 **Issue:** `enqueueCampaignCore` blocks enqueue when any referenced file is missing (`lib/campaign/actions-core.ts:577-583`) — that is the promise shown to the user ("Nothing was sent" / "Every attachment matched"). But the actual row↔attachment link is stamped later, when the worker claims the campaign and runs `materializeSendRecords`. In that linking loop, a non-empty attachment cell with no matching upload is simply skipped:
@@ -97,17 +99,23 @@ Defense-in-depth (recommended alongside, not instead): scope `deleteAttachmentFo
 
 ### WR-01: Prepare-time stamp makes pending uploads vanish from /compose after a cancelled review
 
+**Fixed:** 2a64759
+
 **File:** `lib/campaign/actions-core.ts:394-399`, `lib/data/attachments.ts:66-72`, `app/(app)/compose/page.tsx:54-56`, `lib/attachments/actions-core.ts:140-144, 260`
 **Issue:** Opening the confirm dialog runs `prepareCampaign`, which stamps **all** of the user's pending uploads onto the fresh draft. If the user cancels and reloads /compose: (a) `listPendingAttachmentsForUser` (filters `campaign_id IS NULL`) returns nothing — the uploaded-files list renders empty; (b) `matchAttachmentsCore` matches against the now-empty pending set, so the compose card shows a destructive "Some attachments are missing … you can't send" alert for files that exist; (c) the `duplicate_filename` guard only checks pending rows, so re-uploading the "lost" file succeeds and creates a second row with the same filename — the next prepare re-claims both, and the `byName` maps in the matcher and materialize resolve the collision arbitrarily (Map last-write-wins). The stamped files are only recovered by opening the dialog again (draft re-claim), which a user who cancelled has no reason to do.
 **Fix:** Either (1) include the user's draft-stamped attachments in the compose-surface reads (`campaign_id IS NULL OR campaign_id IN (user's draft campaigns)` — the exact predicate `stampCampaignOnPendingAttachments` already uses) for `listPendingAttachmentsForUser`-backed list/match/duplicate paths, or (2) move stamping from prepare to enqueue (the moment the files are truly committed), keeping the confirm summary matched against pending + draft rows.
 
 ### WR-02: No per-user upload quota and no orphan/consumed-upload cleanup (disk-exhaustion DoS)
 
+**Fixed:** 479d6be (per-user count + byte quota; orphan/consumed-upload sweep is deferred ops work)
+
 **File:** `lib/attachments/actions-core.ts:128-159`, `lib/data/attachments.ts` (no counting query exists), `next.config.ts:18`
 **Issue:** The 10 MB per-file cap is enforced, but nothing limits **how many** files a user can upload: an authenticated tenant can loop `uploadAttachment` and write 10 MB per call to the shared `UPLOADS_PATH` volume indefinitely (the same volume that holds every tenant's CSVs — filling it takes the whole app down). There is also no cleanup path: pending uploads never expire, and uploads consumed by an enqueued campaign (including *unreferenced* ones — the stamp claims all pending rows whether or not any CSV row names them) sit on disk forever with no UI to remove them. The raised global `serverActions.bodySizeLimit: "11mb"` widens the per-request write for every action.
 **Fix:** Add a cheap server-side gate in `uploadAttachmentCore` before writing, e.g. cap pending count and total pending bytes per user (`SELECT count(*), sum(size_bytes) FROM attachments WHERE user_id = ? AND campaign_id IS NULL`) and return a typed `quota_exceeded` error. Only stamp attachments that the campaign's CSV actually references, and add an ops-level sweep (or delete-on-campaign-completion policy) for consumed files.
 
 ### WR-03: Compose matcher and worker diverge from the confirm gate's email-column exclusion in auto-detect
+
+**Fixed:** e17da86
 
 **File:** `lib/attachments/actions-core.ts:259`, `lib/worker/materialize.ts:129-130` vs `lib/campaign/actions-core.ts:481-483`
 **Issue:** `buildConfirmSummaryCore` deliberately nulls a detected attachment column when it equals the email column (its own comment explains emails end in ".com", which is filename-shaped, so `detectAttachmentColumn`'s content heuristic false-positives on the email column). But the compose-time `matchAttachmentsCore` uses bare `set.attachment_column ?? detectAttachmentColumn(columns, rows)`, and so does `materializeSendRecords`. For a CSV with no attachment-ish header and no confirmed column, the compose card can auto-detect the email column and render a blocking "Some attachments are missing: a@x.com, b@x.com…" destructive alert for a perfectly ordinary no-attachment list — while the confirm gate (correctly) lets the send through. Worse, `runMatch` then syncs `setAttachmentColumn(res.data.attachmentColumn)` so the email column is displayed as the selected attachment column, one click away from being persisted. This directly contradicts the three "SHARED matcher / ZERO divergence" comments.
@@ -123,6 +131,8 @@ export function resolveAttachmentColumn(set, columns, rows) {
 
 ### WR-04: Enqueue's attachment gate is skipped whenever the summary errors
 
+**Fixed:** 159a261
+
 **File:** `lib/campaign/actions-core.ts:577-589`
 **Issue:** The gate only fires when `summary.ok`. The comment justifies falling through for `not_found` (so the atomic flip yields the canonical `already_queued` for cross-tenant callers), but the fall-through also covers `parse_error` and `unknown` (e.g. a transient `readUpload`/`listAttachmentsForCampaign` failure): the campaign is enqueued with the attachment gate never having run, and (per CR-01) materialize then silently un-links whatever doesn't match. Combined with CR-01 this converts a transient read error into attachment-less deliveries.
 **Fix:** Only fall through on `not_found`; for any other summary failure return the failure instead of flipping:
@@ -132,11 +142,15 @@ if (!summary.ok && summary.error.kind !== "not_found") return summary;
 
 ### WR-05: Migration 0006's data-copy INSERT violates NOT NULL on any pre-existing attachment row
 
+**Fixed:** bb20d02
+
 **File:** `drizzle/0006_attachments_per_row.sql:13`
 **Issue:** The rebuild copies `("id","campaign_id","filename","storage_path","created_at")` from the old table, but the new table declares `user_id text NOT NULL` and `size_bytes integer NOT NULL` with no defaults. Any row in the pre-0006 `attachments` table (schema existed since 0000) makes the migration abort with a NOT NULL constraint failure, and because the drizzle migrator runs migrations inside a transaction the `PRAGMA foreign_keys=OFF` on line 1 is a no-op anyway. It only succeeds because the table happens to be empty in every current environment — a silent landmine for any deployment where a row ever landed.
 **Fix:** Make the copy total (e.g. `SELECT "id", "campaign_id", "filename", "storage_path", '' AS user_id, 0 AS size_bytes, "created_at"` with matching column list), or make it an explicit drop-and-recreate with a comment stating the pre-0006 table is guaranteed empty and a `DELETE FROM attachments` first.
 
 ### WR-06: Original filename forwarded into MIME headers with no control-character sanitization
+
+**Fixed:** 41d7ce4
 
 **File:** `lib/attachments/schema.ts:39-47`, `lib/worker/process.ts:248-252`
 **Issue:** `uploadAttachmentSchema` requires only `min(1)` on the name, and the worker forwards the stored original filename verbatim into nodemailer's `attachments: [{ filename }]`, where it becomes the `Content-Disposition`/`Content-Type name` header parameter of an outbound message. A `File.name` is fully attacker-controlled (a scripted FormData can carry `\r\n`, quotes, or other control bytes). Current nodemailer versions encode/fold header parameter values, so this is not an exploitable injection today — but the app's only defense is an undocumented third-party behavior, and the same raw name also drives matching and display.
@@ -148,6 +162,8 @@ name: z.string().min(1, "That file has no name.")
 ```
 
 ### WR-07: `confirmAttachmentColumnCore` persists any arbitrary string as the attachment column
+
+**Fixed:** 3909bd1
 
 **File:** `lib/attachments/actions-core.ts:208-222`
 **Issue:** The column is persisted without validating it against the set's actual `columns_json`. A direct action call can store any string (including one that is not a CSV column). Downstream code degrades safely (`computeAttachmentMatch` requires `columns.includes(attachmentColumn)` → zero-case; materialize's `row[col] ?? ""` → no links) — but "safely" here means the matcher reports **no attachment column at all** while the confirm summary and compose card show a green no-attachment state, silently disabling attachments the user configured, and the divergent zero-case masks the bad value forever. Cheap to validate, and consistent with how `email_column` confirmation validates on save.
