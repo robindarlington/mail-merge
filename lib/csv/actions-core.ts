@@ -26,14 +26,20 @@
 import { z } from "zod";
 
 import { parseCsv, detectEmailColumn, countInvalidEmails } from "@/lib/core";
-import { createRecipientSet, renameRecipientSet } from "@/lib/data";
+import {
+  createRecipientSet,
+  renameRecipientSet,
+  countCampaignsForRecipientSet,
+  deleteRecipientSetForUser,
+  getRecipientSetForUser,
+} from "@/lib/data";
 import {
   confirmColumnSchema,
   renameListSchema,
   uploadFileSchema,
   MAX_ROWS,
 } from "./schema";
-import { writeUpload } from "./storage";
+import { writeUpload, deleteUpload } from "./storage";
 
 /**
  * The summary the parse step returns. `invalidCounts` has ONE entry per column
@@ -62,6 +68,10 @@ export type ActionError =
   | { kind: "too_many_rows" }
   | { kind: "parse_error" }
   | { kind: "empty" }
+  // mdt list-delete: the set is referenced by a campaign (blocked), or the id was
+  // not owned / already gone (cross-tenant / unknown).
+  | { kind: "in_use" }
+  | { kind: "not_found" }
   | { kind: "unknown"; raw: string };
 
 /** The uniform result the parse seam resolves to (never rejects). */
@@ -79,6 +89,11 @@ export type SaveResult =
 
 /** The uniform result the rename seam resolves to (never rejects). */
 export type RenameResult =
+  | { ok: true }
+  | { ok: false; error: ActionError };
+
+/** The uniform result the delete seam resolves to (never rejects). */
+export type DeleteResult =
   | { ok: true }
   | { ok: false; error: ActionError };
 
@@ -293,5 +308,56 @@ export async function renameRecipientSetCore(
     };
   }
 
+  return { ok: true };
+}
+
+/**
+ * Delete seam (testable): validate id → in-use guard → owner-scoped delete → unlink.
+ *
+ * A list referenced by ANY campaign (all statuses) is BLOCKED with `in_use` and
+ * NOTHING is removed — `campaigns.recipient_set_id` is NOT NULL with no cascade, so
+ * a raw delete would violate the FK and history must be preserved (T-mdt design).
+ * Otherwise the set is fetched for its `storage_path`, deleted owner-scoped
+ * (AND(id, userId) — a cross-tenant/unknown id removes ZERO rows → `not_found`,
+ * T-mdt-01 / IDOR), and its stored CSV file is unlinked POST-delete, best-effort
+ * (a failed unlink leaves only a harmless disk-only file — row-first discipline).
+ */
+export async function deleteRecipientSetCore(
+  userId: string,
+  rawId: unknown,
+): Promise<DeleteResult> {
+  const parsedId = listIdSchema.safeParse(rawId);
+  if (!parsedId.success) {
+    return {
+      ok: false,
+      error: { kind: "validation", issues: parsedId.error.issues },
+    };
+  }
+  const id = parsedId.data;
+
+  // In-use guard FIRST — a list any campaign references must not be yanked out from
+  // under its history (the FK block). Owner-scoped count, so a cross-tenant set is 0.
+  const referencing = await countCampaignsForRecipientSet(userId, id);
+  if (referencing > 0) {
+    return { ok: false, error: { kind: "in_use" } };
+  }
+
+  // Resolve the set for its storage_path (owner-scoped) BEFORE deleting. A
+  // cross-tenant / unknown id → undefined → not_found; nothing is removed.
+  const set = await getRecipientSetForUser(userId, id);
+  if (!set) return { ok: false, error: { kind: "not_found" } };
+
+  const removed = await deleteRecipientSetForUser(userId, id);
+  if (removed.length === 0) {
+    // Raced away between the fetch and the delete — nothing removed.
+    return { ok: false, error: { kind: "not_found" } };
+  }
+
+  // Post-delete best-effort CSV unlink — never fail the action on a unlink error.
+  try {
+    deleteUpload(set.storage_path);
+  } catch {
+    // A disk-only leftover is harmless (the row is already gone).
+  }
   return { ok: true };
 }

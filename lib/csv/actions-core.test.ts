@@ -19,25 +19,29 @@
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readdirSync } from "node:fs";
+import { mkdtempSync, rmSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 // --- Provision isolated temp DB + uploads dir BEFORE any path-resolving import -
 const TMP_DIR = mkdtempSync(join(tmpdir(), "csv-actions-"));
 process.env.DATABASE_PATH = join(TMP_DIR, "app.db");
 process.env.UPLOADS_PATH = join(TMP_DIR, "uploads");
+const UPLOADS_DIR = join(TMP_DIR, "uploads");
 
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
-const { parseUploadedCsvCore, saveRecipientSetCore } = await import(
-  "./actions-core"
+const { parseUploadedCsvCore, saveRecipientSetCore, deleteRecipientSetCore } =
+  await import("./actions-core");
+const { listRecipientSetsForUser, getRecipientSetForUser } = await import(
+  "@/lib/data"
 );
-const { listRecipientSetsForUser } = await import("@/lib/data");
+const { campaigns, templates, smtp_configs } = await import("@/lib/db/schema");
 const { MAX_ROWS } = await import("./schema");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 
 const USER_A = "user_aaaaaaaaaaaaaaaaaaaaaa";
+const USER_B = "user_bbbbbbbbbbbbbbbbbbbbbb";
 
 /** Build a FormData carrying a CSV File (+ optional confirmed emailColumn). */
 function fd(
@@ -265,4 +269,119 @@ test("saveRecipientSetCore rejects a too-large row count and persists NOTHING", 
   const after = await listRecipientSetsForUser(USER_A);
   assert.equal(after.length, before.length);
   assert.equal(readdirSync(join(TMP_DIR, "uploads")).length, filesBefore);
+});
+
+// --- deleteRecipientSetCore (mdt): in-use guard, owner scope, CSV unlink ------
+//
+// A list referenced by ANY campaign is blocked (in_use) and nothing is removed;
+// otherwise the row is deleted owner-scoped and its stored CSV is unlinked. A
+// cross-tenant / unknown id removes nothing → not_found (T-mdt-01 / IDOR).
+
+/** Insert a campaign referencing `setId`, wiring the two other NOT-NULL FKs
+ *  directly (a throwaway template + smtp_config) — no crypto key needed. */
+async function seedCampaign(userId: string, setId: number) {
+  const [tpl] = await db
+    .insert(templates)
+    .values({ userId, subject: "S", body: "B" })
+    .returning();
+  const [cfg] = await db
+    .insert(smtp_configs)
+    .values({
+      userId,
+      host: "smtp.example.com",
+      port: 587,
+      secure: false,
+      username: "u",
+      password_enc: Buffer.from("enc"),
+      password_iv: Buffer.from("iv"),
+      password_tag: Buffer.from("tag"),
+      from_addr: "noreply@example.com",
+    })
+    .returning();
+  await db
+    .insert(campaigns)
+    .values({
+      userId,
+      recipient_set_id: setId,
+      template_id: tpl.id,
+      smtp_config_id: cfg.id,
+    })
+    .returning();
+}
+
+test("deleteRecipientSetCore removes an unreferenced list and unlinks its CSV (happy path)", async () => {
+  // Save a real list so a file lands on disk under UPLOADS_DIR.
+  const saved = await saveRecipientSetCore(
+    USER_A,
+    fd(GOOD_CSV, { filename: "to-delete.csv", emailColumn: "Email" }),
+  );
+  assert.equal(saved.ok, true);
+  const set = (await listRecipientSetsForUser(USER_A)).find(
+    (s) => s.filename === "to-delete.csv",
+  );
+  assert.ok(set, "the saved set exists");
+  const fileOnDisk = resolve(UPLOADS_DIR, set.storage_path);
+  assert.ok(existsSync(fileOnDisk), "the CSV file exists before delete");
+
+  const res = await deleteRecipientSetCore(USER_A, set.id);
+  assert.equal(res.ok, true, "an unreferenced list is deletable");
+
+  // The row is gone AND the CSV file was unlinked.
+  assert.equal(
+    await getRecipientSetForUser(USER_A, set.id),
+    undefined,
+    "the recipient_set row is removed",
+  );
+  assert.ok(!existsSync(fileOnDisk), "the stored CSV file is unlinked");
+});
+
+test("deleteRecipientSetCore BLOCKS a list referenced by a campaign (in_use) and removes nothing", async () => {
+  const saved = await saveRecipientSetCore(
+    USER_A,
+    fd(GOOD_CSV, { filename: "referenced.csv", emailColumn: "Email" }),
+  );
+  assert.equal(saved.ok, true);
+  const set = (await listRecipientSetsForUser(USER_A)).find(
+    (s) => s.filename === "referenced.csv",
+  );
+  assert.ok(set);
+  const fileOnDisk = resolve(UPLOADS_DIR, set.storage_path);
+  await seedCampaign(USER_A, set.id);
+
+  const res = await deleteRecipientSetCore(USER_A, set.id);
+  assert.equal(res.ok, false, "a referenced list is refused");
+  assert.ok(!res.ok && res.error.kind === "in_use");
+
+  // Nothing removed: the row AND the CSV file survive the blocked delete.
+  const still = await getRecipientSetForUser(USER_A, set.id);
+  assert.ok(still, "the referenced list survives");
+  assert.ok(existsSync(fileOnDisk), "the CSV file survives a blocked delete");
+});
+
+test("deleteRecipientSetCore returns not_found for a cross-tenant id and removes nothing (IDOR)", async () => {
+  const saved = await saveRecipientSetCore(
+    USER_A,
+    fd(GOOD_CSV, { filename: "owned.csv", emailColumn: "Email" }),
+  );
+  assert.equal(saved.ok, true);
+  const set = (await listRecipientSetsForUser(USER_A)).find(
+    (s) => s.filename === "owned.csv",
+  );
+  assert.ok(set);
+  const fileOnDisk = resolve(UPLOADS_DIR, set.storage_path);
+
+  const res = await deleteRecipientSetCore(USER_B, set.id);
+  assert.equal(res.ok, false, "a cross-tenant delete is refused");
+  assert.ok(!res.ok && res.error.kind === "not_found");
+
+  // The owner's row + file are untouched.
+  const still = await getRecipientSetForUser(USER_A, set.id);
+  assert.ok(still, "the owner's list survives a cross-tenant delete");
+  assert.ok(existsSync(fileOnDisk), "the owner's CSV file survives");
+});
+
+test("deleteRecipientSetCore rejects a non-numeric id as validation", async () => {
+  const res = await deleteRecipientSetCore(USER_A, "not-a-number");
+  assert.equal(res.ok, false);
+  assert.ok(!res.ok && res.error.kind === "validation");
 });

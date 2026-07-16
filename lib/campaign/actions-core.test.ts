@@ -16,9 +16,15 @@
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { eq } from "drizzle-orm";
 
 // --- Provision an isolated temp DB + key + uploads dir BEFORE any import -------
@@ -113,19 +119,22 @@ const PARSE_ERROR_CSV_NAME = "parse-error-fixture.csv";
 
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
-const { campaigns, send_records } = await import("@/lib/db/schema");
+const { campaigns, send_records, attachments } = await import("@/lib/db/schema");
 const {
   sendTestBatchChunkCore,
   prepareCampaignCore,
   buildConfirmSummaryCore,
   enqueueCampaignCore,
   getCampaignProgressCore,
+  deleteCampaignCore,
 } = await import("./actions-core");
 const { TEST_SEND_CHUNK_SIZE } = await import("./schema");
 const { createRecipientSet } = await import("../data/recipients");
 const { createTemplate } = await import("../data/templates");
 const { createSmtpConfig } = await import("../data/smtp");
-const { getCampaignForUser } = await import("../data/campaigns");
+const { getCampaignForUser, createDraftCampaign } = await import(
+  "../data/campaigns"
+);
 const { createAttachment } = await import("../data/attachments");
 const { writeAttachment, MAX_MESSAGE_BYTES } = await import("@/lib/attachments");
 const { encrypt } = await import("../crypto");
@@ -971,4 +980,93 @@ test("getCampaignProgressCore is IDOR-safe: another tenant's campaignId → not_
   const result = await getCampaignProgressCore(USER_B, { campaignId: prepared.data.campaignId });
   assert.equal(result.ok, false);
   assert.ok(!result.ok && result.error.kind === "not_found", "USER_B cannot read USER's progress");
+});
+
+// --- deleteCampaignCore (mdt): cascade + status/owner guards + file unlink -----
+//
+// A draft/completed/failed campaign owned by the caller is removed together with
+// its attachment rows (the DAL's transactional cascade) and its attachment FILES
+// are unlinked post-commit. A queued/running campaign is BLOCKED (in_use); a
+// cross-tenant / unknown id → not_found. Each test creates its OWN draft so the
+// shared seeded fixtures are never disturbed.
+
+test("deleteCampaignCore removes a draft campaign, its attachment rows, and unlinks the attachment files (happy path)", async () => {
+  const [camp] = await createDraftCampaign(USER, {
+    recipient_set_id: recipientSetId,
+    template_id: templateId,
+    smtp_config_id: smtpConfigId,
+  });
+  await db.insert(send_records).values([
+    { campaign_id: camp.id, to_addr: "one@example.com", merged_subject: "S", merged_body: "B", status: "sent" },
+  ]);
+
+  // Write real attachment files, then link their rows to the campaign.
+  const a = writeAttachment(Buffer.from("PDF-A", "utf8"));
+  const b = writeAttachment(Buffer.from("PDF-B", "utf8"));
+  await db.insert(attachments).values([
+    { userId: USER, campaign_id: camp.id, filename: "a.pdf", storage_path: a.storagePath, size_bytes: 5 },
+    { userId: USER, campaign_id: camp.id, filename: "b.pdf", storage_path: b.storagePath, size_bytes: 5 },
+  ]);
+  const fileA = resolve(UPLOADS_DIR, a.storagePath);
+  const fileB = resolve(UPLOADS_DIR, b.storagePath);
+  assert.ok(existsSync(fileA) && existsSync(fileB), "attachment files exist before delete");
+
+  const res = await deleteCampaignCore(USER, camp.id);
+  assert.equal(res.ok, true, "a draft campaign is deletable");
+
+  assert.equal(await getCampaignForUser(USER, camp.id), undefined, "campaign removed");
+  const attsLeft = await db.query.attachments.findMany({
+    where: eq(attachments.campaign_id, camp.id),
+  });
+  assert.equal(attsLeft.length, 0, "attachment rows cascaded");
+  const recordsLeft = await db.query.send_records.findMany({
+    where: eq(send_records.campaign_id, camp.id),
+  });
+  assert.equal(recordsLeft.length, 0, "send_records cascaded");
+  assert.ok(!existsSync(fileA), "attachment file A unlinked");
+  assert.ok(!existsSync(fileB), "attachment file B unlinked");
+});
+
+test("deleteCampaignCore returns in_use for a running campaign and removes nothing", async () => {
+  const [camp] = await createDraftCampaign(USER, {
+    recipient_set_id: recipientSetId,
+    template_id: templateId,
+    smtp_config_id: smtpConfigId,
+  });
+  await db.update(campaigns).set({ status: "running" }).where(eq(campaigns.id, camp.id));
+  await db.insert(send_records).values([
+    { campaign_id: camp.id, to_addr: "live@example.com", merged_subject: "S", merged_body: "B", status: "sending" },
+  ]);
+
+  const res = await deleteCampaignCore(USER, camp.id);
+  assert.equal(res.ok, false, "an active campaign is refused");
+  assert.ok(!res.ok && res.error.kind === "in_use");
+
+  const still = await getCampaignForUser(USER, camp.id);
+  assert.ok(still, "the active campaign survives");
+  const records = await db.query.send_records.findMany({
+    where: eq(send_records.campaign_id, camp.id),
+  });
+  assert.equal(records.length, 1, "send_records intact after a blocked delete");
+});
+
+test("deleteCampaignCore returns not_found for a cross-tenant id and removes nothing (IDOR)", async () => {
+  const [camp] = await createDraftCampaign(USER, {
+    recipient_set_id: recipientSetId,
+    template_id: templateId,
+    smtp_config_id: smtpConfigId,
+  });
+
+  const res = await deleteCampaignCore(USER_B, camp.id);
+  assert.equal(res.ok, false, "a cross-tenant delete is refused");
+  assert.ok(!res.ok && res.error.kind === "not_found");
+
+  const still = await getCampaignForUser(USER, camp.id);
+  assert.ok(still, "the owner's campaign survives a cross-tenant delete");
+});
+
+test("deleteCampaignCore returns not_found for an unknown id", async () => {
+  const res = await deleteCampaignCore(USER, 9_999_999);
+  assert.equal(res.ok, false);
+  assert.ok(!res.ok && res.error.kind === "not_found");
 });
