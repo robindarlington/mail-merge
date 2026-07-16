@@ -59,6 +59,10 @@ function envInt(name: string, fallback: number): number {
 const SEND_DELAY_MS = envInt("SEND_DELAY_MS", 1000);
 const WORKER_POLL_MS = envInt("WORKER_POLL_MS", 2000);
 const WORKER_LEASE_SEC = envInt("WORKER_LEASE_SEC", 300);
+// How often the pre-loop schema gate re-checks for the migrated schema, and how
+// long it waits before giving up (restart policy then retries from scratch).
+const SCHEMA_GATE_POLL_MS = 2000;
+const SCHEMA_GATE_TIMEOUT_MS = envInt("SCHEMA_GATE_TIMEOUT_MS", 600_000);
 // Idle-aware maintenance cadences (SC-4 / RESEARCH Finding 4). Low frequency,
 // env-tunable via the same fail-closed envInt helper. Defaults: hourly checkpoint,
 // hourly orphan sweep, 7-day orphan age threshold. No cron, no new deps.
@@ -66,6 +70,59 @@ const WAL_CHECKPOINT_MS = envInt("WAL_CHECKPOINT_MS", 3_600_000);
 const ORPHAN_SWEEP_MS = envInt("ORPHAN_SWEEP_MS", 3_600_000);
 const ATTACHMENT_ORPHAN_DAYS = envInt("ATTACHMENT_ORPHAN_DAYS", 7);
 const workerId = process.env.WORKER_ID ?? `worker-${process.pid}`;
+
+/**
+ * True once the web service's migrate.js has created the schema (the `campaigns`
+ * table is the loop's central object). Any throw (DB mid-migration, transient
+ * SQLITE_BUSY) reads as "not ready yet" — the gate just polls again.
+ */
+function schemaReady(): boolean {
+  try {
+    const row = connection
+      .prepare(
+        "select name from sqlite_master where type='table' and name='campaigns'",
+      )
+      .get();
+    return row !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Startup schema gate. ONLY the web service migrates (T-08-06); this worker used
+ * to rely on compose's `depends_on: condition: service_healthy` to start after
+ * migrations — but that gate lives in platform territory (Coolify regenerates
+ * the compose file and healthcheck/condition semantics did not survive it,
+ * leaving the worker never started and queued campaigns never claimed). The
+ * worker now guarantees its own ordering: poll for the migrated schema, then
+ * start the loop. On timeout, exit(1) and let the restart policy retry.
+ */
+function start(): void {
+  if (schemaReady()) {
+    main();
+    return;
+  }
+  logger.info(
+    { pollMs: SCHEMA_GATE_POLL_MS },
+    "waiting for database schema (the web service applies migrations)",
+  );
+  const startedAt = Date.now();
+  const gate = setInterval(() => {
+    if (schemaReady()) {
+      clearInterval(gate);
+      main();
+      return;
+    }
+    if (Date.now() - startedAt >= SCHEMA_GATE_TIMEOUT_MS) {
+      logger.error(
+        { waitedMs: Date.now() - startedAt },
+        "schema never appeared — is the web service running and migrating? exiting for restart",
+      );
+      process.exit(1);
+    }
+  }, SCHEMA_GATE_POLL_MS);
+}
 
 function main(): void {
   // Touch the shared client so the worker shares the WAL'd connection the web
@@ -205,4 +262,4 @@ function main(): void {
   }
 }
 
-main();
+start();

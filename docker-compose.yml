@@ -85,20 +85,15 @@ services:
       - appdata:/data
     # Readiness = "migrations applied" (WR-02): the probe passes only once the
     # `campaigns` table exists in /data/app.db (created by migrate.js in the web
-    # entrypoint). The worker below gates on this via
-    # `depends_on: { web: { condition: service_healthy } }`, which serializes DB
-    # initialization on a fresh volume — the same web-migrates-alone ordering the
-    # acceptance script enforces manually. Read-only open so the probe never
-    # contends with WAL writers; any throw (file absent, locked) exits non-zero.
+    # entrypoint). INFORMATIONAL ONLY — nothing gates on it anymore: the worker
+    # enforces its own migration ordering with an in-process schema gate
+    # (worker/index.ts), because platform compose rewriting (Coolify) did not
+    # preserve the healthcheck + service_healthy semantics and silently never
+    # started the worker. Single-line CMD on purpose — a multiline block scalar
+    # is exactly what got mangled. Read-only open so the probe never contends
+    # with WAL writers; any throw (file absent, locked) exits non-zero.
     healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - |
-          const D = require('better-sqlite3')('/data/app.db', { readonly: true });
-          const r = D.prepare("select name from sqlite_master where type='table' and name='campaigns'").get();
-          process.exit(r ? 0 : 1);
+      test: ["CMD", "node", "-e", "process.exit(require('better-sqlite3')('/data/app.db',{readonly:true}).prepare(\"select name from sqlite_master where type='table' and name='campaigns'\").get()?0:1)"]
       interval: 5s
       timeout: 5s
       retries: 24
@@ -154,15 +149,15 @@ services:
       ATTACHMENT_ORPHAN_DAYS: ${ATTACHMENT_ORPHAN_DAYS:-7}
     volumes:
       - appdata:/data
-    # Gate on web's HEALTH (migrations applied), not merely its start (WR-02).
-    # A bare `depends_on: [web]` only orders container start, so on a fresh
-    # volume the worker's DB open raced web's migrate.js to initialize WAL and
-    # could crash with SQLITE_BUSY — the exact race the acceptance script
-    # serializes around. `service_healthy` makes production compose/Coolify
-    # deploys get the same web-migrates-first ordering.
+    # Plain start-ordering ONLY — deliberately NOT `condition: service_healthy`:
+    # Coolify regenerates the compose file and the healthcheck/condition pair did
+    # not survive it, so the worker was never started and queued campaigns were
+    # never claimed. The migration-ordering guarantee now lives in the worker
+    # itself: worker/index.ts polls for the migrated schema before starting its
+    # loop (and `restart: unless-stopped` retries any residual WAL-init crash on
+    # a fresh volume).
     depends_on:
-      web:
-        condition: service_healthy
+      - web
 
 # One named local volume shared by both services at /data (same host, not NFS).
 volumes:
