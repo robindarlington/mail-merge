@@ -27,15 +27,21 @@
  * `raw` is ALWAYS a string.
  */
 
+import { z } from "zod";
+
+import { parseCsv, detectAttachmentColumn } from "@/lib/core";
 import {
   createAttachment,
   listPendingAttachmentsForUser,
   deleteAttachmentForUser,
   setAttachmentColumnForUser,
+  getRecipientSetForUser,
   type PersistableAttachment,
 } from "@/lib/data";
+import { readUpload } from "@/lib/csv";
 import { writeAttachment, attachmentExists, resolveAttachmentPath } from "./storage";
 import { uploadAttachmentSchema } from "./schema";
+import { computeAttachmentMatch, type AttachmentMatch } from "./match";
 
 /** A pending upload row as returned to the UI (the DAL select model). */
 type PendingAttachment = Awaited<
@@ -64,6 +70,25 @@ export type AttachmentListResult =
 export type ConfirmColumnResult =
   | { ok: true }
   | { ok: false; error: ActionError };
+
+/** The uniform result the compose-time match seam resolves to (never rejects). */
+export type MatchResult =
+  | { ok: true; data: AttachmentMatch }
+  | { ok: false; error: ActionError };
+
+// The client passes the recipientSetId only; coerce + validate it as a positive
+// integer so a missing/non-numeric value fails cleanly rather than resolving a
+// bogus row (mirrors lib/compose/actions-core.ts).
+const recipientSetIdSchema = z.coerce.number().int().positive();
+
+// papaparse emits `UndetectableDelimiter` for a legitimate single-column CSV (and
+// for an empty file) — the parse itself SUCCEEDS. Filter it out of the misparse
+// gate; genuine structural errors still surface. Mirrors lib/csv/actions-core.ts.
+function hasStructuralParseError(
+  errors: ReturnType<typeof parseCsv>["parseErrors"],
+): boolean {
+  return errors.some((e) => e.code !== "UndetectableDelimiter");
+}
 
 /**
  * Guard the uploaded FormData `file` field with the SHARED zod schema (so the
@@ -191,6 +216,52 @@ export async function confirmAttachmentColumnCore(
       return { ok: false, error: { kind: "not_found" } };
     }
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: { kind: "unknown", raw: String((e as Error)?.message ?? e) } };
+  }
+}
+
+/**
+ * Compose-time match seam (testable): resolve the recipient set userId-scoped,
+ * re-read + parse its stored CSV, resolve the attachment column
+ * (`set.attachment_column ?? detectAttachmentColumn`), and match it against the
+ * user's PENDING uploads via the SHARED `computeAttachmentMatch`. It matches
+ * against PENDING uploads because no campaign exists yet on /compose (Plan 03's
+ * confirm gate calls the SAME matcher against the campaign's stamped rows).
+ *
+ * The storage path is resolved SERVER-side from a userId-scoped row, never from
+ * the client (T-07-04 / traversal). A cross-tenant/bogus id → not_found.
+ */
+export async function matchAttachmentsCore(
+  userId: string,
+  recipientSetId: number,
+): Promise<MatchResult> {
+  const idParsed = recipientSetIdSchema.safeParse(recipientSetId);
+  if (!idParsed.success) {
+    return { ok: false, error: { kind: "not_found" } };
+  }
+
+  // Resolve the set from a userId-scoped lookup — a set owned by another tenant
+  // (or a bogus id) returns undefined → not_found. NEVER trust a client path.
+  const set = await getRecipientSetForUser(userId, idParsed.data);
+  if (!set) return { ok: false, error: { kind: "not_found" } };
+
+  try {
+    // storage_path came from the userId-scoped row above; readUpload also enforces
+    // the traversal boundary. papaparse runs server-side (never ships to browser).
+    const bytes = readUpload(set.storage_path);
+    const { columns, rows, parseErrors } = parseCsv(bytes);
+    if (hasStructuralParseError(parseErrors)) {
+      return { ok: false, error: { kind: "unknown", raw: "The recipient list could not be parsed." } };
+    }
+
+    // Honor the user's confirmed column; fall back to detection only when null.
+    const attachmentColumn = set.attachment_column ?? detectAttachmentColumn(columns, rows);
+    const pending = await listPendingAttachmentsForUser(userId);
+    return {
+      ok: true,
+      data: computeAttachmentMatch(columns, rows, attachmentColumn, pending),
+    };
   } catch (e) {
     return { ok: false, error: { kind: "unknown", raw: String((e as Error)?.message ?? e) } };
   }

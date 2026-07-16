@@ -37,11 +37,13 @@ const {
   listAttachmentsCore,
   deleteAttachmentCore,
   confirmAttachmentColumnCore,
+  matchAttachmentsCore,
 } = await import("./actions-core");
 const { MAX_ATTACHMENT_BYTES } = await import("./schema");
 const { createRecipientSet, getRecipientSetForUser } = await import(
   "@/lib/data/recipients"
 );
+const { writeUpload } = await import("@/lib/csv");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 
 const USER_A = "user_aaaaaaaaaaaaaaaaaaaaaa";
@@ -158,4 +160,40 @@ test("confirmAttachmentColumnCore cross-tenant returns not_found and persists no
   assert.equal(res.error.kind, "not_found");
   const reread = await getRecipientSetForUser(USER_A, A_SET_ID);
   assert.notEqual(reread?.attachment_column, "hijacked");
+});
+
+test("matchAttachmentsCore re-reads the set's CSV and matches against pending uploads (no campaign)", async () => {
+  // A recipient set whose CSV lives on disk and designates an attachment column.
+  const csv = "email,file\na@x.com,invoice.pdf\nb@x.com,\n";
+  const { storagePath } = writeUpload(Buffer.from(csv, "utf8"));
+  const [set] = await createRecipientSet(USER_A, {
+    filename: "match.csv",
+    columns_json: JSON.stringify(["email", "file"]),
+    row_count: 2,
+    storage_path: storagePath,
+    email_column: "email",
+    attachment_column: "file",
+  });
+  // A pending upload that matches row 1's cell.
+  await uploadAttachmentCore(USER_A, fileForm("invoice.pdf", Buffer.from("bytes")));
+
+  const res = await matchAttachmentsCore(USER_A, set.id);
+  assert.ok(res.ok, "the compose-time match resolves against pending uploads");
+  if (!res.ok) return;
+  assert.equal(res.data.attachmentColumn, "file");
+  assert.equal(res.data.rowsWithAttachment, 1, "one row references a pending upload");
+  assert.equal(res.data.attachmentTotal, 1, "the matched file is present on disk");
+  assert.equal(res.data.missingAttachmentCount, 0, "the empty second row is not a miss");
+});
+
+test("matchAttachmentsCore cross-tenant/bogus id resolves to not_found", async () => {
+  const bogus = await matchAttachmentsCore(USER_A, 9_999_999);
+  assert.ok(!bogus.ok);
+  if (bogus.ok) return;
+  assert.equal(bogus.error.kind, "not_found");
+
+  const crossTenant = await matchAttachmentsCore(USER_B, A_SET_ID);
+  assert.ok(!crossTenant.ok);
+  if (crossTenant.ok) return;
+  assert.equal(crossTenant.error.kind, "not_found");
 });

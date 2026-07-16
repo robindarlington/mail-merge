@@ -23,8 +23,10 @@ import {
   listAttachmentsCore,
   deleteAttachmentCore,
   confirmAttachmentColumnCore,
+  matchAttachmentsCore,
   type AttachmentListResult,
   type ConfirmColumnResult,
+  type MatchResult,
 } from "./actions-core";
 
 // Type-only re-exports are erased at compile time, so they are NOT registered as
@@ -33,7 +35,9 @@ export type {
   ActionError,
   AttachmentListResult,
   ConfirmColumnResult,
+  MatchResult,
 } from "./actions-core";
+export type { AttachmentMatch } from "./match";
 
 /**
  * uploadAttachment: auth → guard/write/insert. Rejects unauthenticated callers
@@ -78,4 +82,18 @@ export async function confirmAttachmentColumn(
   const { userId } = await auth();
   if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
   return confirmAttachmentColumnCore(userId, setId, column);
+}
+
+/**
+ * matchAttachments: auth → compose-time match summary for a recipient set against
+ * the caller's PENDING uploads (no campaign exists yet on /compose). Delegates to
+ * matchAttachmentsCore, which resolves the set userId-scoped and re-reads its CSV.
+ */
+export async function matchAttachments(
+  recipientSetId: number,
+): Promise<MatchResult> {
+  const { auth } = await import("@clerk/nextjs/server");
+  const { userId } = await auth();
+  if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
+  return matchAttachmentsCore(userId, recipientSetId);
 }

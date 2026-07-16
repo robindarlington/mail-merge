@@ -26,8 +26,12 @@ export {
   attachmentExists,
 } from "./storage";
 
+export { computeAttachmentMatch } from "./match";
+export type { AttachmentMatch, MatchableAttachment } from "./match";
+
 export type {
   ActionError,
   AttachmentListResult,
   ConfirmColumnResult,
+  MatchResult,
 } from "./actions-core";
