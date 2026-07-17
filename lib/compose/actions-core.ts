@@ -33,7 +33,13 @@
 import { z } from "zod";
 
 import { parseCsv, detectEmailColumn, countInvalidEmails } from "@/lib/core";
-import { getRecipientSetForUser, createTemplate } from "@/lib/data";
+import {
+  getRecipientSetForUser,
+  createTemplate,
+  getTemplateForUser,
+  countCampaignsForTemplate,
+  deleteTemplateForUser,
+} from "@/lib/data";
 import { readUpload } from "@/lib/csv";
 import { composeFormSchema } from "./schema";
 
@@ -160,9 +166,78 @@ export async function saveTemplateCore(
     return { ok: false, error: { kind: "validation", issues: parsed.error.issues } };
   }
 
+  // List-scope stamping (tpl / D1): the compose UI supplies the selected list id so
+  // the saved template joins that list's library. The id is OWNER-resolved before
+  // stamping — a foreign/bogus id resolves to undefined → not_found, so a caller can
+  // never stamp a list they don't own (T-tpl-TAMPER). An ABSENT recipientSetId
+  // saves an unscoped (NULL) template, preserving the pre-tpl behavior.
+  let recipientSetId: number | undefined;
+  const rawSetId = formData.get("recipientSetId");
+  if (rawSetId !== null && rawSetId !== "") {
+    const idParsed = recipientSetIdSchema.safeParse(rawSetId);
+    if (!idParsed.success) {
+      return { ok: false, error: { kind: "validation", issues: idParsed.error.issues } };
+    }
+    const set = await getRecipientSetForUser(userId, idParsed.data);
+    if (!set) return { ok: false, error: { kind: "not_found" } };
+    recipientSetId = set.id;
+  }
+
   try {
-    const [created] = await createTemplate(userId, parsed.data);
+    const [created] = await createTemplate(userId, {
+      ...parsed.data,
+      recipient_set_id: recipientSetId,
+    });
     return { ok: true, data: { id: created.id } };
+  } catch (e) {
+    return { ok: false, error: { kind: "unknown", raw: String((e as Error)?.message ?? e) } };
+  }
+}
+
+// --- Delete seam (tpl / D2) ---------------------------------------------------
+//
+// Owner-facing template delete, mirroring deleteCampaignCore's shape. A template
+// referenced by ANY campaign is BLOCKED (in_use) — campaigns.template_id is NOT
+// NULL with no cascade and PRAGMA foreign_keys=ON, so blocking is the only
+// history-preserving option (send_records keep their merged snapshots, D2).
+
+/** The closed error surface the template-delete action returns (message-only). */
+export type DeleteTemplateError =
+  | { kind: "unauthenticated" }
+  | { kind: "validation"; issues: unknown }
+  | { kind: "not_found" }
+  | { kind: "in_use" }
+  | { kind: "unknown"; raw?: string };
+
+/** The uniform result the template-delete seam + action resolve to (never rejects). */
+export type DeleteTemplateResult =
+  | { ok: true }
+  | { ok: false; error: DeleteTemplateError };
+
+/**
+ * Delete seam (testable): userId-scoped pre-check → campaign-reference guard →
+ * owner-scoped delete. `getTemplateForUser` first (cross-tenant/bogus id →
+ * not_found, deleting nothing). Then countCampaignsForTemplate > 0 → in_use (D2):
+ * the template keeps campaign history intact. Otherwise deleteTemplateForUser; a
+ * 0-row delete (a concurrent removal under us) maps to not_found. A thrown error
+ * (e.g. an FK race where a campaign referenced it between the guard and the DELETE)
+ * maps to `{ kind:"unknown", raw }` — raw is ALWAYS a string (D-06 / T-4-LOG).
+ */
+export async function deleteTemplateCore(
+  userId: string,
+  id: number,
+): Promise<DeleteTemplateResult> {
+  const template = await getTemplateForUser(userId, id);
+  if (!template) return { ok: false, error: { kind: "not_found" } };
+
+  if ((await countCampaignsForTemplate(userId, id)) > 0) {
+    return { ok: false, error: { kind: "in_use" } };
+  }
+
+  try {
+    const removed = await deleteTemplateForUser(userId, id);
+    if (removed.length === 0) return { ok: false, error: { kind: "not_found" } };
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: { kind: "unknown", raw: String((e as Error)?.message ?? e) } };
   }
