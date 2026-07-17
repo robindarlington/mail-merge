@@ -309,7 +309,7 @@ Plans:
 - [x] 08-02-PLAN.md — Production docker-compose: init:true, raised stop_grace_period, exec-form commands, env/secret contract (.env.example)
 - [x] 08-03-PLAN.md — Operational routines: idle-aware WAL wal_checkpoint(TRUNCATE) + attachment-orphan sweep (TDD, wired into worker loop)
 - [x] 08-04-PLAN.md — Scripted redeploy acceptance test: compose stop/up + docker-kill, stub SMTP, no-double-send + data-survival assertions
-- [ ] 08-05-PLAN.md — [CHECKPOINT] Coolify staging deploy: env/secrets + Stop Grace Period, redeploy no-double-send verification (queued human checkpoint)
+- [x] 08-05-PLAN.md — [CHECKPOINT] Coolify staging deploy: env/secrets + Stop Grace Period, redeploy no-double-send verification (queued human checkpoint)
 **Research flag**: Mostly standard; verify the exact Coolify `stop_grace_period` Compose field behavior in the target Coolify version (community-verified, version-dependent).
 
 ### Phase 08.1: Agent access — standalone CLI + MCP server (INSERTED)
