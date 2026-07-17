@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 5: Test-Send + Confirmation Gate** - Whole-batch test-send to one address and a hard confirm-before-live gate
 - [ ] **Phase 6: Background Worker + Live Send + Progress + History** - Idempotent background sending with live progress and campaign history
 - [ ] **Phase 7: Per-Row Attachments** - Per-CSV-row file attachments with path-traversal and size safety
-- [ ] **Phase 8: Docker / Coolify Packaging + Operational Hardening** - Production containers, volume persistence, redeploy-safe sends
+- [x] **Phase 8: Docker / Coolify Packaging + Operational Hardening** - Production containers, volume persistence, redeploy-safe sends (completed 2026-07-17; staging-verified exactly-once across a real Coolify redeploy)
 - [ ] **Phase 9: Launch Collateral** - Public README + screenshots, niche-framed landing copy, "how it was built" write-up, and the UI attribution + hire-me link (BRAND-01)
 
 ## Phase Details

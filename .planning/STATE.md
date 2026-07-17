@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 8 plans 01-04 complete; code review done (2 critical + 7 warnings, all fixed, 341/341 tests); redeploy acceptance re-passed on fixed image; 08-05 staging deploy queued as human checkpoint
-last_updated: "2026-07-16T12:00:00.000Z"
-last_activity: 2026-07-16 -- Phase 8 review fixes + acceptance regression pass
+stopped_at: Phase 8 COMPLETE (08-05 staging checkpoint approved 2026-07-17 — exactly-once across a real Coolify redeploy; 5 platform-only bugs found+fixed during checkpoint). Next planned phase 08.1; quick task 260717-tpl (list-scoped template library) in flight
+last_updated: "2026-07-17T09:30:00.000Z"
+last_activity: 2026-07-17 -- Phase 8 closed; template-library quick task started
 progress:
   total_phases: 11
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 52
-  completed_plans: 47
-  percent: 90
+  completed_plans: 48
+  percent: 92
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-24)
 
 **Core value:** A signed-in user can reliably send a personalized email to every row of their CSV, using their own validated SMTP, with confidence (preview + test-send) and a record of exactly what was sent and to whom.
-**Current focus:** Phase 8 — Docker / Coolify Packaging + Operational Hardening
+**Current focus:** Phase 8 complete — next: Phase 08.1 (Agent access: CLI + MCP)
 
 ## Current Position
 
-Phase: 8 (Docker / Coolify Packaging + Operational Hardening) — EXECUTING
-Plan: 5 of 5 (08-05 staging deploy — QUEUED human checkpoint)
-Status: Plans 08-01..08-04 complete; code review findings (2 critical, 7 warning) all fixed; local redeploy acceptance re-passed post-fix. Awaiting 08-05 staging verification on Coolify.
-Last activity: 2026-07-16 -- Phase 8 review fixes + acceptance regression pass
+Phase: 8 (Docker / Coolify Packaging + Operational Hardening) — COMPLETE (approved 2026-07-17)
+Plan: 5 of 5 complete. Staging runs the Docker Compose build pack; exactly-once verified across a real redeploy; 5 platform-only failure modes found and fixed during the checkpoint (see 08-STAGING-NOTES.md).
+Status: Ready to plan Phase 08.1. Quick task 260717-tpl (list-scoped template library) in flight.
+Last activity: 2026-07-17 -- Phase 8 closed; template-library quick task started
 
-Progress: [█████████░] 90%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
