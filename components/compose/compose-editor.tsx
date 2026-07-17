@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -72,6 +73,13 @@ import {
  * Preview + validation report render NOWHERE here — that is Plan 05.
  */
 
+/** A reusable saved template scoped to this list (tpl) — id + the fillable pair. */
+type SavedTemplate = {
+  id: number;
+  subject: string;
+  body: string;
+};
+
 type EditorSet = {
   id: number;
   filename: string;
@@ -79,6 +87,7 @@ type EditorSet = {
   row_count: number;
   columns_json: string;
   attachment_column: string | null;
+  templates: SavedTemplate[];
 };
 
 /** The uploaded-attachment row shape the DAL returns (id + filename + size). */
@@ -131,6 +140,7 @@ export function ComposeEditor({
   defaultTestEmail: string;
   initialAttachments: UploadedAttachment[];
 }) {
+  const router = useRouter();
   const form = useForm<ComposeFormValues>({
     resolver: zodResolver(composeFormSchema),
     defaultValues: { subject: "", body: "" },
@@ -384,6 +394,20 @@ export function ComposeEditor({
     }
   }
 
+  /** Load a saved template into the editor (tpl reuse): fill subject/body and mark
+   *  it as the current template id so it is immediately previewable/sendable
+   *  without a re-save. */
+  function loadTemplate(templateId: string) {
+    const template = activeSet?.templates.find(
+      (t) => String(t.id) === templateId,
+    );
+    if (!template) return;
+    form.setValue("subject", template.subject, { shouldValidate: true, shouldDirty: true });
+    form.setValue("body", template.body, { shouldValidate: true, shouldDirty: true });
+    setSavedTemplateId(template.id);
+    setAutocomplete(null);
+  }
+
   async function onSave(values: ComposeFormValues) {
     setSaveError(null);
     setSaving(true);
@@ -391,12 +415,17 @@ export function ComposeEditor({
     const fd = new FormData();
     fd.set("subject", values.subject);
     fd.set("body", values.body);
+    // Stamp the selected list so the saved template joins that list's library
+    // (tpl key_link). The server owner-resolves the id before stamping.
+    if (selectedId) fd.set("recipientSetId", selectedId);
     const res = await saveTemplate(fd);
     setSaving(false);
 
     if (res.ok) {
       setSavedTemplateId(res.data.id);
       toast.success("Template saved.");
+      // The picker is server-fetched, so refresh to surface the new row (tpl).
+      router.refresh();
       return;
     }
 
@@ -476,6 +505,28 @@ export function ComposeEditor({
               onSubmit={form.handleSubmit(onSave)}
               className="flex flex-col gap-6"
             >
+              {activeSet && activeSet.templates.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="saved-template">Saved templates</Label>
+                  <Select value="" onValueChange={loadTemplate}>
+                    <SelectTrigger id="saved-template" className="w-full">
+                      <SelectValue placeholder="Load a saved template for this list" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeSet.templates.map((template) => (
+                        <SelectItem key={template.id} value={String(template.id)}>
+                          {template.subject}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground">
+                    Loading a template fills the subject and message below — ready to
+                    preview and send.
+                  </p>
+                </div>
+              ) : null}
+
               <FormField
                 control={form.control}
                 name="subject"
