@@ -48,6 +48,9 @@ export {
   createTemplate,
   listTemplatesForUser,
   getTemplateForUser,
+  listTemplatesForRecipientSet,
+  countCampaignsForTemplate,
+  deleteTemplateForUser,
   type PersistableTemplate,
 } from "./templates";
 

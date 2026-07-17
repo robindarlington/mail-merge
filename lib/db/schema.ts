@@ -119,6 +119,13 @@ export const templates = sqliteTable("templates", {
   userId: text("user_id").notNull(),
   subject: text("subject").notNull(),
   body: text("body").notNull(),
+  // The recipient list this template belongs to (tpl). NULLABLE additive column —
+  // like email_column/attachment_column, existing rows predate it and stay NULL.
+  // A template's {{column}} merge fields only make sense against a specific list's
+  // columns, so save-time stamps this and the per-list library reads filter on it.
+  // NULL-scoped legacy rows belong to no list and never surface in any library
+  // (D1); they remain reachable by campaigns via campaigns.template_id.
+  recipient_set_id: integer("recipient_set_id").references(() => recipient_sets.id),
   created_at: integer("created_at").notNull().default(unixNow),
 });
 

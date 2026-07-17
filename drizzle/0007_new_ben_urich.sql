@@ -1,0 +1,1 @@
+ALTER TABLE `templates` ADD `recipient_set_id` integer REFERENCES recipient_sets(id);

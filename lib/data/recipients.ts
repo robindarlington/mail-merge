@@ -24,6 +24,7 @@ import { db } from "@/lib/db";
 import {
   campaigns,
   recipient_sets,
+  templates,
   type NewRecipientSet,
 } from "@/lib/db/schema";
 
@@ -144,11 +145,31 @@ export async function countCampaignsForRecipientSet(
  * {@link countCampaignsForRecipientSet} to refuse deleting a list any campaign
  * references (the FK block above), and unlink the stored CSV only on a non-empty
  * result (row-first).
+ *
+ * CASCADE (tpl / D3): the list's own list-scoped templates (recipient_set_id = id)
+ * are deleted FIRST, then the set, INSIDE one transaction. In the common case the
+ * count guard above has already blocked lists any campaign references, so these
+ * templates are unsent drafts -> safe to delete. The edge case (a template scoped
+ * to this list but referenced by a campaign whose own recipient_set is a different
+ * list) throws an FK violation on the templates DELETE -> the whole transaction
+ * rolls back (nothing removed) and the throw propagates so the delete core maps it
+ * to in_use. The throw is deliberately NOT swallowed here.
  */
 export function deleteRecipientSetForUser(userId: string, id: number) {
-  // DELETE filtered by AND(id, userId) on this line — never delete-by-id alone (owner-filter, AUTH-02 grep gate).
-  return db
-    .delete(recipient_sets)
-    .where(and(eq(recipient_sets.id, id), eq(recipient_sets.userId, userId)))
-    .returning();
+  return db.transaction((tx) => {
+    // Cascade the list's own templates first (FK-safe order). DELETE filtered by
+    // AND(recipient_set_id, userId) — owner + list scope (AUTH-02 grep gate). A
+    // campaign-referenced row throws here -> the whole transaction rolls back (D3).
+    tx
+      .delete(templates)
+      .where(and(eq(templates.recipient_set_id, id), eq(templates.userId, userId)))
+      .run();
+
+    // DELETE filtered by AND(id, userId) on this line — never delete-by-id alone (owner-filter, AUTH-02 grep gate).
+    return tx
+      .delete(recipient_sets)
+      .where(and(eq(recipient_sets.id, id), eq(recipient_sets.userId, userId)))
+      .returning()
+      .all();
+  });
 }
