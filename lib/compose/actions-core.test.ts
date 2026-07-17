@@ -35,8 +35,16 @@ process.env.UPLOADS_PATH = join(TMP_DIR, "uploads");
 
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
-const { previewCampaignCore, saveTemplateCore } = await import("./actions-core");
-const { createRecipientSet, listTemplatesForUser } = await import("@/lib/data");
+const { previewCampaignCore, saveTemplateCore, deleteTemplateCore } =
+  await import("./actions-core");
+const {
+  createRecipientSet,
+  createTemplate,
+  listTemplatesForUser,
+  listTemplatesForRecipientSet,
+  getTemplateForUser,
+} = await import("@/lib/data");
+const { campaigns, smtp_configs } = await import("@/lib/db/schema");
 const { writeUpload } = await import("@/lib/csv");
 const { detectEmailColumn, parseCsv } = await import("@/lib/core");
 const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
@@ -80,12 +88,51 @@ function previewFd(recipientSetId: number | string): FormData {
   return form;
 }
 
-/** Build a FormData carrying subject + body. */
-function saveFd(subject: string, body: string): FormData {
+/** Build a FormData carrying subject + body, plus an optional recipientSetId. */
+function saveFd(
+  subject: string,
+  body: string,
+  recipientSetId?: number | string,
+): FormData {
   const form = new FormData();
   form.set("subject", subject);
   form.set("body", body);
+  if (recipientSetId !== undefined) {
+    form.set("recipientSetId", String(recipientSetId));
+  }
   return form;
+}
+
+/** Seed a campaign referencing `templateId` (wiring the other NOT-NULL FKs). */
+async function seedCampaignForTemplate(
+  userId: string,
+  setId: number,
+  templateId: number,
+) {
+  const [cfg] = await db
+    .insert(smtp_configs)
+    .values({
+      userId,
+      host: "smtp.example.com",
+      port: 587,
+      secure: false,
+      username: "u",
+      password_enc: Buffer.from("enc"),
+      password_iv: Buffer.from("iv"),
+      password_tag: Buffer.from("tag"),
+      from_addr: "noreply@example.com",
+    })
+    .returning();
+  await db
+    .insert(campaigns)
+    .values({
+      userId,
+      recipient_set_id: setId,
+      template_id: templateId,
+      smtp_config_id: cfg.id,
+      status: "completed",
+    })
+    .returning();
 }
 
 before(() => {
@@ -195,4 +242,95 @@ test("saveTemplateCore rejects a blank subject with a validation error (write on
   // No row was inserted on the failing path.
   const after = await listTemplatesForUser(USER_A);
   assert.equal(after.length, before.length);
+});
+
+// --- save-time list stamping (tpl / D1) ---------------------------------------
+
+test("saveTemplateCore stamps recipient_set_id when the caller owns the list", async () => {
+  const setId = await seedSet(USER_A, CSV, "Email");
+  const res = await saveTemplateCore(
+    USER_A,
+    saveFd("Scoped {{Name}}", "Hi {{Name}}.", setId),
+  );
+  assert.equal(res.ok, true);
+  if (!res.ok) return;
+  // The saved row is now visible in THIS list's library (structural D1 proof).
+  const lib = await listTemplatesForRecipientSet(USER_A, setId);
+  const saved = lib.find((t) => t.id === res.data.id);
+  assert.ok(saved, "the saved template appears in the list library");
+  assert.equal(saved.recipient_set_id, setId, "the owned list id is stamped");
+});
+
+test("saveTemplateCore returns not_found for a list owned by another tenant (never stamps a foreign list)", async () => {
+  const foreignSetId = await seedSet(USER_B, CSV, "Email");
+  const before = await listTemplatesForUser(USER_A);
+  const res = await saveTemplateCore(
+    USER_A,
+    saveFd("Sneaky", "body", foreignSetId),
+  );
+  assert.equal(res.ok, false);
+  if (res.ok) return;
+  assert.equal(res.error.kind, "not_found");
+  // Nothing was written — a foreign list is never stamped (T-tpl-TAMPER).
+  const after = await listTemplatesForUser(USER_A);
+  assert.equal(after.length, before.length, "no template was created");
+});
+
+test("saveTemplateCore saves an unscoped template when no recipientSetId is supplied (backward-compatible)", async () => {
+  const res = await saveTemplateCore(USER_A, saveFd("Legacy", "No list."));
+  assert.equal(res.ok, true);
+  if (!res.ok) return;
+  const saved = await getTemplateForUser(USER_A, res.data.id);
+  assert.equal(saved?.recipient_set_id, null, "an absent list id stays null");
+});
+
+// --- deleteTemplateCore (tpl / D2) --------------------------------------------
+
+test("deleteTemplateCore deletes an owned, unreferenced template", async () => {
+  const setId = await seedSet(USER_A, CSV, "Email");
+  const [tpl] = await createTemplate(USER_A, {
+    subject: "Draft",
+    body: "b",
+    recipient_set_id: setId,
+  });
+  const res = await deleteTemplateCore(USER_A, tpl.id);
+  assert.equal(res.ok, true);
+  assert.equal(await getTemplateForUser(USER_A, tpl.id), undefined, "gone after delete");
+});
+
+test("deleteTemplateCore blocks a campaign-referenced template as in_use (D2)", async () => {
+  const setId = await seedSet(USER_A, CSV, "Email");
+  const [tpl] = await createTemplate(USER_A, {
+    subject: "Referenced",
+    body: "b",
+    recipient_set_id: setId,
+  });
+  await seedCampaignForTemplate(USER_A, setId, tpl.id);
+  const res = await deleteTemplateCore(USER_A, tpl.id);
+  assert.equal(res.ok, false);
+  if (res.ok) return;
+  assert.equal(res.error.kind, "in_use");
+  // The template survives so campaign history stays intact.
+  assert.ok(await getTemplateForUser(USER_A, tpl.id), "the referenced template survives");
+});
+
+test("deleteTemplateCore returns not_found for a cross-tenant template (IDOR)", async () => {
+  const setId = await seedSet(USER_B, CSV, "Email");
+  const [tpl] = await createTemplate(USER_B, {
+    subject: "B's",
+    body: "b",
+    recipient_set_id: setId,
+  });
+  const res = await deleteTemplateCore(USER_A, tpl.id);
+  assert.equal(res.ok, false);
+  if (res.ok) return;
+  assert.equal(res.error.kind, "not_found");
+  assert.ok(await getTemplateForUser(USER_B, tpl.id), "User B's template is untouched");
+});
+
+test("deleteTemplateCore returns not_found for a bogus id", async () => {
+  const res = await deleteTemplateCore(USER_A, 9_999_999);
+  assert.equal(res.ok, false);
+  if (res.ok) return;
+  assert.equal(res.error.kind, "not_found");
 });
