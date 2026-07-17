@@ -316,7 +316,7 @@ Plans:
 
 **Goal:** An AI agent or developer can run mail merges without the web UI: a npm-installable CLI (bin: `mail-merge`) that reuses lib/core directly, plus a stdio MCP server exposing the same operations as tools, so agents can discover and drive the merge engine locally.
 **Mode:** mvp
-**Requirements**: TBD (extends BRAND-01 reach; standalone-local decision LOCKED 2026-07-15 — no API-token layer in this phase)
+**Requirements**: none mapped — success criteria tracked as SC-1..SC-5 (extends BRAND-01 reach; standalone-local decision LOCKED 2026-07-15 — no API-token layer in this phase)
 **Depends on:** Phase 1 (lib/core only). Positioned after Phase 8 so Phase 9's launch collateral (README, /agents page) can document the shipped CLI/MCP.
 **Success Criteria** (what must be TRUE):
 
@@ -326,7 +326,23 @@ Plans:
   4. Unit tests cover merge parity with lib/core and the CLI argument contract.
   5. README documents both, including copy-paste agent-usage examples (MCP config snippet + CLI one-liners).
 
-**Plans**: TBD
+**Plans**: 4 plans (3 autonomous + Wave 0 scaffold; 1 legitimacy gate + 1 queued publish checkpoint)
+Plans:
+**Wave 1**
+
+- [ ] 08.1-01-PLAN.md — Standalone packages/cli scaffold + secret-safe parseArgs contract + dry-run driver over lib/core (SC-1/SC-2/SC-4; package-legitimacy gate)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 08.1-02-PLAN.md — Secret-safe SMTP intake + shared run.ts send driver + JSONL receipts/--resume; wire --test/--send (SC-1/SC-2, D-06/07/09/11/12)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 08.1-03-PLAN.md — stdio MCP server: validate-csv/preview-merge/test-send/send tools + two-step confirm token; `mail-merge mcp` dispatch (SC-3, D-04)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 08.1-04-PLAN.md — esbuild bundle + publish metadata + README (mcp.json + CLI one-liners) + tarball smoke + deploy-protection; [QUEUED CHECKPOINT] first npm publish (SC-1/SC-5, D-01/02/03)
 
 ### Phase 9: Launch Collateral
 
@@ -361,5 +377,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 6.1 → 7 �
 | 6.1. Multiple SMTP servers per account | 4/4 | Complete   | 2026-07-15 |
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
 | 8. Docker / Coolify Packaging + Operational Hardening | 0/TBD | Not started | - |
-| 8.1. Agent access — standalone CLI + MCP server | 0/TBD | Not started | - |
+| 8.1. Agent access — standalone CLI + MCP server | 0/4 | Planned | - |
 | 9. Launch Collateral | 0/TBD | Not started | - |
