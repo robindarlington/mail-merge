@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { MergeFieldMenu } from "@/components/compose/merge-field-menu";
+import { LoadedTemplateDelete } from "@/components/compose/loaded-template-delete";
 import { getCaretRect } from "@/components/compose/caret-coords";
 import { PreviewStepper } from "@/components/compose/preview-stepper";
 import { SendCard } from "@/components/campaign/send-card";
@@ -546,6 +547,33 @@ export function ComposeEditor({
                     Loading a template fills the subject and message below — ready to
                     preview and send.
                   </p>
+                </div>
+              ) : null}
+
+              {/* In-compose delete (tdl): shown only when a template is LOADED
+                  (savedTemplateId set — via deep link, reuse picker, or fresh save).
+                  onCleared blanks the editor + hides this affordance for BOTH the
+                  successful-delete and the in_use clear-fields paths. */}
+              {savedTemplateId !== null ? (
+                <div className="flex items-center justify-between gap-3 rounded-md border border-dashed p-3">
+                  <p className="text-sm text-muted-foreground">
+                    A saved template is loaded in this editor.
+                  </p>
+                  <LoadedTemplateDelete
+                    templateId={savedTemplateId}
+                    onCleared={() => {
+                      form.setValue("subject", "", {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      });
+                      form.setValue("body", "", {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      });
+                      setSavedTemplateId(null);
+                      setAutocomplete(null);
+                    }}
+                  />
                 </div>
               ) : null}
 
