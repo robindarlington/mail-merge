@@ -1,0 +1,24 @@
+{
+  "name": "@robindarlington/mail-merge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "mail-merge": "dist/bin.js"
+  },
+  "scripts": {
+    "test": "node --import tsx --test \"test/*.test.ts\"",
+    "build": "esbuild src/bin.ts --bundle --platform=node --format=esm --outfile=dist/bin.js --banner:js=\"#!/usr/bin/env node\""
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@types/node": "^24",
+    "esbuild": "^0.25",
+    "tsx": "^4.22",
+    "zod": "^4.4"
+  }
+}
