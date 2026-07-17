@@ -3,13 +3,17 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
-import { getRecipientSetForUser } from "@/lib/data";
+import {
+  getRecipientSetForUser,
+  listTemplatesForRecipientSet,
+} from "@/lib/data";
 import { readUpload } from "@/lib/csv/storage";
 import { parseCsv } from "@/lib/core/csv";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { ListRename } from "@/components/recipients/list-rename";
 import { ListDelete } from "@/components/recipients/list-delete";
+import { TemplateLibrary } from "@/components/templates/template-library";
 import {
   Table,
   TableBody,
@@ -85,6 +89,10 @@ export default async function ListDetailPage({
   const rows = parsed.rows;
   const shown = rows.slice(0, CAP);
   const capped = rows.length > CAP;
+
+  // This list's saved-template library (tpl). Owner + list scoped by the DAL, so
+  // only this list's templates show and NULL-scoped legacy rows never appear (D1).
+  const savedTemplates = await listTemplatesForRecipientSet(userId, set.id);
 
   return (
     <div className="flex flex-col gap-8">
@@ -189,6 +197,8 @@ export default async function ListDetailPage({
           )}
         </div>
       )}
+
+      <TemplateLibrary templates={savedTemplates} />
     </div>
   );
 }

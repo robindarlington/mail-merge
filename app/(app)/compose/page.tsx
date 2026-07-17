@@ -5,6 +5,7 @@ import {
   listRecipientSetsForUser,
   listSmtpConfigsForUser,
   listPendingAttachmentsForUser,
+  listTemplatesForRecipientSet,
   toSmtpConfigDto,
 } from "@/lib/data";
 import { Button } from "@/components/ui/button";
@@ -55,14 +56,26 @@ export default async function ComposePage() {
     ? await listPendingAttachmentsForUser(userId)
     : [];
 
-  const editorSets = sets.map((set) => ({
-    id: set.id,
-    filename: set.filename,
-    label: set.label,
-    row_count: set.row_count,
-    columns_json: set.columns_json,
-    attachment_column: set.attachment_column,
-  }));
+  // Each set's saved-template library (tpl) feeds the compose reuse picker. Owner +
+  // list scoped by the DAL, so a set only ever carries its own templates and
+  // NULL-scoped legacy rows never surface (D1). Fetched in parallel per set.
+  const editorSets = await Promise.all(
+    sets.map(async (set) => ({
+      id: set.id,
+      filename: set.filename,
+      label: set.label,
+      row_count: set.row_count,
+      columns_json: set.columns_json,
+      attachment_column: set.attachment_column,
+      templates: userId
+        ? (await listTemplatesForRecipientSet(userId, set.id)).map((t) => ({
+            id: t.id,
+            subject: t.subject,
+            body: t.body,
+          }))
+        : [],
+    })),
+  );
 
   return (
     <div className="flex flex-col gap-8">

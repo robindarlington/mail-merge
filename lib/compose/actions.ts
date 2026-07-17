@@ -23,11 +23,15 @@
  *    `raw` is always a message STRING.
  */
 
+import { z } from "zod";
+
 import {
   previewCampaignCore,
   saveTemplateCore,
+  deleteTemplateCore,
   type PreviewResult,
   type SaveResult,
+  type DeleteTemplateResult,
 } from "./actions-core";
 
 // Type-only re-exports are erased at compile time, so they are NOT registered as
@@ -37,7 +41,13 @@ export type {
   PreviewResult,
   SaveResult,
   ActionError,
+  DeleteTemplateResult,
+  DeleteTemplateError,
 } from "./actions-core";
+
+// The client sends only a template id; coerce + validate it as a positive integer
+// so a missing/non-numeric/0/negative id fails as `validation` before any DB touch.
+const templateIdSchema = z.coerce.number().int().positive();
 
 /**
  * previewCampaign (PREV-01/02/03): auth → resolve → preview. Rejects
@@ -66,4 +76,32 @@ export async function saveTemplate(formData: FormData): Promise<SaveResult> {
   const { userId } = await auth();
   if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
   return saveTemplateCore(userId, formData);
+}
+
+/**
+ * deleteTemplate (tpl): auth → validate id → delete. Re-derives `userId`
+ * server-side; the client-supplied `id` is only a proposal — the core owner-scopes
+ * it (T-tpl-IDOR-2). Coerces the id with `templateIdSchema` (a missing/non-numeric/
+ * 0/negative id fails as `validation` before any DB touch), then delegates to
+ * `deleteTemplateCore`. On success revalidates the list detail page so the removed
+ * template drops off its library. A campaign-referenced template returns `in_use`.
+ */
+export async function deleteTemplate(
+  id: unknown,
+): Promise<DeleteTemplateResult> {
+  const { auth } = await import("@clerk/nextjs/server");
+  const { userId } = await auth();
+  if (!userId) return { ok: false, error: { kind: "unauthenticated" } };
+
+  const parsed = templateIdSchema.safeParse(id);
+  if (!parsed.success) {
+    return { ok: false, error: { kind: "validation", issues: parsed.error.issues } };
+  }
+
+  const result = await deleteTemplateCore(userId, parsed.data);
+  if (result.ok) {
+    const { revalidatePath } = await import("next/cache");
+    revalidatePath("/lists/[id]", "page");
+  }
+  return result;
 }
