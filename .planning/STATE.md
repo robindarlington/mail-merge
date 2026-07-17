@@ -110,6 +110,7 @@ None yet.
 | 260714-dxm | Rename Recipients page to Lists and add a CSV contents viewer (columns + rows detail page per upload) | 2026-07-14 | 892c0d9 | [260714-dxm-rename-recipients-page-to-lists-and-add-](./quick/260714-dxm-rename-recipients-page-to-lists-and-add-/) |
 | 260715-r8d | Make list info editable in the UX: rename the label of a previously uploaded list (Lists page + detail + compose selector) | 2026-07-15 | cdc7a49 | [260715-r8d-make-list-info-editable-in-the-ux-allow-](./quick/260715-r8d-make-list-info-editable-in-the-ux-allow-/) |
 | 260716-mdt | Add delete capability for campaigns and uploaded lists with confirm step and safe cleanup | 2026-07-16 | d7474d7 | [260716-mdt-add-delete-capability-for-campaigns-and-](./quick/260716-mdt-add-delete-capability-for-campaigns-and-/) |
+| 260717-tpl | Template library scoped to lists (one-to-many list→templates): browse/reuse/delete saved templates | 2026-07-17 | 2fc2c39 | [260717-tpl-template-library-list-scoped](./quick/260717-tpl-template-library-list-scoped/) |
 
 ## Deferred Items
 
