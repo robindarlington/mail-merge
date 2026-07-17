@@ -11,6 +11,7 @@ import {
   previewCampaign,
   saveTemplate,
   type PreviewReport,
+  type ResolvedInitialTemplate,
 } from "@/lib/compose/actions";
 import { composeFormSchema, type ComposeFormValues } from "@/lib/compose/schema";
 import type { SmtpConfigDto } from "@/lib/data";
@@ -41,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { MergeFieldMenu } from "@/components/compose/merge-field-menu";
+import { LoadedTemplateDelete } from "@/components/compose/loaded-template-delete";
 import { getCaretRect } from "@/components/compose/caret-coords";
 import { PreviewStepper } from "@/components/compose/preview-stepper";
 import { SendCard } from "@/components/campaign/send-card";
@@ -134,20 +136,37 @@ export function ComposeEditor({
   configs,
   defaultTestEmail,
   initialAttachments,
+  initialTemplate,
 }: {
   sets: EditorSet[];
   configs: SmtpConfigDto[];
   defaultTestEmail: string;
   initialAttachments: UploadedAttachment[];
+  initialTemplate?: ResolvedInitialTemplate | null;
 }) {
   const router = useRouter();
+
+  // Deep-link preselection (tdl): when /compose?template=<id> resolved an owned
+  // template, open on the template's list; otherwise the first list. Reuses the SAME
+  // savedTemplateId + field-fill contract loadTemplate() establishes — no parallel
+  // load path, no mount effect (lazy initializers below → no flash). initialSet
+  // stays sets[0] when the template is unscoped OR its list isn't in `sets`.
+  const initialSet =
+    (initialTemplate?.recipientSetId != null
+      ? sets.find((set) => set.id === initialTemplate.recipientSetId)
+      : undefined) ??
+    (sets.length > 0 ? sets[0] : undefined);
+
   const form = useForm<ComposeFormValues>({
     resolver: zodResolver(composeFormSchema),
-    defaultValues: { subject: "", body: "" },
+    defaultValues: {
+      subject: initialTemplate?.subject ?? "",
+      body: initialTemplate?.body ?? "",
+    },
   });
 
   const [selectedId, setSelectedId] = useState<string>(
-    sets.length > 0 ? String(sets[0].id) : "",
+    initialSet ? String(initialSet.id) : "",
   );
   // The chosen verified SMTP server the campaign sends through (proposed to the
   // server, which owner-re-resolves it). Auto-selected per initialSmtpConfigId.
@@ -155,8 +174,12 @@ export function ComposeEditor({
     initialSmtpConfigId(configs),
   );
   // The most-recently saved standalone template id (A1/U7 — template save stays
-  // standalone; re-saving creates a new row and updates this to the newest id).
-  const [savedTemplateId, setSavedTemplateId] = useState<number | null>(null);
+  // standalone; re-saving creates a new row and updates this to the newest id). A
+  // deep-linked template (tdl) seeds this so the loaded template is immediately
+  // previewable/sendable AND deletable (Task 2) without a re-save.
+  const [savedTemplateId, setSavedTemplateId] = useState<number | null>(
+    initialTemplate?.id ?? null,
+  );
   const [autocomplete, setAutocomplete] = useState<Autocomplete | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -181,7 +204,7 @@ export function ComposeEditor({
   const [attachments, setAttachments] =
     useState<UploadedAttachment[]>(initialAttachments);
   const [attachmentColumn, setAttachmentColumn] = useState<string | null>(
-    sets.length > 0 ? sets[0].attachment_column : null,
+    initialSet ? initialSet.attachment_column : null,
   );
   const [attachmentMatch, setAttachmentMatch] =
     useState<AttachmentMatch | null>(null);
@@ -524,6 +547,33 @@ export function ComposeEditor({
                     Loading a template fills the subject and message below — ready to
                     preview and send.
                   </p>
+                </div>
+              ) : null}
+
+              {/* In-compose delete (tdl): shown only when a template is LOADED
+                  (savedTemplateId set — via deep link, reuse picker, or fresh save).
+                  onCleared blanks the editor + hides this affordance for BOTH the
+                  successful-delete and the in_use clear-fields paths. */}
+              {savedTemplateId !== null ? (
+                <div className="flex items-center justify-between gap-3 rounded-md border border-dashed p-3">
+                  <p className="text-sm text-muted-foreground">
+                    A saved template is loaded in this editor.
+                  </p>
+                  <LoadedTemplateDelete
+                    templateId={savedTemplateId}
+                    onCleared={() => {
+                      form.setValue("subject", "", {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      });
+                      form.setValue("body", "", {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      });
+                      setSavedTemplateId(null);
+                      setAutocomplete(null);
+                    }}
+                  />
                 </div>
               ) : null}
 

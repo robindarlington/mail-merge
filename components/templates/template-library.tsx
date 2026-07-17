@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import {
   Card,
   CardContent,
@@ -71,14 +73,22 @@ export function TemplateLibrary({
                 key={template.id}
                 className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
               >
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm font-medium">
+                {/* One-click open (tdl): the subject is a deep link to compose with
+                    this template preselected. The subject renders as escaped JSX text
+                    only — never dangerouslySetInnerHTML — so attacker-influenced
+                    subject content can't inject markup (T-tdl-XSS). The TemplateDelete
+                    control stays OUTSIDE the link so a delete click never navigates. */}
+                <Link
+                  href={`/compose?template=${template.id}`}
+                  className="group flex min-w-0 flex-col rounded-sm transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="truncate text-sm font-medium group-hover:underline">
                     {template.subject}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     Saved {formatRelativeDate(template.created_at)}
                   </span>
-                </div>
+                </Link>
                 <TemplateDelete id={template.id} subject={template.subject} />
               </li>
             ))}

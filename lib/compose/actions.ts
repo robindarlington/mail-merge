@@ -43,6 +43,7 @@ export type {
   ActionError,
   DeleteTemplateResult,
   DeleteTemplateError,
+  ResolvedInitialTemplate,
 } from "./actions-core";
 
 // The client sends only a template id; coerce + validate it as a positive integer
