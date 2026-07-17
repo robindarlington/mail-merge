@@ -111,6 +111,7 @@ None yet.
 | 260715-r8d | Make list info editable in the UX: rename the label of a previously uploaded list (Lists page + detail + compose selector) | 2026-07-15 | cdc7a49 | [260715-r8d-make-list-info-editable-in-the-ux-allow-](./quick/260715-r8d-make-list-info-editable-in-the-ux-allow-/) |
 | 260716-mdt | Add delete capability for campaigns and uploaded lists with confirm step and safe cleanup | 2026-07-16 | d7474d7 | [260716-mdt-add-delete-capability-for-campaigns-and-](./quick/260716-mdt-add-delete-capability-for-campaigns-and-/) |
 | 260717-tpl | Template library scoped to lists (one-to-many list→templates): browse/reuse/delete saved templates | 2026-07-17 | 2fc2c39 | [260717-tpl-template-library-list-scoped](./quick/260717-tpl-template-library-list-scoped/) |
+| 260718-tdl | One-click template open from list page into /compose + in-compose delete that clears the editor | 2026-07-18 | e11c7e3 | [260718-tdl-template-deep-link-and-compose-delete](./quick/260718-tdl-template-deep-link-and-compose-delete/) |
 
 ## Deferred Items
 
