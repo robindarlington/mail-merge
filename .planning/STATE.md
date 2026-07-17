@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 8 COMPLETE (08-05 staging checkpoint approved 2026-07-17 — exactly-once across a real Coolify redeploy; 5 platform-only bugs found+fixed during checkpoint). Next planned phase 08.1; quick task 260717-tpl (list-scoped template library) in flight
-last_updated: "2026-07-17T09:30:00.000Z"
+status: planning
+stopped_at: Phase 08.1 context gathered
+last_updated: "2026-07-17T22:45:59.504Z"
 last_activity: 2026-07-17 -- Phase 8 closed; template-library quick task started
 progress:
   total_phases: 11
-  completed_phases: 8
+  completed_phases: 5
   total_plans: 52
   completed_plans: 48
-  percent: 92
+  percent: 45
 ---
 
 # Project State
@@ -123,6 +123,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-14T21:15:21.207Z
-Stopped at: Phase 6.1 complete (walkthrough approved, review CR-01 fixed, verification passed); quick task 260715-r8d complete
-Resume file: none
+Last session: 2026-07-17T22:45:59.495Z
+Stopped at: Phase 08.1 context gathered
+Resume file: .planning/phases/08.1-agent-access-standalone-cli-mcp-server-npm-installable-cli-b/08.1-CONTEXT.md
