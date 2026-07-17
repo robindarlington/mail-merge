@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 08.1 context gathered
-last_updated: "2026-07-17T23:22:18.934Z"
-last_activity: 2026-07-17 -- Phase 08.1 planning complete
+last_updated: "2026-07-17T23:40:44.333Z"
+last_activity: 2026-07-17 -- Phase 08.1 execution started
 progress:
   total_phases: 11
   completed_phases: 5
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-24)
 
 **Core value:** A signed-in user can reliably send a personalized email to every row of their CSV, using their own validated SMTP, with confidence (preview + test-send) and a record of exactly what was sent and to whom.
-**Current focus:** Phase 8 complete — next: Phase 08.1 (Agent access: CLI + MCP)
+**Current focus:** Phase 08.1 — agent-access-standalone-cli-mcp-server-npm-installable-cli-b
 
 ## Current Position
 
-Phase: 8 (Docker / Coolify Packaging + Operational Hardening) — COMPLETE (approved 2026-07-17)
-Plan: 5 of 5 complete. Staging runs the Docker Compose build pack; exactly-once verified across a real redeploy; 5 platform-only failure modes found and fixed during the checkpoint (see 08-STAGING-NOTES.md).
-Status: Ready to execute
-Last activity: 2026-07-17 -- Phase 08.1 planning complete
+Phase: 08.1 (agent-access-standalone-cli-mcp-server-npm-installable-cli-b) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 08.1
+Last activity: 2026-07-17 -- Phase 08.1 execution started
 
 Progress: [█████████░] 92%
 

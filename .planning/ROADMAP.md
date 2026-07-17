@@ -330,7 +330,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 08.1-01-PLAN.md — Standalone packages/cli scaffold + secret-safe parseArgs contract + dry-run driver over lib/core (SC-1/SC-2/SC-4; package-legitimacy gate)
+- [x] 08.1-01-PLAN.md — Standalone packages/cli scaffold + secret-safe parseArgs contract + dry-run driver over lib/core (SC-1/SC-2/SC-4; package-legitimacy gate)
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -377,5 +377,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 6.1 → 7 �
 | 6.1. Multiple SMTP servers per account | 4/4 | Complete   | 2026-07-15 |
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
 | 8. Docker / Coolify Packaging + Operational Hardening | 0/TBD | Not started | - |
-| 8.1. Agent access — standalone CLI + MCP server | 0/4 | Planned | - |
+| 8.1. Agent access — standalone CLI + MCP server | 1/4 | In Progress|  |
 | 9. Launch Collateral | 0/TBD | Not started | - |
