@@ -23,6 +23,7 @@ const TMP_DIR = mkdtempSync(join(tmpdir(), "recipients-dal-"));
 process.env.DATABASE_PATH = join(TMP_DIR, "app.db");
 
 // Dynamic imports so the env var above is in effect at module-eval time.
+const { eq } = await import("drizzle-orm");
 const { db, connection } = await import("@/lib/db");
 const { campaigns, templates, smtp_configs } = await import("@/lib/db/schema");
 const {
@@ -245,4 +246,81 @@ test("deleteRecipientSetForUser by User B on User A's set removes zero rows (IDO
   assert.equal(removed.length, 0, "a cross-tenant delete removes zero rows");
   const still = await getRecipientSetForUser(USER_A, set.id);
   assert.ok(still, "the owner's set survives a cross-tenant delete");
+});
+
+// --- list delete cascades its templates transactionally (tpl / D3) ------------
+//
+// Deleting a list removes its list-scoped templates in the SAME transaction. A
+// template scoped to the list but referenced by a campaign throws an FK violation
+// that rolls the WHOLE transaction back — the set and its templates all survive —
+// so the delete core can map it to in_use. Draft (unreferenced) templates cascade.
+
+test("deleteRecipientSetForUser cascades the list's draft templates in one transaction", async () => {
+  const [set] = await createRecipientSet(USER_A, recipientValues("cascade-set", ["email"], 1));
+  const [t1] = await db
+    .insert(templates)
+    .values({ userId: USER_A, subject: "S1", body: "B1", recipient_set_id: set.id })
+    .returning();
+  const [t2] = await db
+    .insert(templates)
+    .values({ userId: USER_A, subject: "S2", body: "B2", recipient_set_id: set.id })
+    .returning();
+
+  const removed = await deleteRecipientSetForUser(USER_A, set.id);
+  assert.equal(removed.length, 1, "the set row is returned by the DELETE");
+  assert.equal(await getRecipientSetForUser(USER_A, set.id), undefined, "set is gone");
+
+  // Both list-scoped templates were removed in the same transaction.
+  const survivorIds = (await db.query.templates.findMany()).map((t) => t.id);
+  assert.ok(!survivorIds.includes(t1.id), "list template 1 cascaded away");
+  assert.ok(!survivorIds.includes(t2.id), "list template 2 cascaded away");
+});
+
+test("deleteRecipientSetForUser rolls back when a list-scoped template is campaign-referenced (D3)", async () => {
+  // The list to delete, and a SECOND list that owns the referencing campaign.
+  const [victim] = await createRecipientSet(USER_A, recipientValues("victim-set", ["email"], 1));
+  const [other] = await createRecipientSet(USER_A, recipientValues("other-set", ["email"], 1));
+  // A template scoped to the victim list...
+  const [tpl] = await db
+    .insert(templates)
+    .values({ userId: USER_A, subject: "Ref", body: "B", recipient_set_id: victim.id })
+    .returning();
+  // ...referenced by a campaign whose own recipient_set is the OTHER list.
+  const [cfg] = await db
+    .insert(smtp_configs)
+    .values({
+      userId: USER_A,
+      host: "smtp.example.com",
+      port: 587,
+      secure: false,
+      username: "u",
+      password_enc: Buffer.from("enc"),
+      password_iv: Buffer.from("iv"),
+      password_tag: Buffer.from("tag"),
+      from_addr: "noreply@example.com",
+    })
+    .returning();
+  await db
+    .insert(campaigns)
+    .values({
+      userId: USER_A,
+      recipient_set_id: other.id,
+      template_id: tpl.id,
+      smtp_config_id: cfg.id,
+      status: "completed",
+    })
+    .returning();
+
+  // Deleting the victim list tries to delete its templates first → FK throw on the
+  // referenced template → the whole transaction rolls back.
+  await assert.rejects(
+    async () => deleteRecipientSetForUser(USER_A, victim.id),
+    "an FK-referenced list template makes the whole delete throw",
+  );
+  // Nothing was removed: both the set and the template survive.
+  assert.ok(await getRecipientSetForUser(USER_A, victim.id), "the set survives the rollback");
+  const stillThere = await db.query.templates.findFirst({
+    where: eq(templates.id, tpl.id),
+  });
+  assert.ok(stillThere, "the referenced template survives the rollback");
 });
