@@ -35,8 +35,12 @@ process.env.UPLOADS_PATH = join(TMP_DIR, "uploads");
 
 // Dynamic imports so the env vars above are in effect at module-eval time.
 const { db, connection } = await import("@/lib/db");
-const { previewCampaignCore, saveTemplateCore, deleteTemplateCore } =
-  await import("./actions-core");
+const {
+  previewCampaignCore,
+  saveTemplateCore,
+  deleteTemplateCore,
+  resolveInitialTemplateCore,
+} = await import("./actions-core");
 const {
   createRecipientSet,
   createTemplate,
@@ -333,4 +337,63 @@ test("deleteTemplateCore returns not_found for a bogus id", async () => {
   assert.equal(res.ok, false);
   if (res.ok) return;
   assert.equal(res.error.kind, "not_found");
+});
+
+// --- resolveInitialTemplateCore (tdl / deep-link) -----------------------------
+
+test("resolveInitialTemplateCore resolves an owned template into the editor projection", async () => {
+  const setId = await seedSet(USER_A, CSV, "Email");
+  const [tpl] = await createTemplate(USER_A, {
+    subject: "Deep {{Name}}",
+    body: "Hi {{Name}}, open me.",
+    recipient_set_id: setId,
+  });
+  const resolved = await resolveInitialTemplateCore(USER_A, String(tpl.id));
+  assert.deepEqual(resolved, {
+    id: tpl.id,
+    subject: "Deep {{Name}}",
+    body: "Hi {{Name}}, open me.",
+    recipientSetId: setId,
+  });
+});
+
+test("resolveInitialTemplateCore returns null for a cross-tenant template (IDOR, no leak)", async () => {
+  const setId = await seedSet(USER_A, CSV, "Email");
+  const [tpl] = await createTemplate(USER_A, {
+    subject: "A's secret subject",
+    body: "A's secret body",
+    recipient_set_id: setId,
+  });
+  // USER_B must never see USER_A's subject/body via the deep link.
+  const resolved = await resolveInitialTemplateCore(USER_B, String(tpl.id));
+  assert.equal(resolved, null);
+});
+
+test("resolveInitialTemplateCore returns null for a non-numeric / 0 / negative / absent param (no DB touch)", async () => {
+  assert.equal(await resolveInitialTemplateCore(USER_A, "not-a-number"), null);
+  assert.equal(await resolveInitialTemplateCore(USER_A, "0"), null);
+  assert.equal(await resolveInitialTemplateCore(USER_A, "-5"), null);
+  assert.equal(await resolveInitialTemplateCore(USER_A, undefined), null);
+  assert.equal(await resolveInitialTemplateCore(USER_A, null), null);
+  assert.equal(await resolveInitialTemplateCore(USER_A, ""), null);
+});
+
+test("resolveInitialTemplateCore returns null for a valid-but-nonexistent id", async () => {
+  const resolved = await resolveInitialTemplateCore(USER_A, "9999999");
+  assert.equal(resolved, null);
+});
+
+test("resolveInitialTemplateCore resolves an unscoped template with a null recipientSetId", async () => {
+  const [tpl] = await createTemplate(USER_A, {
+    subject: "Unscoped subject",
+    body: "Unscoped body",
+    // no recipient_set_id → NULL-scoped legacy row
+  });
+  const resolved = await resolveInitialTemplateCore(USER_A, String(tpl.id));
+  assert.deepEqual(resolved, {
+    id: tpl.id,
+    subject: "Unscoped subject",
+    body: "Unscoped body",
+    recipientSetId: null,
+  });
 });

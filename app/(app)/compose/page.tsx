@@ -16,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { resolveInitialTemplateCore } from "@/lib/compose/actions-core";
 import { ComposeEditor } from "@/components/compose/compose-editor";
 
 /**
@@ -30,9 +31,23 @@ import { ComposeEditor } from "@/components/compose/compose-editor";
  * least one list exists, the client <ComposeEditor> renders; each set's columns
  * (columns_json) feed the merge-field autocomplete with no extra round-trip.
  */
-export default async function ComposePage() {
+export default async function ComposePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ template?: string }>;
+}) {
   const { userId } = await auth();
   const sets = userId ? await listRecipientSetsForUser(userId) : [];
+
+  // One-click open (tdl): a ?template=<id> deep link from the list library resolves
+  // OWNER-SCOPED server-side via resolveInitialTemplateCore (reusing the tested
+  // getTemplateForUser DAL). A foreign/bogus id → null → the editor renders its
+  // normal empty state; another tenant's subject/body is never leaked (T-tdl-IDOR-1).
+  const { template } = await searchParams;
+  const initialTemplate =
+    userId && template
+      ? await resolveInitialTemplateCore(userId, template)
+      : null;
 
   // Send-card server picker (06.1 multi-server): list the user's verified servers
   // and project each through the redacted DTO. Only the DTO (id/label/is_default/
@@ -104,6 +119,7 @@ export default async function ComposePage() {
           configs={configs}
           defaultTestEmail={defaultTestEmail}
           initialAttachments={initialAttachments}
+          initialTemplate={initialTemplate}
         />
       )}
     </div>

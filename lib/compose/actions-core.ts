@@ -242,3 +242,54 @@ export async function deleteTemplateCore(
     return { ok: false, error: { kind: "unknown", raw: String((e as Error)?.message ?? e) } };
   }
 }
+
+// --- Deep-link resolver seam (tdl / ?template=) -------------------------------
+//
+// One-click open: the /compose RSC hands this the raw ?template= query param and
+// the auth-derived userId, and gets back the editor's initialTemplate projection
+// (or null). All owner-scoping is delegated to the already-tested getTemplateForUser
+// DAL — a foreign or bogus id resolves to null, so /compose silently falls back to
+// its normal empty editor and never leaks another tenant's subject/body (T-tdl-IDOR-1).
+
+/**
+ * The projection the compose editor consumes to preselect a list + fill subject/body
+ * from a deep-linked template. `recipientSetId` is null for a legacy unscoped template
+ * (the editor/page then default the list to sets[0]).
+ */
+export type ResolvedInitialTemplate = {
+  id: number;
+  subject: string;
+  body: string;
+  recipientSetId: number | null;
+};
+
+// Same positive-int coercion the id guards use elsewhere: a missing / non-numeric /
+// 0 / negative param fails BEFORE any DB touch (T-tdl-VAL), so a bad ?template= can
+// never resolve a bogus row.
+const templateIdSchema = z.coerce.number().int().positive();
+
+/**
+ * Resolver seam (testable): validate the raw ?template= param → userId-scoped
+ * fetch-by-id → editor projection, or null. Reuses the tested getTemplateForUser DAL
+ * for ALL owner-scoping (never a fetch-by-id-alone path). A non-numeric/0/negative/
+ * absent param → null (guard, no DB touch). A cross-tenant or nonexistent id → the
+ * DAL returns undefined → null. No throw: the /compose RSC treats null as "render the
+ * normal empty editor" (T-tdl-IDOR-1 / T-tdl-VAL).
+ */
+export async function resolveInitialTemplateCore(
+  userId: string,
+  rawParam: unknown,
+): Promise<ResolvedInitialTemplate | null> {
+  const parsed = templateIdSchema.safeParse(rawParam);
+  if (!parsed.success) return null;
+
+  const row = await getTemplateForUser(userId, parsed.data);
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    subject: row.subject,
+    body: row.body,
+    recipientSetId: row.recipient_set_id,
+  };
+}
