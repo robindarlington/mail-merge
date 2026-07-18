@@ -371,6 +371,28 @@ test("runSend test mode addresses ONE address but keeps each row's real fill (CL
   }
 });
 
+test("test mode + resume is rejected — resume keyed on the test address would skip every row (WR-03)", async () => {
+  const { runSend } = await import("../src/run.js");
+  const { transport } = recordingTransport();
+  await assert.rejects(
+    () =>
+      runSend({
+        mode: "test",
+        testAddr: "proof@me.com",
+        rows: ROWS,
+        emailColumn: "email",
+        template: TEMPLATE,
+        smtp: { host: "127.0.0.1", port: 1, secure: false, auth: { user: "u", pass: "p" } },
+        from: "noreply@example.com",
+        delayMs: 0,
+        receiptsPath: join(tmpdir(), "never-written.receipts.jsonl"),
+        resume: true,
+        createTransport: () => transport,
+      }),
+    /--resume cannot be combined with --test/,
+  );
+});
+
 test("an injected log sink receives ALL progress; console.log is never touched (WR-01)", async () => {
   const { runSend } = await import("../src/run.js");
   const { transport } = recordingTransport();

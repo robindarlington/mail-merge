@@ -117,6 +117,13 @@ export async function runSend(opts: RunSendOpts): Promise<RunSendResult> {
   if (mode === "test" && !testAddr) {
     throw new Error("test mode requires a test address");
   }
+  // In test mode every row's `to` IS the single test address, so a resume set
+  // containing it would skip the ENTIRE batch — structurally meaningless (WR-03).
+  if (mode === "test" && resume) {
+    throw new Error(
+      "--resume cannot be combined with --test: test-mode receipts are keyed by the single test address, so resume would skip every row",
+    );
+  }
 
   // Mode banner (send-credentials.ts parity).
   if (mode === "dry") log("DRY RUN: nothing will be sent.\n");
