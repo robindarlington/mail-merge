@@ -362,7 +362,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 09-01-PLAN.md — Public-route allowlist + hire-me URL flip (BRAND-01) + marketing shell layout + session-aware landing at /
+- [x] 09-01-PLAN.md — Public-route allowlist + hire-me URL flip (BRAND-01) + marketing shell layout + session-aware landing at /
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -370,7 +370,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 09-03-PLAN.md — Public-page screenshots + dependency-free route-probe smoke + repo-root README.md + docs/writeup.md draft
+- [x] 09-03-PLAN.md — Public-page screenshots + dependency-free route-probe smoke + repo-root README.md + docs/writeup.md draft
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -394,4 +394,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 6.1 → 7 �
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
 | 8. Docker / Coolify Packaging + Operational Hardening | 0/TBD | Not started | - |
 | 8.1. Agent access — standalone CLI + MCP server | 4/4 | Complete   | 2026-07-18 |
-| 9. Launch Collateral | 1/4 | In Progress|  |
+| 9. Launch Collateral | 3/4 | In Progress|  |
