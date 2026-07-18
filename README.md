@@ -65,10 +65,11 @@ key, the SQLite path, and the background-worker knobs. Never commit your real
 
 Mail Merge is designed to run containerized on a VPS (Coolify) with a single
 WAL-mode SQLite file shared by the web app and a long-lived Node worker. The
-in-app [`/self-host`](app/(marketing)/self-host/page.tsx) page and the
-[`docs/`](docs/) directory walk through the Docker/Coolify deployment shape and
-the full environment-variable reference (variable names and semantics only — no
-secrets are ever printed).
+in-app [`/self-host`](app/(marketing)/self-host/page.tsx) page walks through
+the Docker/Coolify deployment shape and the environment-variable contract, and
+[`.env.example`](.env.example) is the complete, documented reference for every
+variable the app reads (variable names and semantics only — no secrets are ever
+printed).
 
 ## CLI & MCP
 
