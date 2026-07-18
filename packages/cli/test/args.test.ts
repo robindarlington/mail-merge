@@ -52,6 +52,13 @@ test("unknown --smtp-pass flag is rejected by strict parseArgs (SC-2)", () => {
   );
 });
 
+test("--env-file is rejected, not silently ignored (WR-06)", () => {
+  assert.throws(
+    () => parseCliArgs(["--csv", "d.csv", "--template", "m.txt", "--env-file", ".env"]),
+    /env-file|unknown/i,
+  );
+});
+
 test("--delay-ms abc throws naming --delay-ms (never degrades to NaN) (T-081-05)", () => {
   assert.throws(
     () => parseCliArgs(["--csv", "d.csv", "--template", "m.txt", "--delay-ms", "abc"]),

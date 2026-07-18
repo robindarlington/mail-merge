@@ -35,8 +35,6 @@ export interface CliOptions {
   emailColumn?: string;
   /** Inter-send throttle in ms (default DEFAULT_DELAY_MS = 3000). */
   delayMs: number;
-  /** Optional path to an env file the caller loads (--env-file). */
-  envFile?: string;
   /** Optional receipts/output path (--receipts). */
   receipts?: string;
   /** Disable receipt writing (--no-receipts). */
@@ -64,7 +62,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
       send: { type: "boolean" },
       "email-column": { type: "string" },
       "delay-ms": { type: "string" },
-      "env-file": { type: "string" },
+      // NOTE: no "env-file" option — env loading belongs to the runtime
+      // (`node --env-file=.env`); accepting-but-ignoring the flag was a trap
+      // (WR-06). Strict mode now rejects it with a clear unknown-option error.
       receipts: { type: "string" },
       "no-receipts": { type: "boolean" },
       resume: { type: "boolean" },
@@ -105,7 +105,6 @@ export function parseCliArgs(argv: string[]): CliOptions {
     testAddr,
     emailColumn: values["email-column"],
     delayMs,
-    envFile: values["env-file"],
     receipts: values.receipts,
     noReceipts: Boolean(values["no-receipts"]),
     resume: Boolean(values.resume),
