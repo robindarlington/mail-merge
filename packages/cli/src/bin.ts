@@ -147,7 +147,7 @@ async function main(): Promise<void> {
     ? undefined
     : (opts.receipts ?? deriveReceiptsPath(opts.csv));
 
-  await runSend({
+  const result = await runSend({
     mode: opts.mode,
     rows: parsed.rows,
     emailColumn,
@@ -161,6 +161,10 @@ async function main(): Promise<void> {
     noReceipts: opts.noReceipts,
     resume: opts.resume,
   });
+
+  // Scripts/cron/CI truth (WR-04): any failed send makes the run non-zero, even
+  // though per-row failures never abort the batch mid-loop.
+  if (result.failed > 0) process.exitCode = 1;
 }
 
 // Only run when invoked directly (as the `mail-merge` bin or `tsx src/bin.ts`),

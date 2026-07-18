@@ -426,6 +426,68 @@ test("an injected log sink receives ALL progress; console.log is never touched (
   assert.ok(sink.some((l) => l.includes("Done.")), "the summary line reached the sink");
 });
 
+test("CLI exits non-zero and the summary names the failures when every send fails (WR-04)", async () => {
+  // An in-process SMTP sink that passes verify() (EHLO + AUTH ok) but REJECTS
+  // every RCPT TO — so the batch runs to completion with failed === total.
+  const { SMTPServer } = await import("smtp-server");
+  const server = new SMTPServer({
+    disabledCommands: ["STARTTLS"],
+    allowInsecureAuth: true,
+    authOptional: true,
+    disableReverseLookup: true,
+    logger: false,
+    onAuth(_auth, _session, callback) {
+      callback(null, { user: "stub" });
+    },
+    onRcptTo(_address, _session, callback) {
+      callback(new Error("550 mailbox unavailable"));
+    },
+  });
+  await new Promise<void>((res) => server.listen(0, "127.0.0.1", res));
+  const port = (server.server.address() as { port: number }).port;
+
+  const dir = mkdtempSync(join(tmpdir(), "cli-exitcode-"));
+  const csvPath = join(dir, "d.csv");
+  const tplPath = join(dir, "m.txt");
+  writeFileSync(csvPath, "email,name\na@example.com,Ada\nb@example.com,Bob\n");
+  writeFileSync(tplPath, "Subject: Hi {{name}}\n\nHello {{name}}\n");
+
+  try {
+    const child = spawn(
+      process.execPath,
+      [
+        "--import", "tsx", "src/bin.ts",
+        "--csv", csvPath, "--template", tplPath,
+        "--send", "--no-receipts", "--delay-ms", "1",
+      ],
+      {
+        cwd: resolve(HERE, ".."),
+        env: {
+          ...process.env,
+          SMTP_HOST: "127.0.0.1",
+          SMTP_PORT: String(port),
+          SMTP_USER: "u",
+          SMTP_PASS: "p",
+          SMTP_SECURE: "false",
+          SMTP_REQUIRE_TLS: "false", // plaintext-only local sink (CR-01 opt-out)
+          FROM_ADDR: "noreply@example.com",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let out = "";
+    child.stdout.on("data", (b: Buffer) => (out += b.toString()));
+    child.stderr.on("data", (b: Buffer) => (out += b.toString()));
+    const code = await new Promise<number | null>((res) => child.on("exit", res));
+
+    assert.equal(code, 1, "a run where sends failed exits non-zero for scripts/cron/CI");
+    assert.match(out, /Done\. 0\/2 sent, 2 FAILED\./, "the summary line names the failure count");
+  } finally {
+    await new Promise<void>((res) => server.close(() => res()));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("a known SMTP_PASS never reaches stdout/stderr or the receipts file (SC-2)", async () => {
   const { runSend } = await import("../src/run.js");
   const SECRET = "MARKER-PW-do-not-leak-42";

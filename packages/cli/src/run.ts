@@ -198,7 +198,10 @@ export async function runSend(opts: RunSendOpts): Promise<RunSendResult> {
   }
 
   if (mode === "dry") log("\nDry run complete.");
-  else log(`\nDone. ${sent}/${total} sent${skipped ? `, ${skipped} skipped` : ""}.`);
+  else
+    log(
+      `\nDone. ${sent}/${total} sent${failed ? `, ${failed} FAILED` : ""}${skipped ? `, ${skipped} skipped` : ""}.`,
+    );
 
   return { total, sent, failed, skipped };
 }
