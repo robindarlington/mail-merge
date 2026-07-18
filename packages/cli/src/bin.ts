@@ -28,7 +28,7 @@ import { loadTemplate } from "./template.js";
 import { readSmtpConfig } from "./secrets.js";
 import { deriveReceiptsPath } from "./receipts.js";
 import { runSend } from "./run.js";
-import { buildServer } from "./mcp.js";
+import { buildServer, countStructuralParseErrors } from "./mcp.js";
 import {
   parseCsv,
   detectEmailColumn,
@@ -116,6 +116,15 @@ async function main(): Promise<void> {
 
   const tpl = loadTemplate(opts.template);
   const parsed = parseCsv(readFileChecked(opts.csv, "--csv"));
+
+  // Structural parse errors (ragged rows, bad quoting) mean cells may be missing
+  // or shifted — surface them BEFORE any send decision (WR-05).
+  const parseErrorCount = countStructuralParseErrors(parsed.parseErrors);
+  if (parseErrorCount > 0) {
+    console.error(
+      `WARNING: ${parseErrorCount} CSV parse error(s) in ${opts.csv} — rows may have missing or shifted cells; check quoting/field counts.`,
+    );
+  }
 
   const emailColumn = opts.emailColumn ?? detectEmailColumn(parsed.columns, parsed.rows);
   if (!emailColumn) {

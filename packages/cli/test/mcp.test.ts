@@ -145,6 +145,25 @@ test("validate-csv returns typed results computed by lib/core", async () => {
     assert.equal(sc.rowCount, 2);
     assert.equal(sc.detectedEmailColumn, "email");
     assert.equal(sc.invalidEmailCount, 1, "the 'bad' row is counted invalid by lib/core");
+    assert.equal(sc.parseErrorCount, 0, "a clean CSV has zero structural parse errors");
+  } finally {
+    await close();
+  }
+});
+
+test("validate-csv reports STRUCTURAL parse errors — a ragged CSV is not a green light (WR-05)", async () => {
+  const { client, close } = await connect();
+  try {
+    // Second data row has only 1 field against a 2-column header → TooFewFields.
+    const result = await client.callTool({
+      name: "validate-csv",
+      arguments: { csv: "email,name\na@b.com,Ada\nb@b.com\n" },
+    });
+    const sc = structured(result);
+    assert.ok(
+      (sc.parseErrorCount as number) >= 1,
+      "the ragged row surfaces as a non-zero parseErrorCount",
+    );
   } finally {
     await close();
   }

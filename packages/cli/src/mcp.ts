@@ -42,6 +42,17 @@ import { runSend } from "./run.js";
 /** The exact no-receipts warning surfaced when `send`/`test-send` gets no path (D-12). */
 const NO_RECEIPTS_WARNING = "No receipts file will be written for this send.";
 
+/**
+ * Count STRUCTURAL parse errors worth warning about (WR-05): field-count
+ * mismatches, quote errors — but NOT papaparse's benign `UndetectableDelimiter`
+ * meta-error, which fires on every legitimate single-column CSV.
+ */
+export function countStructuralParseErrors(
+  parseErrors: { code?: string }[],
+): number {
+  return parseErrors.filter((e) => e.code !== "UndetectableDelimiter").length;
+}
+
 /** Standard tool-error result: a string message, isError set, no secret. */
 function toolError(message: string) {
   return { content: [{ type: "text" as const, text: message }], isError: true };
@@ -153,13 +164,16 @@ export function buildServer(): McpServer {
     "validate-csv",
     {
       description:
-        "Parse CSV text and report its columns, row count, the detected email column, and how many rows have an invalid email — computed by the same lib/core engine the CLI uses.",
+        "Parse CSV text and report its columns, row count, the detected email column, how many rows have an invalid email, and how many STRUCTURAL parse errors (ragged rows, bad quoting) the parse produced — computed by the same lib/core engine the CLI uses.",
       inputSchema: { csv: z.string().describe("Raw CSV text (a header row + one row per recipient).") },
       outputSchema: {
         columns: z.array(z.string()),
         rowCount: z.number(),
         detectedEmailColumn: z.string().nullable(),
         invalidEmailCount: z.number(),
+        parseErrorCount: z
+          .number()
+          .describe("Structural parse errors (field-count mismatch, quote errors); non-zero means rows may have missing/shifted cells."),
       },
     },
     async ({ csv }) => {
@@ -174,6 +188,7 @@ export function buildServer(): McpServer {
           rowCount: parsed.rows.length,
           detectedEmailColumn: detected,
           invalidEmailCount,
+          parseErrorCount: countStructuralParseErrors(parsed.parseErrors),
         });
       } catch (e) {
         return toolError(`validate-csv failed: ${(e as Error).message}`);
@@ -257,6 +272,13 @@ export function buildServer(): McpServer {
     async ({ csv, subject, body, smtp, from, fromName, testAddr, delayMs, receiptsPath }) => {
       try {
         const parsed = parseCsv(csv);
+        const parseErrorCount = countStructuralParseErrors(parsed.parseErrors);
+        if (parseErrorCount > 0) {
+          // stderr only — stdout is the JSON-RPC channel (WR-05).
+          console.error(
+            `WARNING: CSV parse produced ${parseErrorCount} structural error(s) — rows may have missing/shifted cells.`,
+          );
+        }
         const emailColumn = detectEmailColumn(parsed.columns, parsed.rows) ?? "";
         const resolvedDelay = delayMs ?? DEFAULT_DELAY_MS;
         const result = await runSend({
@@ -302,6 +324,13 @@ export function buildServer(): McpServer {
     async ({ csv, subject, body, smtp, from, fromName, delayMs, receiptsPath, confirmToken }) => {
       try {
         const parsed = parseCsv(csv);
+        const parseErrorCount = countStructuralParseErrors(parsed.parseErrors);
+        if (parseErrorCount > 0) {
+          // stderr only — stdout is the JSON-RPC channel (WR-05).
+          console.error(
+            `WARNING: CSV parse produced ${parseErrorCount} structural error(s) — rows may have missing/shifted cells.`,
+          );
+        }
         const emailColumn = detectEmailColumn(parsed.columns, parsed.rows);
         if (!emailColumn) {
           return toolError(
@@ -359,6 +388,8 @@ export function buildServer(): McpServer {
         return toolOk({
           preview: {
             recipientCount: parsed.rows.length,
+            // Structural CSV errors the confirming agent should see (WR-05).
+            parseErrorCount,
             subject,
             from,
             // The delivered From display name MUST be visible to the confirming
