@@ -339,17 +339,21 @@ CSV-driven, plain-text mail merge over your own SMTP.
 
 **Note:** No `[ASSUMED]` package or compliance claims — the phase adds no packages and no security-sensitive behavior.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> Both questions are resolved in substance during Phase 9 planning; the one-line resolution is inlined under each.
 
 1. **Authed-screen screenshots without interactive Clerk login**
    - What we know: Clerk *test mode* allows `+clerk_test` emails with OTP `424242` in a **development** instance, enabling scripted sign-in; the repo has no browser-automation tooling installed.
    - What's unclear: Whether the executor has access to browser/Chrome tools at run time, and whether the dev Clerk instance is in test mode.
    - Recommendation: Capture public pages first (no session needed). Attempt authed capture only if browser tooling + a test-mode Clerk dev instance are available; otherwise queue a "Rob captures authed screens" checkpoint. Do not add Playwright just for this.
+   - **(RESOLVED):** Plan 03 Task 1 captures the four public pages via the verified system headless-Chrome path, with a committed placeholder + queued-for-Rob fallback (recorded in Plan 04) if capture fails; authed-screen captures stay queued for Rob. No Playwright is added.
 
 2. **Landing hero image → `public/` dir**
    - What we know: No `public/` dir exists; README images live in `docs/screenshots/`.
    - What's unclear: Whether the landing design wants an in-page screenshot (needs `public/`) or stays copy/diagram-only.
    - Recommendation: Prefer copy + a simple in-page architecture blurb; create `public/` only if a hero image is chosen.
+   - **(RESOLVED):** UI-SPEC D-6 keeps the landing image-light (copy + diagram only), so no `public/` dir is required; README screenshots live in `docs/screenshots/` referenced by relative paths.
 
 ## Environment Availability
 
