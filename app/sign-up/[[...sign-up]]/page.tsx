@@ -6,7 +6,7 @@ import { SignUp } from "@clerk/nextjs";
  */
 export default function SignUpPage() {
   return (
-    <main className="flex min-h-screen flex-col items-center px-4 pt-16">
+    <main className="flex flex-col items-center px-4 pt-16">
       <SignUp />
     </main>
   );
