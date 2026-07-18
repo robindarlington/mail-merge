@@ -176,10 +176,14 @@ test("preview-merge honours an optional row limit", async () => {
 test("a malformed call (missing required arg) is refused by the SDK zod inputSchema, not a crash", async () => {
   const { client, close } = await connect();
   try {
-    await assert.rejects(
-      () => client.callTool({ name: "validate-csv", arguments: {} }),
-      "the SDK rejects a call missing the required csv arg before the callback runs",
-    );
+    // The SDK validates against the inputSchema BEFORE the callback runs and
+    // returns an isError result (not a crash / not a silent success).
+    const result = (await client.callTool({ name: "validate-csv", arguments: {} })) as {
+      isError?: boolean;
+      content: { text: string }[];
+    };
+    assert.equal(result.isError, true, "missing csv arg is refused, not run");
+    assert.match(result.content[0].text, /validation/i, "the refusal is a schema-validation error");
   } finally {
     await close();
   }
