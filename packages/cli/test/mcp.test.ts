@@ -188,3 +188,213 @@ test("a malformed call (missing required arg) is refused by the SDK zod inputSch
     await close();
   }
 });
+
+// --- Task 2: send tools (test-send + send two-step token) --------------------
+
+const NO_RECEIPTS_WARNING = "No receipts file will be written for this send.";
+
+test("listTools also exposes test-send + send once wired", async () => {
+  const { client, close } = await connect();
+  try {
+    const names = (await client.listTools()).tools.map((t) => t.name).sort();
+    assert.deepEqual(names, ["preview-merge", "send", "test-send", "validate-csv"]);
+  } finally {
+    await close();
+  }
+});
+
+test("test-send routes through run.ts to stub-smtp; password never in the result", async () => {
+  await withStubSmtp(async ({ port, logPath }) => {
+    const { client, close } = await connect();
+    try {
+      const result = await client.callTool({
+        name: "test-send",
+        arguments: {
+          csv: CSV,
+          subject: "Hi {{name}}",
+          body: "Code {{code}}",
+          smtp: stubSmtpParam(port),
+          from: "noreply@example.com",
+          testAddr: "proof@me.com",
+          delayMs: 0,
+        },
+      });
+      const sc = structured(result);
+      assert.equal(sc.attempted, 3);
+      assert.equal(sc.sent, 3);
+      assert.equal(sc.failed, 0);
+      assert.equal(sc.receiptsPath, null, "no receiptsPath given → null");
+
+      const addrs = readRcptAddrs(logPath);
+      assert.equal(addrs.length, 3, "test mode delivered one message per row");
+      assert.ok(addrs.every((a) => a === "proof@me.com"), "every message went to the single test address");
+
+      assert.ok(
+        !JSON.stringify(result).includes("MCP-SECRET-PW-42"),
+        "the SMTP password never appears in the tool result",
+      );
+    } finally {
+      await close();
+    }
+  });
+});
+
+test("send FIRST call (no token) previews + mints a token and delivers NOTHING", async () => {
+  await withStubSmtp(async ({ port, logPath }) => {
+    const { client, close } = await connect();
+    try {
+      const result = await client.callTool({
+        name: "send",
+        arguments: {
+          csv: CSV,
+          subject: "Hi {{name}}",
+          body: "Code {{code}}",
+          smtp: stubSmtpParam(port),
+          from: "noreply@example.com",
+          delayMs: 0,
+        },
+      });
+      const sc = structured(result);
+      const preview = sc.preview as Record<string, unknown>;
+      assert.equal(preview.recipientCount, 3);
+      assert.equal(preview.subject, "Hi {{name}}");
+      assert.equal(preview.from, "noreply@example.com");
+      assert.equal(preview.delayMs, 0);
+      assert.equal(preview.receiptsPath, null);
+      assert.equal(preview.receiptsWarning, NO_RECEIPTS_WARNING, "no path → explicit warning");
+      assert.ok(typeof sc.confirmToken === "string" && (sc.confirmToken as string).length > 0);
+
+      assert.equal(readRcptAddrs(logPath).length, 0, "the preview call delivered nothing");
+      assert.ok(!JSON.stringify(result).includes("MCP-SECRET-PW-42"), "no password in the preview");
+    } finally {
+      await close();
+    }
+  });
+});
+
+test("send SECOND call with the token delivers one-per-row, consumes the token (replay refused)", async () => {
+  await withStubSmtp(async ({ port, logPath }) => {
+    const { client, close } = await connect();
+    const args = {
+      csv: CSV,
+      subject: "Hi {{name}}",
+      body: "Code {{code}}",
+      smtp: stubSmtpParam(port),
+      from: "noreply@example.com",
+      delayMs: 0,
+    };
+    try {
+      const first = structured(await client.callTool({ name: "send", arguments: args }));
+      const token = first.confirmToken as string;
+
+      const second = await client.callTool({ name: "send", arguments: { ...args, confirmToken: token } });
+      const sc = structured(second);
+      assert.equal(sc.attempted, 3);
+      assert.equal(sc.sent, 3);
+      assert.equal(sc.failed, 0);
+      assert.equal(sc.receiptsPath, null);
+      assert.equal(sc.receiptsWarning, NO_RECEIPTS_WARNING, "final result carries the warning too");
+
+      assert.deepEqual(
+        readRcptAddrs(logPath).sort(),
+        ["a@example.com", "b@example.com", "c@example.com"],
+        "delivered one message per row",
+      );
+
+      // Replay the SAME token → refused, no new delivery.
+      const replay = (await client.callTool({
+        name: "send",
+        arguments: { ...args, confirmToken: token },
+      })) as { isError?: boolean };
+      assert.equal(replay.isError, true, "a consumed token is refused");
+      assert.equal(readRcptAddrs(logPath).length, 3, "replay added no deliveries");
+    } finally {
+      await close();
+    }
+  });
+});
+
+test("send with a wrong token is refused (isError, no delivery)", async () => {
+  await withStubSmtp(async ({ port, logPath }) => {
+    const { client, close } = await connect();
+    try {
+      const result = (await client.callTool({
+        name: "send",
+        arguments: {
+          csv: CSV,
+          subject: "Hi {{name}}",
+          body: "Code {{code}}",
+          smtp: stubSmtpParam(port),
+          from: "noreply@example.com",
+          delayMs: 0,
+          confirmToken: "not-a-real-token",
+        },
+      })) as { isError?: boolean };
+      assert.equal(result.isError, true, "an unknown token is refused");
+      assert.equal(readRcptAddrs(logPath).length, 0, "no delivery on a bad token");
+    } finally {
+      await close();
+    }
+  });
+});
+
+test("send preview delayMs threads through (override honoured; default 3000 when absent) — D-06", async () => {
+  const { client, close } = await connect();
+  const base = {
+    csv: CSV,
+    subject: "Hi {{name}}",
+    body: "x",
+    smtp: { host: "127.0.0.1", port: 25, secure: false, user: "u", pass: "MCP-SECRET-PW-42" },
+    from: "noreply@example.com",
+  };
+  try {
+    const overridden = structured(await client.callTool({ name: "send", arguments: { ...base, delayMs: 50 } }));
+    assert.equal((overridden.preview as Record<string, unknown>).delayMs, 50, "explicit delayMs is echoed");
+
+    const defaulted = structured(await client.callTool({ name: "send", arguments: base }));
+    assert.equal((defaulted.preview as Record<string, unknown>).delayMs, 3000, "absent delayMs defaults to 3000");
+  } finally {
+    await close();
+  }
+});
+
+test("receiptsPath round-trip: send writes JSONL receipts and a re-send skips already-sent rows — D-12", async () => {
+  await withStubSmtp(async ({ port, logPath }) => {
+    const { client, close } = await connect();
+    const dir = mkdtempSync(join(tmpdir(), "cli-mcp-receipts-"));
+    const receiptsPath = join(dir, "run.receipts.jsonl");
+    const args = {
+      csv: CSV,
+      subject: "Hi {{name}}",
+      body: "Code {{code}}",
+      smtp: stubSmtpParam(port),
+      from: "noreply@example.com",
+      delayMs: 0,
+      receiptsPath,
+    };
+    try {
+      // First two-step send WITH a receiptsPath → 3 deliveries + 3 JSONL lines.
+      const t1 = structured(await client.callTool({ name: "send", arguments: args })).confirmToken as string;
+      const r1 = structured(await client.callTool({ name: "send", arguments: { ...args, confirmToken: t1 } }));
+      assert.equal(r1.receiptsPath, receiptsPath, "the receiptsPath is echoed back");
+      assert.equal(r1.receiptsWarning, undefined, "a supplied path carries no no-receipts warning");
+      assert.equal(readRcptAddrs(logPath).length, 3, "first send delivered all rows");
+
+      const lines = readFileSync(receiptsPath, "utf8").split("\n").map((l) => l.trim()).filter(Boolean);
+      assert.equal(lines.length, 3, "one JSONL receipt line per delivered row");
+
+      // Second two-step send WITH THE SAME receiptsPath → resume skips all rows.
+      const t2 = structured(await client.callTool({ name: "send", arguments: args })).confirmToken as string;
+      await client.callTool({ name: "send", arguments: { ...args, confirmToken: t2 } });
+
+      const addrs = readRcptAddrs(logPath);
+      const counts = new Map<string, number>();
+      for (const a of addrs) counts.set(a, (counts.get(a) ?? 0) + 1);
+      assert.equal(addrs.length, 3, "the re-send added no deliveries (resume)");
+      assert.ok([...counts.values()].every((n) => n === 1), "no address delivered twice");
+    } finally {
+      await close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
