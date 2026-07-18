@@ -366,7 +366,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 09-02-PLAN.md — Content pages: /docs (usage), /self-host (env-var reference mirroring .env.example, secret-safe), /agents (CLI+MCP snippets verbatim from packages/cli/README.md)
+- [x] 09-02-PLAN.md — Content pages: /docs (usage), /self-host (env-var reference mirroring .env.example, secret-safe), /agents (CLI+MCP snippets verbatim from packages/cli/README.md)
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -394,4 +394,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 6.1 → 7 �
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
 | 8. Docker / Coolify Packaging + Operational Hardening | 0/TBD | Not started | - |
 | 8.1. Agent access — standalone CLI + MCP server | 4/4 | Complete   | 2026-07-18 |
-| 9. Launch Collateral | 0/4 | Planned    |  |
+| 9. Launch Collateral | 1/4 | In Progress|  |
