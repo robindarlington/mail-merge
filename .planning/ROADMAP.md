@@ -23,7 +23,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Background Worker + Live Send + Progress + History** - Idempotent background sending with live progress and campaign history
 - [x] **Phase 7: Per-Row Attachments** - Per-CSV-row file attachments with path-traversal and size safety
 - [x] **Phase 8: Docker / Coolify Packaging + Operational Hardening** - Production containers, volume persistence, redeploy-safe sends (completed 2026-07-17; staging-verified exactly-once across a real Coolify redeploy)
-- [ ] **Phase 9: Launch Collateral** - Public README + screenshots, niche-framed landing copy, "how it was built" write-up, and the UI attribution + hire-me link (BRAND-01)
+- [x] **Phase 9: Launch Collateral** - Public README + screenshots, niche-framed landing copy, "how it was built" write-up, and the UI attribution + hire-me link (BRAND-01) (completed 2026-07-18)
 
 ## Phase Details
 
@@ -374,7 +374,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 09-04-PLAN.md — Verify gate + push to trigger Coolify compose redeploy + [QUEUED] human-verify staging URL & authed screenshots
+- [x] 09-04-PLAN.md — Verify gate + push to trigger Coolify compose redeploy + [QUEUED] human-verify staging URL & authed screenshots
 **UI hint**: yes
 
 ## Progress
@@ -394,4 +394,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 6.1 → 7 �
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
 | 8. Docker / Coolify Packaging + Operational Hardening | 0/TBD | Not started | - |
 | 8.1. Agent access — standalone CLI + MCP server | 4/4 | Complete   | 2026-07-18 |
-| 9. Launch Collateral | 3/4 | In Progress|  |
+| 9. Launch Collateral | 4/4 | Complete   | 2026-07-18 |
