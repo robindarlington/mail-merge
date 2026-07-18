@@ -106,12 +106,14 @@ async function main() {
   }
 
   // Protected routes must NOT render signed-out: the middleware must redirect
-  // them to the sign-in gate, or the route must return 4xx. A 200 render — or a
-  // bare Clerk handshake with no sign-in gate — would mean the allowlist
-  // over-exposed an authed route (threat T-09-01) and fails.
+  // them to the sign-in gate, or the route must return a 4xx denial
+  // (401/403/404). A 200 render — or a bare Clerk handshake with no sign-in
+  // gate — would mean the allowlist over-exposed an authed route (threat
+  // T-09-01) and fails. A 5xx is NOT a pass: a server error on a signed-out hit
+  // masks both a crash and a possible gating failure, so it fails loudly.
   for (const path of PROTECTED_ROUTES) {
     const { status, location, ok, error } = await probe(path);
-    const isBlocked = status === 401 || status === 403 || status >= 400;
+    const isBlocked = status >= 400 && status < 500;
     const pass = ok && status !== 200 && (isSignInRedirect(location) || isBlocked);
     console.log(
       `  PROTECTED ${path.padEnd(14)} -> ${ok ? status : `ERR ${error}`} ${
