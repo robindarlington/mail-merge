@@ -5,11 +5,13 @@
 //
 //   1. The four public routes ( / /docs /self-host /agents ) are reachable
 //      signed-out and render (HTTP 200).
-//   2. The authed routes ( /dashboard /settings/smtp /api/* ) are STILL
-//      protected signed-out — they must NOT return a 200 render. This is a
-//      positive regression test against threat T-09-01 (Elevation of
+//   2. The authed routes ( /dashboard /settings/smtp /campaigns/1/export ) are
+//      STILL protected signed-out — they must NOT return a 200 render. This is
+//      a positive regression test against threat T-09-01 (Elevation of
 //      Privilege): it fails loudly if the allowlist ever over-exposes an
-//      authenticated route.
+//      authenticated route. /campaigns/1/export is the repo's only route
+//      handler (GET), so it stands in for the "API surface" leg: it really
+//      exists, and even without middleware it answers 401 signed-out.
 //
 // Dependency-free by design (threat T-09-SC): no imports beyond Node built-ins,
 // uses the global `fetch` shipped with Node >= 18. The caller is responsible for
@@ -28,8 +30,10 @@ const BASE = (process.env.SMOKE_BASE_URL || "http://localhost:3000").replace(
 const PUBLIC_ROUTES = ["/", "/docs", "/self-host", "/agents"];
 
 // Protected routes: signed-out these MUST NOT render (not a 200). A redirect to
-// the sign-in page (3xx) or a 401/404/4xx is the expected, safe outcome.
-const PROTECTED_ROUTES = ["/dashboard", "/settings/smtp", "/api/health"];
+// the sign-in page (3xx) or a 4xx auth denial is the expected, safe outcome.
+// Every entry MUST be a route that actually exists (a nonexistent path would
+// 404 regardless of the allowlist, making the probe vacuous).
+const PROTECTED_ROUTES = ["/dashboard", "/settings/smtp", "/campaigns/1/export"];
 
 // A Clerk *development* instance bootstraps a per-browser cookie via a one-time
 // "handshake" redirect to accounts.dev before it can read the signed-out state.
