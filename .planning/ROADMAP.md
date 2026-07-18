@@ -342,7 +342,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 08.1-04-PLAN.md — esbuild bundle + publish metadata + README (mcp.json + CLI one-liners) + tarball smoke + deploy-protection; [QUEUED CHECKPOINT] first npm publish (SC-1/SC-5, D-01/02/03)
+- [x] 08.1-04-PLAN.md — esbuild bundle + publish metadata + README (mcp.json + CLI one-liners) + tarball smoke + deploy-protection; [QUEUED CHECKPOINT] first npm publish (SC-1/SC-5, D-01/02/03)
 
 ### Phase 9: Launch Collateral
 
@@ -377,5 +377,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 6.1 → 7 �
 | 6.1. Multiple SMTP servers per account | 4/4 | Complete   | 2026-07-15 |
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
 | 8. Docker / Coolify Packaging + Operational Hardening | 0/TBD | Not started | - |
-| 8.1. Agent access — standalone CLI + MCP server | 3/4 | In Progress|  |
+| 8.1. Agent access — standalone CLI + MCP server | 4/4 | Complete   | 2026-07-18 |
 | 9. Launch Collateral | 0/TBD | Not started | - |
