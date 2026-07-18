@@ -338,7 +338,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 08.1-03-PLAN.md — stdio MCP server: validate-csv/preview-merge/test-send/send tools + two-step confirm token; `mail-merge mcp` dispatch (SC-3, D-04)
+- [x] 08.1-03-PLAN.md — stdio MCP server: validate-csv/preview-merge/test-send/send tools + two-step confirm token; `mail-merge mcp` dispatch (SC-3, D-04)
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -377,5 +377,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 6.1 → 7 �
 | 6.1. Multiple SMTP servers per account | 4/4 | Complete   | 2026-07-15 |
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
 | 8. Docker / Coolify Packaging + Operational Hardening | 0/TBD | Not started | - |
-| 8.1. Agent access — standalone CLI + MCP server | 2/4 | In Progress|  |
+| 8.1. Agent access — standalone CLI + MCP server | 3/4 | In Progress|  |
 | 9. Launch Collateral | 0/TBD | Not started | - |
