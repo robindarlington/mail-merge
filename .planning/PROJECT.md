@@ -125,4 +125,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-13 (Phase 3 complete — CSV upload → recipient sets validated on staging with durable volume)*
+*Last updated: 2026-07-18 (Phase 08.1 complete — standalone npm-installable CLI + stdio MCP server over lib/core; first `npm publish` queued as human action)*
