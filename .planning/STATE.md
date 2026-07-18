@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 08.1 context gathered
-last_updated: "2026-07-17T23:40:44.333Z"
+status: ready_to_plan
+stopped_at: Phase 08.1 complete (4/4) — ready to discuss Phase 9
+last_updated: 2026-07-18T21:56:47.076Z
 last_activity: 2026-07-17 -- Phase 08.1 execution started
 progress:
   total_phases: 11
   completed_phases: 5
   total_plans: 56
-  completed_plans: 48
+  completed_plans: 52
   percent: 45
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-24)
 
 **Core value:** A signed-in user can reliably send a personalized email to every row of their CSV, using their own validated SMTP, with confidence (preview + test-send) and a record of exactly what was sent and to whom.
-**Current focus:** Phase 08.1 — agent-access-standalone-cli-mcp-server-npm-installable-cli-b
+**Current focus:** Phase 9 — launch collateral
 
 ## Current Position
 
-Phase: 08.1 (agent-access-standalone-cli-mcp-server-npm-installable-cli-b) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 08.1
-Last activity: 2026-07-17 -- Phase 08.1 execution started
+Phase: 9
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-18
 
 Progress: [█████████░] 92%
 
@@ -36,7 +36,7 @@ Progress: [█████████░] 92%
 
 **Velocity:**
 
-- Total plans completed: 23
+- Total plans completed: 27
 - Average duration: — min
 - Total execution time: 0.0 hours
 
@@ -48,6 +48,7 @@ Progress: [█████████░] 92%
 | 02 | 9 | - | - |
 | 03 | 5 | - | - |
 | 06.1 | 4 | - | - |
+| 08.1 | 4 | - | - |
 
 **Recent Trend:**
 

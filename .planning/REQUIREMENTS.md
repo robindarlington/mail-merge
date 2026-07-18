@@ -71,7 +71,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Branding & Attribution
 
-- [ ] **BRAND-01**: The app UI displays attribution to Robin Darlington with a visible "hire me for tech support / custom work" link (footer or equivalent)
+- [x] **BRAND-01**: The app UI displays attribution to Robin Darlington with a visible "hire me for tech support / custom work" link (footer or equivalent)
 
 ## v2 Requirements
 
@@ -152,7 +152,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ATCH-01 | Phase 7 | Pending |
 | ATCH-02 | Phase 7 | Pending |
 | ATCH-03 | Phase 7 | Pending |
-| BRAND-01 | Phase 9 | Pending |
+| BRAND-01 | Phase 9 | Complete |
 
 **Coverage:**
 - v1 requirements: 36 total
