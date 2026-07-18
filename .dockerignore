@@ -37,6 +37,11 @@ scripts/stub-smtp.ts
 scripts/acceptance-harness.ts
 scripts/concurrency-smoke.ts
 
+# Standalone CLI/MCP sub-package (08.1) — published to npm separately, never part
+# of the web/worker image. Keeping it out of the `COPY . .` build layer avoids
+# invalidating the build cache on CLI edits (the runtime image already excludes it).
+packages/
+
 # VCS + planning + local tooling noise.
 .git
 .gitignore
