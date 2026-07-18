@@ -279,6 +279,7 @@ export function buildServer(opts: { now?: () => number } = {}): McpServer {
         sent: z.number(),
         failed: z.number(),
         receiptsPath: z.string().nullable(),
+        receiptsWarning: z.string().optional(),
       },
     },
     async ({ csv, subject, body, smtp, from, fromName, testAddr, delayMs, receiptsPath }) => {
@@ -312,6 +313,8 @@ export function buildServer(opts: { now?: () => number } = {}): McpServer {
           sent: result.sent,
           failed: result.failed,
           receiptsPath: receiptsPath ?? null,
+          // D-12 parity with `send` (WR-08): no path → the explicit warning.
+          ...(receiptsPath ? {} : { receiptsWarning: NO_RECEIPTS_WARNING }),
         });
       } catch (e) {
         return toolError(`test-send failed: ${(e as Error).message}`);

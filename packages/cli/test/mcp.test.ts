@@ -251,6 +251,7 @@ test("test-send routes through run.ts to stub-smtp; password never in the result
       assert.equal(sc.sent, 3);
       assert.equal(sc.failed, 0);
       assert.equal(sc.receiptsPath, null, "no receiptsPath given → null");
+      assert.equal(sc.receiptsWarning, NO_RECEIPTS_WARNING, "no path → explicit warning (D-12/WR-08)");
 
       const addrs = readRcptAddrs(logPath);
       assert.equal(addrs.length, 3, "test mode delivered one message per row");
