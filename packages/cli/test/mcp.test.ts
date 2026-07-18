@@ -437,6 +437,39 @@ test("send with a wrong token is refused (isError, no delivery)", async () => {
   });
 });
 
+test("an expired confirm token is refused and purged — 10-minute TTL (WR-07)", async () => {
+  // Drive buildServer's clock seam: mint at t=0, confirm after TTL + 1ms.
+  let clock = 0;
+  const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+  const server = buildServer({ now: () => clock });
+  await server.connect(serverT);
+  const client = new Client({ name: "mcp-test-client", version: "1.0.0" });
+  await client.connect(clientT);
+
+  const args = {
+    csv: CSV,
+    subject: "Hi {{name}}",
+    body: "x",
+    smtp: { host: "127.0.0.1", port: 25, secure: false, user: "u", pass: "MCP-SECRET-PW-42" },
+    from: "noreply@example.com",
+    delayMs: 0,
+  };
+  try {
+    const first = structured(await client.callTool({ name: "send", arguments: args }));
+    const token = first.confirmToken as string;
+
+    clock = 10 * 60 * 1000 + 1; // one ms past the TTL
+    const expired = (await client.callTool({
+      name: "send",
+      arguments: { ...args, confirmToken: token },
+    })) as { isError?: boolean };
+    assert.equal(expired.isError, true, "a token older than the TTL is refused like an unknown one");
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
 test("send preview delayMs threads through (override honoured; default 3000 when absent) — D-06", async () => {
   const { client, close } = await connect();
   const base = {

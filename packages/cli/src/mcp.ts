@@ -43,6 +43,14 @@ import { runSend } from "./run.js";
 const NO_RECEIPTS_WARNING = "No receipts file will be written for this send.";
 
 /**
+ * How long a minted confirm token stays valid (WR-07). A token previewed long
+ * ago attests to params the conversation has likely moved past — it must not be
+ * able to fire a live batch. Expired tokens are purged on every `send` call, so
+ * the map cannot grow without bound across a long agent session either.
+ */
+const CONFIRM_TTL_MS = 10 * 60 * 1000;
+
+/**
  * Count STRUCTURAL parse errors worth warning about (WR-05): field-count
  * mismatches, quote errors — but NOT papaparse's benign `UndetectableDelimiter`
  * meta-error, which fires on every legitimate single-column CSV.
@@ -150,8 +158,12 @@ const stderrLog = (line: string): void => console.error(line);
  * Build the mail-merge MCP server with all four tools registered.
  * Returns a fresh instance per call (each stdio connection / test gets its own,
  * including its own in-memory confirm-token map — added in Task 2).
+ *
+ * `opts.now` is a clock seam (defaults to `Date.now`) so tests can drive the
+ * confirm-token TTL (WR-07) without real waiting.
  */
-export function buildServer(): McpServer {
+export function buildServer(opts: { now?: () => number } = {}): McpServer {
+  const now = opts.now ?? Date.now;
   const server = new McpServer({ name: "mail-merge", version: "1.0.0" });
 
   // Process-local one-time confirm tokens for `send` (D-04 / RESEARCH Pattern 3).
@@ -337,6 +349,12 @@ export function buildServer(): McpServer {
             "could not detect an email column in the CSV — no recipient address to send to.",
           );
         }
+        // TTL purge (WR-07): drop expired tokens on EVERY send call, so a stale
+        // token can never confirm a batch and the map cannot grow unbounded.
+        for (const [t, rec] of confirmTokens) {
+          if (now() - rec.createdAt > CONFIRM_TTL_MS) confirmTokens.delete(t);
+        }
+
         const resolvedDelay = delayMs ?? DEFAULT_DELAY_MS;
         const paramsHash = hashSendParams({
           csv,
@@ -384,7 +402,7 @@ export function buildServer(): McpServer {
 
         // Preview call: mint a one-time token keyed to these params, deliver NOTHING.
         const token = randomUUID();
-        confirmTokens.set(token, { paramsHash, createdAt: Date.now() });
+        confirmTokens.set(token, { paramsHash, createdAt: now() });
         return toolOk({
           preview: {
             recipientCount: parsed.rows.length,
