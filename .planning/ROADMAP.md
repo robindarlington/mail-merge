@@ -358,7 +358,23 @@ Plans:
   4. The app UI footer (all pages, incl. public routes) shows Robin Darlington attribution and a working "hire me / custom work" link to https://robindarlington.com/contact/ (satisfies BRAND-01).
   5. The phase's slice is deployed to the standing staging URL on the VPS (Coolify) and works there.
 
-**Plans**: TBD
+**Plans**: 4 plans (4 waves)
+Plans:
+**Wave 1**
+
+- [ ] 09-01-PLAN.md — Public-route allowlist + hire-me URL flip (BRAND-01) + marketing shell layout + session-aware landing at /
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 09-02-PLAN.md — Content pages: /docs (usage), /self-host (env-var reference mirroring .env.example, secret-safe), /agents (CLI+MCP snippets verbatim from packages/cli/README.md)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 09-03-PLAN.md — Public-page screenshots + dependency-free route-probe smoke + repo-root README.md + docs/writeup.md draft
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 09-04-PLAN.md — Verify gate + push to trigger Coolify compose redeploy + [QUEUED] human-verify staging URL & authed screenshots
 **UI hint**: yes
 
 ## Progress
