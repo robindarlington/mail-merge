@@ -12,9 +12,13 @@ import { Separator } from "@/components/ui/separator";
  *
  * Documents the deployment shape (single Next.js app + background worker sharing
  * one SQLite file on a Docker volume) and the environment-variable contract,
- * mirroring .env.example by NAME and SEMANTIC only. The build-vs-runtime split
- * is called out explicitly: NEXT_PUBLIC_CLERK_* are inlined by `next build`
- * (build-time), everything else is read by the container at start (runtime).
+ * mirroring every deploy-relevant variable in .env.example by NAME and SEMANTIC
+ * only (the SMTP_* block seeds local dev / CLI parity only and is excluded — in
+ * the web app each user brings their own SMTP through onboarding). The
+ * build-vs-runtime split is called out explicitly: NEXT_PUBLIC_CLERK_* are
+ * inlined by `next build` (build-time), everything else is read by the
+ * container at start (runtime); worker tunables get their own group since all
+ * of them are optional overrides with compose-supplied defaults.
  *
  * SECURITY (threat T-09-02, Information Disclosure): this page is world-readable,
  * so it renders ONLY placeholder variable names and the `openssl rand -base64 32`
@@ -43,6 +47,48 @@ const RUNTIME_VARS: { name: string; detail: string }[] = [
     detail:
       "Runtime secret. The server-only Clerk key. It must never reach the browser, git history, or a build arg — the container reads it at start.",
   },
+  {
+    name: "HOSTNAME",
+    detail:
+      "Bind address for the Next.js standalone server. Must be 0.0.0.0 in Docker so the container accepts traffic from outside its own network namespace.",
+  },
+  {
+    name: "PORT",
+    detail: "Port the web server listens on. Defaults to 3000.",
+  },
+];
+
+const WORKER_VARS: { name: string; detail: string }[] = [
+  {
+    name: "SEND_DELAY_MS",
+    detail:
+      "Pause between individual sends in milliseconds — the per-recipient throttle. Default 1000.",
+  },
+  {
+    name: "WORKER_POLL_MS",
+    detail:
+      "How often the worker polls for queued work when idle, in milliseconds. Default 2000.",
+  },
+  {
+    name: "WORKER_LEASE_SEC",
+    detail:
+      "Lease/visibility window for a claimed job, in seconds; a hung send is reclaimed after this elapses. Default 300.",
+  },
+  {
+    name: "WAL_CHECKPOINT_MS",
+    detail:
+      "How often the worker forces a SQLite WAL checkpoint (ms) to keep the -wal sidecar bounded between campaigns. Default 3600000 (1 hour).",
+  },
+  {
+    name: "ORPHAN_SWEEP_MS",
+    detail:
+      "How often the worker sweeps orphaned upload and attachment files off the /data volume, in milliseconds. Default 3600000 (1 hour).",
+  },
+  {
+    name: "ATTACHMENT_ORPHAN_DAYS",
+    detail:
+      "Age in days after which an orphaned attachment file becomes eligible for the sweep. Default 7.",
+  },
 ];
 
 const BUILD_TIME_VARS: { name: string; detail: string }[] = [
@@ -54,7 +100,21 @@ const BUILD_TIME_VARS: { name: string; detail: string }[] = [
   {
     name: "NEXT_PUBLIC_CLERK_SIGN_IN_URL",
     detail:
-      "Build-time. The dedicated sign-in route (/sign-in). Alongside the matching NEXT_PUBLIC_CLERK_SIGN_UP_URL and the post-auth redirect URLs, these are all inlined at build.",
+      "Build-time. The dedicated sign-in route (/sign-in). Setting it also keeps auth redirects pointed at the sign-in page instead of looping on the current URL.",
+  },
+  {
+    name: "NEXT_PUBLIC_CLERK_SIGN_UP_URL",
+    detail: "Build-time. The dedicated sign-up route (/sign-up).",
+  },
+  {
+    name: "NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL",
+    detail:
+      "Build-time. Where users land after a successful sign-in (/dashboard).",
+  },
+  {
+    name: "NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL",
+    detail:
+      "Build-time. Where users land after a successful sign-up (/dashboard).",
   },
 ];
 
@@ -78,9 +138,12 @@ export default function SelfHostPage() {
         <div className="flex flex-col gap-2">
           <h2 className="text-xl font-semibold">Environment variables</h2>
           <p className="text-base text-muted-foreground">
-            These mirror .env.example, the complete contract. Build-time
-            variables (Clerk publishable keys) are inlined at build; everything
-            else is read at runtime.
+            These mirror .env.example — the complete, documented contract in the
+            repo — variable names and semantics only. Build-time variables
+            (Clerk publishable keys and URLs) are inlined at build; everything
+            else is read at runtime. The only .env.example entries not listed
+            here are the SMTP_* values, which seed local dev and CLI parity —
+            in the web app every user brings their own SMTP through onboarding.
           </p>
         </div>
 
@@ -94,6 +157,29 @@ export default function SelfHostPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {RUNTIME_VARS.map((v) => (
+              <div key={v.name} className="flex flex-col gap-2">
+                <pre className="bg-muted overflow-x-auto rounded-md p-4 text-sm font-mono">
+                  {v.name}
+                </pre>
+                <p className="text-base">{v.detail}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl">
+              Worker tunables (runtime, optional)
+            </CardTitle>
+            <CardDescription className="text-base">
+              Read by the background worker at start. All are safe to omit —
+              the compose file supplies these same defaults — and exist so you
+              can override them per-deploy.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {WORKER_VARS.map((v) => (
               <div key={v.name} className="flex flex-col gap-2">
                 <pre className="bg-muted overflow-x-auto rounded-md p-4 text-sm font-mono">
                   {v.name}
