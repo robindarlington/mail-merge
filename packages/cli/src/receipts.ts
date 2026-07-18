@@ -66,7 +66,10 @@ export function appendReceipt(path: string, entry: ReceiptEntry): void {
 /**
  * Read the set of addresses already recorded `sent` in the receipts file, used
  * to skip them on `--resume`. A missing file yields an empty Set; blank and
- * trailing lines are tolerated (mirrors the stub-smtp readLog idiom).
+ * trailing lines are tolerated (mirrors the stub-smtp readLog idiom), and so is
+ * a TORN line — the very artifact of the interrupted append this file exists to
+ * recover from. An unparseable line is skipped, not fatal: under the documented
+ * at-least-once semantics its row is simply re-sent.
  */
 export function readSentSet(path: string): Set<string> {
   if (!existsSync(path)) return new Set<string>();
@@ -75,8 +78,12 @@ export function readSentSet(path: string): Set<string> {
     .map((l) => l.trim())
     .filter((l) => l.length > 0)
     .reduce((set, line) => {
-      const entry = JSON.parse(line) as ReceiptEntry;
-      if (entry.status === "sent") set.add(entry.to);
+      try {
+        const entry = JSON.parse(line) as ReceiptEntry;
+        if (entry.status === "sent" && typeof entry.to === "string") set.add(entry.to);
+      } catch {
+        // Torn line from an interrupted append — ignore; at-least-once re-sends it.
+      }
       return set;
     }, new Set<string>());
 }

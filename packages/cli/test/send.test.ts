@@ -267,6 +267,22 @@ test("readSentSet tolerates a missing file (empty set) and blank/trailing lines"
   }
 });
 
+test("readSentSet tolerates a TORN final line from an interrupted append (WR-02)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cli-receipts-torn-"));
+  const path = join(dir, "r.jsonl");
+  try {
+    // A complete 'sent' line, then a truncated one — the crash-window artifact.
+    writeFileSync(
+      path,
+      `${JSON.stringify({ to: "a@x.com", status: "sent", timestamp: "t" })}\n{"to":"b@x.com","sta`,
+    );
+    const set = readSentSet(path);
+    assert.deepEqual([...set], ["a@x.com"], "the intact line is kept, the torn line is skipped");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // --- runSend integration (GREEN in Task 2) -----------------------------------
 
 test("runSend live delivers exactly one RCPT per row over stub-smtp", async () => {
