@@ -16,6 +16,7 @@
     "access": "public"
   },
   "scripts": {
+    "prepack": "npm run build",
     "test": "node --import tsx --test \"test/*.test.ts\"",
     "build": "esbuild src/bin.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --banner:js=\"import{createRequire as __cr}from'module';const require=__cr(import.meta.url);\" --outfile=dist/bin.js"
   },
