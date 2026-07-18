@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 9 UI-SPEC approved
-last_updated: "2026-07-18T22:32:37.748Z"
-last_activity: 2026-07-18 -- Phase 09 planning complete
+last_updated: "2026-07-18T22:32:45.105Z"
+last_activity: 2026-07-18 -- Phase 09 execution started
 progress:
   total_phases: 11
   completed_phases: 6
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-24)
 
 **Core value:** A signed-in user can reliably send a personalized email to every row of their CSV, using their own validated SMTP, with confidence (preview + test-send) and a record of exactly what was sent and to whom.
-**Current focus:** Phase 9 — launch collateral
+**Current focus:** Phase 09 — launch-collateral
 
 ## Current Position
 
-Phase: 9
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-18 -- Phase 09 planning complete
+Phase: 09 (launch-collateral) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 09
+Last activity: 2026-07-18 -- Phase 09 execution started
 
 Progress: [█████████░] 92%
 

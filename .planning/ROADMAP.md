@@ -394,4 +394,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 6.1 → 7 �
 | 7. Per-Row Attachments | 0/TBD | Not started | - |
 | 8. Docker / Coolify Packaging + Operational Hardening | 0/TBD | Not started | - |
 | 8.1. Agent access — standalone CLI + MCP server | 4/4 | Complete   | 2026-07-18 |
-| 9. Launch Collateral | 0/TBD | Not started | - |
+| 9. Launch Collateral | 0/4 | Planned    |  |
