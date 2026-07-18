@@ -350,6 +350,50 @@ test("send SECOND call with the token delivers one-per-row, consumes the token (
   });
 });
 
+test("fromName is bound into the confirm token: preview one name, confirm another → refused (CR-02)", async () => {
+  await withStubSmtp(async ({ port, logPath }) => {
+    const { client, close } = await connect();
+    const base = {
+      csv: CSV,
+      subject: "Hi {{name}}",
+      body: "Code {{code}}",
+      smtp: stubSmtpParam(port),
+      from: "noreply@example.com",
+      delayMs: 0,
+    };
+    try {
+      // Preview with a benign display name; the preview MUST surface it.
+      const first = structured(
+        await client.callTool({ name: "send", arguments: { ...base, fromName: "Newsletter" } }),
+      );
+      assert.equal(
+        (first.preview as Record<string, unknown>).fromName,
+        "Newsletter",
+        "the preview shows the delivered From display name",
+      );
+      const token = first.confirmToken as string;
+
+      // Confirm with a SWAPPED display name → parameter mismatch, refused, no delivery.
+      const swapped = (await client.callTool({
+        name: "send",
+        arguments: { ...base, fromName: "IT Security — Urgent", confirmToken: token },
+      })) as { isError?: boolean };
+      assert.equal(swapped.isError, true, "a fromName-mismatched token is refused");
+
+      // Dropping fromName entirely must ALSO mismatch (absent !== 'Newsletter').
+      const dropped = (await client.callTool({
+        name: "send",
+        arguments: { ...base, confirmToken: token },
+      })) as { isError?: boolean };
+      assert.equal(dropped.isError, true, "an absent fromName does not match a named preview");
+
+      assert.equal(readRcptAddrs(logPath).length, 0, "no delivery happened on either mismatch");
+    } finally {
+      await close();
+    }
+  });
+});
+
 test("send with a wrong token is refused (isError, no delivery)", async () => {
   await withStubSmtp(async ({ port, logPath }) => {
     const { client, close } = await connect();

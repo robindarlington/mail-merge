@@ -90,9 +90,10 @@ function toSmtpConfig(p: SmtpParam): SmtpConfig {
 }
 
 /**
- * A stable hash of ALL send params (INCLUDING resolved delayMs + receiptsPath, but
- * NOT the confirmToken). The two-step token is keyed to this so an agent cannot
- * preview one payload then swap in a different one on confirm (D-04).
+ * A stable hash of ALL send params (INCLUDING resolved delayMs + receiptsPath and
+ * the delivered `fromName` display name, but NOT the confirmToken). The two-step
+ * token is keyed to this so an agent cannot preview one payload then swap in a
+ * different one on confirm (D-04).
  */
 function hashSendParams(input: {
   csv: string;
@@ -100,6 +101,7 @@ function hashSendParams(input: {
   body: string;
   smtp: SmtpParam;
   from: string;
+  fromName: string | null;
   delayMs: number;
   receiptsPath: string | null;
 }): string {
@@ -115,6 +117,7 @@ function hashSendParams(input: {
     input.smtp.user,
     input.smtp.pass,
     input.from,
+    input.fromName,
     input.delayMs,
     input.receiptsPath,
   ]);
@@ -321,6 +324,7 @@ export function buildServer(): McpServer {
           body,
           smtp,
           from,
+          fromName: fromName ?? null,
           delayMs: resolvedDelay,
           receiptsPath: receiptsPath ?? null,
         });
@@ -365,6 +369,9 @@ export function buildServer(): McpServer {
             recipientCount: parsed.rows.length,
             subject,
             from,
+            // The delivered From display name MUST be visible to the confirming
+            // agent/human — it is part of what the token attests to (CR-02).
+            fromName: fromName ?? null,
             delayMs: resolvedDelay,
             receiptsPath: receiptsPath ?? null,
             ...(receiptsPath ? {} : { receiptsWarning: NO_RECEIPTS_WARNING }),
