@@ -8,5 +8,5 @@
  * other code needs to change (single-value flip, D-12).
  */
 
-/** Placeholder destination for the footer "hire me" link (Phase 9 flips this). */
-export const HIRE_ME_URL = "https://example.com/hire-me";
+/** Live BRAND-01 destination for the footer "hire me" link (flipped in Phase 9). */
+export const HIRE_ME_URL = "https://robindarlington.com/contact/";

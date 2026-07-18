@@ -19,9 +19,22 @@
 
 import { clerkMiddleware } from "@clerk/nextjs/server";
 
-// Public paths that must remain reachable without a session: the Clerk sign-in
-// and sign-up catch-all pages (and their sub-routes).
-const PUBLIC_PATHS = [/^\/sign-in(\/.*)?$/, /^\/sign-up(\/.*)?$/];
+// Public paths that must remain reachable without a session: the Phase 9
+// signed-out marketing/docs surface (landing, docs, self-host, agents) plus the
+// Clerk sign-in and sign-up catch-all pages (and their sub-routes).
+//
+// SECURITY (threat T-09-01): every entry MUST be anchored with a leading `^` and
+// a trailing `$`. An unanchored regex like `/\/docs/` would also match
+// `/dashboard/docs` and could expose authenticated routes — the anchoring is the
+// route-protection control, not a style choice.
+const PUBLIC_PATHS = [
+  /^\/$/, // landing
+  /^\/docs(\/.*)?$/, // docs
+  /^\/self-host(\/.*)?$/, // self-host
+  /^\/agents(\/.*)?$/, // agents
+  /^\/sign-in(\/.*)?$/, // (existing) Clerk sign-in
+  /^\/sign-up(\/.*)?$/, // (existing) Clerk sign-up
+];
 
 export default clerkMiddleware(async (auth, req) => {
   const isPublic = PUBLIC_PATHS.some((p) => p.test(req.nextUrl.pathname));
