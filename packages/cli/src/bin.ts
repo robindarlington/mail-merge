@@ -23,6 +23,9 @@ import { fileURLToPath } from "node:url";
 
 import { parseCliArgs } from "./args.js";
 import { loadTemplate } from "./template.js";
+import { readSmtpConfig } from "./secrets.js";
+import { deriveReceiptsPath } from "./receipts.js";
+import { runSend } from "./run.js";
 import {
   parseCsv,
   detectEmailColumn,
@@ -36,19 +39,25 @@ const HELP = `mail-merge — CSV-driven plain-text mail merge over your own SMTP
 USAGE
   mail-merge --csv <file> --template <file> [options]
 
-  Prints a DRY-RUN listing of every recipient that WOULD be sent. Sends nothing.
+  Default (no --send/--test) prints a DRY-RUN listing and sends nothing.
+  --test proofs the whole batch to one address; --send delivers one per row.
 
 OPTIONS
   --csv <file>            Recipients CSV (header row + one row per recipient).
   --template <file>       Message template; first "Subject:" line is the subject.
   --email-column <name>   Override the auto-detected email column.
   --delay-ms <n>          Inter-send throttle in ms (default 3000).
-  --send                  (later plan) send for real to every recipient.
-  --test <addr>           (later plan) send the whole batch to one address.
+  --test <addr>           Send the WHOLE batch to one address (real per-row fill).
+  --send                  Send for real, one personalized email per recipient.
+  --receipts <file>       JSONL receipts path (default: <csv>.receipts.jsonl).
+  --no-receipts           Do not write a receipts file.
+  --resume                Skip addresses already recorded 'sent' in the receipts.
   -h, --help              Show this help.
 
-Note: there is deliberately NO password flag — the SMTP password is never
-accepted on the command line.`;
+SMTP intake (test/send): SMTP_HOST, SMTP_PORT, SMTP_USER, FROM_ADDR are read from
+the environment (use node --env-file=.env). SMTP_SECURE ("true"/"false") sets TLS
+EXPLICITLY. The password comes from SMTP_PASS or a hidden prompt — there is
+deliberately NO password flag, so it never appears in argv, logs, or receipts.`;
 
 /**
  * The one merge seam: delegate to lib/core.fillMessage. Exported so the parity
@@ -105,27 +114,43 @@ async function main(): Promise<void> {
     );
   }
 
-  // This plan is a DRY-RUN driver only; live/test send lands in a later plan. Be
-  // explicit when a send mode was requested so nobody thinks mail went out.
-  if (opts.mode === "live") {
-    console.log("NOTE: --send is not wired yet (arrives in a later plan) — showing DRY RUN.");
-  } else if (opts.mode === "test") {
-    console.log(
-      `NOTE: --test is not wired yet (arrives in a later plan) — showing DRY RUN (would target ${opts.testAddr}).`,
-    );
-  }
-
-  console.log("DRY RUN: nothing will be sent.\n");
   console.log(`${parsed.rows.length} recipient(s) loaded from ${opts.csv}`);
 
-  const total = parsed.rows.length;
-  parsed.rows.forEach((row, i) => {
-    const to = opts.mode === "test" ? (opts.testAddr as string) : (row[emailColumn] ?? "");
-    const merged = mergeRow(tpl, row);
-    console.log(`[${i + 1}/${total}] would send -> ${to}  |  ${merged.subject}`);
-  });
+  // DRY RUN (default) — list only; never connect to SMTP, never read a secret.
+  if (opts.mode === "dry") {
+    console.log("DRY RUN: nothing will be sent.\n");
+    const total = parsed.rows.length;
+    parsed.rows.forEach((row, i) => {
+      const to = row[emailColumn] ?? "";
+      const merged = mergeRow(tpl, row);
+      console.log(`[${i + 1}/${total}] would send -> ${to}  |  ${merged.subject}`);
+    });
+    console.log("\nDry run complete.");
+    return;
+  }
 
-  console.log("\nDry run complete.");
+  // TEST / LIVE — intake the SMTP secret safely (env → hidden prompt, never argv),
+  // resolve the receipts path, and hand off to the single shared send driver
+  // (run.ts), the same module the MCP tools reuse in Plan 03.
+  const intake = await readSmtpConfig({ isTty: Boolean(process.stdin.isTTY) });
+  const receiptsPath = opts.noReceipts
+    ? undefined
+    : (opts.receipts ?? deriveReceiptsPath(opts.csv));
+
+  await runSend({
+    mode: opts.mode,
+    rows: parsed.rows,
+    emailColumn,
+    template: tpl,
+    smtp: intake.smtp,
+    from: intake.from,
+    fromName: intake.fromName,
+    testAddr: opts.testAddr,
+    delayMs: opts.delayMs,
+    receiptsPath,
+    noReceipts: opts.noReceipts,
+    resume: opts.resume,
+  });
 }
 
 // Only run when invoked directly (as the `mail-merge` bin or `tsx src/bin.ts`),
