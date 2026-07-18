@@ -21,11 +21,14 @@ import { readFileSync, realpathSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+
 import { parseCliArgs } from "./args.js";
 import { loadTemplate } from "./template.js";
 import { readSmtpConfig } from "./secrets.js";
 import { deriveReceiptsPath } from "./receipts.js";
 import { runSend } from "./run.js";
+import { buildServer } from "./mcp.js";
 import {
   parseCsv,
   detectEmailColumn,
@@ -67,9 +70,14 @@ export function mergeRow(tpl: MessageTemplate, row: FillRow): MessageTemplate {
   return fillMessage(tpl, row);
 }
 
-/** Stub for `mail-merge mcp` — wired in Plan 03. */
-export function startMcp(): never {
-  throw new Error("mcp mode is not yet wired (arrives in Plan 03)");
+/**
+ * Start the stdio MCP server: build the tool server and connect it to a
+ * StdioServerTransport. stdout is the JSON-RPC channel, so nothing is printed to
+ * it here — any diagnostic must go to stderr (the top-level catch below does).
+ */
+export async function startMcp(): Promise<void> {
+  const server = buildServer();
+  await server.connect(new StdioServerTransport());
 }
 
 /** Read a required file with resolve + isFile guard (T-081-03). */
@@ -91,7 +99,7 @@ async function main(): Promise<void> {
   const argv = process.argv.slice(2);
 
   if (argv[0] === "mcp") {
-    startMcp();
+    await startMcp();
     return;
   }
 
