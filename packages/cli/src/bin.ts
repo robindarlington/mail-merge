@@ -59,8 +59,10 @@ OPTIONS
 
 SMTP intake (test/send): SMTP_HOST, SMTP_PORT, SMTP_USER, FROM_ADDR are read from
 the environment (use node --env-file=.env). SMTP_SECURE ("true"/"false") sets TLS
-EXPLICITLY. The password comes from SMTP_PASS or a hidden prompt — there is
-deliberately NO password flag, so it never appears in argv, logs, or receipts.`;
+EXPLICITLY. When SMTP_SECURE is false, the STARTTLS upgrade is REQUIRED by
+default; set SMTP_REQUIRE_TLS=false only for a plaintext-only local relay. The
+password comes from SMTP_PASS or a hidden prompt — there is deliberately NO
+password flag, so it never appears in argv, logs, or receipts.`;
 
 /**
  * The one merge seam: delegate to lib/core.fillMessage. Exported so the parity

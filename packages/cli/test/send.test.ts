@@ -140,6 +140,32 @@ test("readSmtpConfig honours SMTP_SECURE=true explicitly (never inferred from po
   assert.equal(intake.smtp.secure, true);
 });
 
+test("secure:false defaults requireTLS:true — the STARTTLS-stripping defense (CR-01)", async () => {
+  const base = {
+    SMTP_HOST: "h",
+    SMTP_PORT: "587",
+    SMTP_USER: "u",
+    SMTP_PASS: "p",
+    SMTP_SECURE: "false",
+    FROM_ADDR: "f@x.com",
+  };
+
+  const defaulted = await readSmtpConfig({ isTty: false, env: base as NodeJS.ProcessEnv });
+  assert.equal(defaulted.smtp.requireTLS, true, "cleartext connections REQUIRE the STARTTLS upgrade by default");
+
+  const optedOut = await readSmtpConfig({
+    isTty: false,
+    env: { ...base, SMTP_REQUIRE_TLS: "false" } as NodeJS.ProcessEnv,
+  });
+  assert.equal(optedOut.smtp.requireTLS, false, "SMTP_REQUIRE_TLS=false is an explicit opt-out");
+
+  const secure = await readSmtpConfig({
+    isTty: false,
+    env: { ...base, SMTP_SECURE: "true" } as NodeJS.ProcessEnv,
+  });
+  assert.equal(secure.smtp.requireTLS, undefined, "implicit-TLS connections do not set requireTLS at all");
+});
+
 test("readSmtpConfig throws NAMING the missing var, never leaking a value", async () => {
   await assert.rejects(
     () =>

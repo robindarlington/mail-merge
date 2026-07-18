@@ -102,9 +102,17 @@ function readRcptAddrs(logPath: string): string[] {
     .map((l) => (JSON.parse(l) as { addr: string }).addr);
 }
 
-/** An SMTP param block pointing at a spawned stub-smtp. */
+/** An SMTP param block pointing at a spawned stub-smtp. The stub disables
+ *  STARTTLS, so tests opt out of the requireTls default EXPLICITLY (CR-01). */
 function stubSmtpParam(port: number) {
-  return { host: "127.0.0.1", port, secure: false, user: "u", pass: "MCP-SECRET-PW-42" };
+  return {
+    host: "127.0.0.1",
+    port,
+    secure: false,
+    requireTls: false,
+    user: "u",
+    pass: "MCP-SECRET-PW-42",
+  };
 }
 
 // --- Task 1: discovery + read-only tools -------------------------------------
@@ -233,6 +241,34 @@ test("test-send routes through run.ts to stub-smtp; password never in the result
         !JSON.stringify(result).includes("MCP-SECRET-PW-42"),
         "the SMTP password never appears in the tool result",
       );
+    } finally {
+      await close();
+    }
+  });
+});
+
+test("secure:false WITHOUT requireTls:false refuses a no-STARTTLS server (CR-01 default)", async () => {
+  await withStubSmtp(async ({ port, logPath }) => {
+    const { client, close } = await connect();
+    try {
+      // Omit requireTls entirely: the default (true) must REQUIRE the STARTTLS
+      // upgrade, and the stub disables STARTTLS — so the send must fail closed
+      // instead of authenticating over cleartext.
+      const { requireTls: _omitted, ...noRequireTls } = stubSmtpParam(port);
+      const result = (await client.callTool({
+        name: "test-send",
+        arguments: {
+          csv: CSV,
+          subject: "Hi {{name}}",
+          body: "x",
+          smtp: noRequireTls,
+          from: "noreply@example.com",
+          testAddr: "proof@me.com",
+          delayMs: 0,
+        },
+      })) as { isError?: boolean };
+      assert.equal(result.isError, true, "cleartext AUTH without STARTTLS is refused");
+      assert.equal(readRcptAddrs(logPath).length, 0, "nothing was delivered in cleartext");
     } finally {
       await close();
     }

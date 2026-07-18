@@ -99,6 +99,7 @@ a process manager, or `node --env-file=.env`:
 | `FROM_ADDR` | yes | Envelope/from address. |
 | `FROM_NAME` | no | Sender display name. |
 | `SMTP_SECURE` | no | `"true"` for implicit TLS, `"false"` (default) otherwise. **Set this explicitly** — it is never inferred from the port. |
+| `SMTP_REQUIRE_TLS` | no | When `SMTP_SECURE` is `false`, the STARTTLS upgrade is **required by default** so credentials can never travel in cleartext. Set `"false"` only for a genuinely plaintext-only local relay. |
 
 \* **The password never comes from a command-line flag** — there is deliberately no
 `--password` option, so it can never leak into `argv`, shell history, `ps`, logs, or
@@ -173,6 +174,9 @@ Live `send` is deliberately gated so an agent cannot fire a batch in a single st
 - **BYO SMTP** — mail is sent through _your_ SMTP server; there is no shared relay.
 - **Password never in argv/logs/receipts** — env var or hidden prompt only.
 - **Explicit TLS** — `SMTP_SECURE` is an explicit boolean, never inferred from the port.
+  When it is `false`, the STARTTLS upgrade is required by default (`SMTP_REQUIRE_TLS`
+  / MCP `smtp.requireTls`), so a stripped or absent STARTTLS fails instead of
+  silently authenticating in cleartext.
 - **Verify before send** — `transport.verify()` gates every batch.
 
 ---

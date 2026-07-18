@@ -11,6 +11,12 @@
  * ("true"/"false"), NEVER inferred from the port number. `send-credentials.ts`
  * used `secure: port === 465`; that port-based inference is intentionally gone.
  *
+ * STARTTLS-stripping defense (T-2-TLS): when `secure` is false the config sets
+ * `requireTLS: true` by DEFAULT, so a STARTTLS-capable server (or an active MITM
+ * stripping the upgrade) can never silently keep AUTH on a cleartext connection.
+ * `SMTP_REQUIRE_TLS=false` is the explicit opt-out for genuinely plaintext-only
+ * local relays.
+ *
  * `promptHidden` is ported verbatim from `send-credentials.ts` (the readline
  * `_writeToOutput` mute trick), so the interactive experience is byte-identical.
  */
@@ -75,7 +81,9 @@ function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
 /**
  * Assemble an {@link SmtpIntake} from the environment. Required vars:
  * `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `FROM_ADDR`. `SMTP_SECURE` is read as an
- * EXPLICIT boolean (default `false`) — never inferred from the port. The password
+ * EXPLICIT boolean (default `false`) — never inferred from the port. When
+ * `secure` is false, `requireTLS` defaults to true (STARTTLS upgrade REQUIRED,
+ * T-2-TLS) unless `SMTP_REQUIRE_TLS=false` explicitly opts out. The password
  * comes from `SMTP_PASS`; if that is unset and a TTY is attached, it falls back to
  * the hidden prompt. A still-empty password throws "No SMTP password provided."
  *
@@ -109,11 +117,17 @@ export async function readSmtpConfig(opts: ReadSmtpConfigOpts = {}): Promise<Smt
 
   const fromName = env.FROM_NAME || undefined;
 
+  // STARTTLS-stripping defense (T-2-TLS): on a cleartext connection, REQUIRE the
+  // STARTTLS upgrade unless SMTP_REQUIRE_TLS=false explicitly opts out (needed
+  // only for genuinely plaintext-only local relays). Irrelevant when secure:true.
+  const requireTLS = (env.SMTP_REQUIRE_TLS ?? "true").trim().toLowerCase() === "true";
+
   const smtp: SmtpConfig = {
     host,
     port,
     secure,
     auth: { user, pass },
+    ...(secure ? {} : { requireTLS }),
   };
 
   return { smtp, from, ...(fromName ? { fromName } : {}) };

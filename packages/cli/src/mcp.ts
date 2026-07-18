@@ -67,12 +67,26 @@ const smtpSchema = z.object({
   secure: z.boolean().describe("Explicit TLS on/off — never inferred from the port."),
   user: z.string(),
   pass: z.string().describe("SMTP password; used for the send and never echoed back."),
+  requireTls: z
+    .boolean()
+    .optional()
+    .describe(
+      "When secure is false, require the STARTTLS upgrade (default true — T-2-TLS). Set false ONLY for a genuinely plaintext-only local relay.",
+    ),
 });
 type SmtpParam = z.infer<typeof smtpSchema>;
 
 /** Map the flat MCP smtp param into lib/core's SmtpConfig (auth nesting). */
 function toSmtpConfig(p: SmtpParam): SmtpConfig {
-  return { host: p.host, port: p.port, secure: p.secure, auth: { user: p.user, pass: p.pass } };
+  return {
+    host: p.host,
+    port: p.port,
+    secure: p.secure,
+    auth: { user: p.user, pass: p.pass },
+    // STARTTLS-stripping defense (T-2-TLS): on a cleartext connection, REQUIRE
+    // the upgrade unless the caller explicitly opts out with requireTls: false.
+    ...(p.secure ? {} : { requireTLS: p.requireTls ?? true }),
+  };
 }
 
 /**
@@ -97,6 +111,7 @@ function hashSendParams(input: {
     input.smtp.host,
     input.smtp.port,
     input.smtp.secure,
+    input.smtp.requireTls ?? null,
     input.smtp.user,
     input.smtp.pass,
     input.from,
