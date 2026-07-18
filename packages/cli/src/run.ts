@@ -69,6 +69,12 @@ export interface RunSendOpts {
   resume?: boolean;
   /** Transport factory seam (tests inject a recorder); defaults to real SMTP. */
   createTransport?: TransportFactory;
+  /**
+   * Progress sink (defaults to `console.log`). The MCP server passes a
+   * stderr-backed sink here so per-row progress can NEVER land on stdout — the
+   * JSON-RPC channel — even with overlapping tool calls (no global patching).
+   */
+  log?: (line: string) => void;
 }
 
 /** Tallies returned to the caller (also used by the MCP tools in Plan 03). */
@@ -105,6 +111,7 @@ export async function runSend(opts: RunSendOpts): Promise<RunSendResult> {
     noReceipts,
     resume,
     createTransport = createSmtpTransport as TransportFactory,
+    log = console.log,
   } = opts;
 
   if (mode === "test" && !testAddr) {
@@ -112,9 +119,9 @@ export async function runSend(opts: RunSendOpts): Promise<RunSendResult> {
   }
 
   // Mode banner (send-credentials.ts parity).
-  if (mode === "dry") console.log("DRY RUN: nothing will be sent.\n");
-  else if (mode === "test") console.log(`TEST mode: every message goes to ${testAddr}\n`);
-  else console.log("LIVE mode: messages go to each real recipient\n");
+  if (mode === "dry") log("DRY RUN: nothing will be sent.\n");
+  else if (mode === "test") log(`TEST mode: every message goes to ${testAddr}\n`);
+  else log("LIVE mode: messages go to each real recipient\n");
 
   const total = rows.length;
   const fromField = formatFrom(from, fromName);
@@ -126,7 +133,7 @@ export async function runSend(opts: RunSendOpts): Promise<RunSendResult> {
     transport = createTransport(smtp);
     // Pre-loop connectivity/auth gate — fail fast before iterating recipients.
     await verifyTransport(transport);
-    console.log("SMTP connection OK.\n");
+    log("SMTP connection OK.\n");
   }
 
   let sent = 0;
@@ -141,7 +148,7 @@ export async function runSend(opts: RunSendOpts): Promise<RunSendResult> {
 
       if (resume && sentSet.has(to)) {
         skipped++;
-        console.log(`${tag} skip (already sent) -> ${to}`);
+        log(`${tag} skip (already sent) -> ${to}`);
         continue;
       }
 
@@ -149,7 +156,7 @@ export async function runSend(opts: RunSendOpts): Promise<RunSendResult> {
       const filled = fillMessage(template, row);
 
       if (mode === "dry") {
-        console.log(`${tag} would send -> ${to}  |  ${filled.subject}`);
+        log(`${tag} would send -> ${to}  |  ${filled.subject}`);
         continue;
       }
 
@@ -163,11 +170,11 @@ export async function runSend(opts: RunSendOpts): Promise<RunSendResult> {
 
       if (res.ok) {
         sent++;
-        console.log(`${tag} sent -> ${to}`);
+        log(`${tag} sent -> ${to}`);
       } else {
         failed++;
         // Error MESSAGE only — never the auth object/password.
-        console.log(`${tag} FAILED -> ${to}: ${res.error.message}`);
+        log(`${tag} FAILED -> ${to}: ${res.error.message}`);
       }
 
       if (writeReceipts && receiptsPath) {
@@ -183,8 +190,8 @@ export async function runSend(opts: RunSendOpts): Promise<RunSendResult> {
     transport?.close?.();
   }
 
-  if (mode === "dry") console.log("\nDry run complete.");
-  else console.log(`\nDone. ${sent}/${total} sent${skipped ? `, ${skipped} skipped` : ""}.`);
+  if (mode === "dry") log("\nDry run complete.");
+  else log(`\nDone. ${sent}/${total} sent${skipped ? `, ${skipped} skipped` : ""}.`);
 
   return { total, sent, failed, skipped };
 }

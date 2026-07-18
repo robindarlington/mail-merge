@@ -355,6 +355,39 @@ test("runSend test mode addresses ONE address but keeps each row's real fill (CL
   }
 });
 
+test("an injected log sink receives ALL progress; console.log is never touched (WR-01)", async () => {
+  const { runSend } = await import("../src/run.js");
+  const { transport } = recordingTransport();
+  const sink: string[] = [];
+
+  let consoleLogCalls = 0;
+  const origLog = console.log;
+  console.log = () => {
+    consoleLogCalls++;
+  };
+  try {
+    await runSend({
+      mode: "test",
+      testAddr: "proof@me.com",
+      rows: ROWS,
+      emailColumn: "email",
+      template: TEMPLATE,
+      smtp: { host: "127.0.0.1", port: 1, secure: false, auth: { user: "u", pass: "p" } },
+      from: "noreply@example.com",
+      delayMs: 0,
+      noReceipts: true,
+      createTransport: () => transport,
+      log: (l) => sink.push(l),
+    });
+  } finally {
+    console.log = origLog;
+  }
+
+  assert.equal(consoleLogCalls, 0, "with a log sink injected, console.log is NEVER called");
+  assert.ok(sink.some((l) => l.includes("sent -> proof@me.com")), "per-row progress reached the sink");
+  assert.ok(sink.some((l) => l.includes("Done.")), "the summary line reached the sink");
+});
+
 test("a known SMTP_PASS never reaches stdout/stderr or the receipts file (SC-2)", async () => {
   const { runSend } = await import("../src/run.js");
   const SECRET = "MARKER-PW-do-not-leak-42";

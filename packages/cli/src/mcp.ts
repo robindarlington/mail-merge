@@ -125,25 +125,15 @@ function hashSendParams(input: {
 }
 
 /**
- * Run the shared send driver with its stdout progress redirected to stderr.
+ * Progress sink for MCP-driven sends: stderr, NEVER stdout.
  *
- * `runSend` (run.ts) writes per-row progress via `console.log`. On the real
- * `mail-merge mcp` stdio server, stdout IS the JSON-RPC channel — so those lines
- * would corrupt the protocol. Routing runSend's stdout to stderr for the duration
- * keeps the JSON-RPC stream clean while preserving operator-visible progress.
- * (In-process tests use InMemoryTransport, so this is invisible there.)
+ * On the real `mail-merge mcp` stdio server, stdout IS the JSON-RPC channel — a
+ * per-row progress line there would corrupt the protocol. Passing this sink via
+ * runSend's `log` seam (instead of monkey-patching the global `console.log`) is
+ * reentrant and safe under overlapping tool calls: no global state is ever
+ * swapped, so a concurrent send can never leak progress onto stdout.
  */
-async function runSendQuietStdout(
-  ...args: Parameters<typeof runSend>
-): ReturnType<typeof runSend> {
-  const origLog = console.log;
-  console.log = console.error.bind(console);
-  try {
-    return await runSend(...args);
-  } finally {
-    console.log = origLog;
-  }
-}
+const stderrLog = (line: string): void => console.error(line);
 
 /**
  * Build the mail-merge MCP server with all four tools registered.
@@ -269,7 +259,7 @@ export function buildServer(): McpServer {
         const parsed = parseCsv(csv);
         const emailColumn = detectEmailColumn(parsed.columns, parsed.rows) ?? "";
         const resolvedDelay = delayMs ?? DEFAULT_DELAY_MS;
-        const result = await runSendQuietStdout({
+        const result = await runSend({
           mode: "test",
           rows: parsed.rows,
           emailColumn,
@@ -281,6 +271,7 @@ export function buildServer(): McpServer {
           delayMs: resolvedDelay,
           receiptsPath,
           noReceipts: !receiptsPath,
+          log: stderrLog,
         });
         return toolOk({
           attempted: result.sent + result.failed,
@@ -339,7 +330,7 @@ export function buildServer(): McpServer {
             );
           }
           confirmTokens.delete(confirmToken); // consume — a replay is refused
-          const result = await runSendQuietStdout({
+          const result = await runSend({
             mode: "live",
             rows: parsed.rows,
             emailColumn,
@@ -351,6 +342,7 @@ export function buildServer(): McpServer {
             receiptsPath,
             noReceipts: !receiptsPath,
             resume: Boolean(receiptsPath),
+            log: stderrLog,
           });
           return toolOk({
             attempted: result.sent + result.failed,
