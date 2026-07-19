@@ -125,4 +125,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-18 (Phase 08.1 complete — standalone npm-installable CLI + stdio MCP server over lib/core; first `npm publish` queued as human action)*
+*Last updated: 2026-07-19 (Phase 9 complete — final v1 phase. Public marketing routes (/, /docs, /self-host, /agents) live on staging, README + write-up committed, BRAND-01 footer shipped. All 11 roadmap phases done; remaining human items: first npm publish of the CLI, signed-in redirect spot-check, authed screenshots)*
