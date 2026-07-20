@@ -149,3 +149,61 @@ body {
     @apply font-sans;
   }
 }
+
+/* Brand: CSS-only merge-field typing hero ({{name}} → Sarah), echoing
+   robindarlington.com's typing motif. Static RSC — no client JS. */
+@keyframes brand-type {
+  from {
+    width: 0;
+  }
+  to {
+    width: 5ch;
+  }
+}
+
+@keyframes brand-caret {
+  0%,
+  49% {
+    border-color: var(--primary);
+  }
+  50%,
+  100% {
+    border-color: transparent;
+  }
+}
+
+.brand-typed {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  vertical-align: bottom;
+  width: 5ch;
+  border-right: 2px solid var(--primary);
+  animation: brand-type 1.6s steps(5, end) 0.4s both,
+    brand-caret 0.8s step-end infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-typed {
+    animation: none;
+    width: 5ch;
+    border-right-color: transparent;
+  }
+}
+
+/* Brand: 180ms ease transitions scoped to marketing interactive elements only.
+   Authed (app) surfaces are NOT descendants of .brand-marketing, so untouched. */
+.brand-marketing a,
+.brand-marketing button,
+.brand-marketing [data-slot="card"] {
+  transition: color 180ms ease, background-color 180ms ease,
+    border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-marketing a,
+  .brand-marketing button,
+  .brand-marketing [data-slot="card"] {
+    transition: none;
+  }
+}

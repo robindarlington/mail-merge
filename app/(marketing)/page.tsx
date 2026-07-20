@@ -62,6 +62,13 @@ export default async function Home() {
           your own SMTP server — with live progress and a record of exactly what
           was sent.
         </p>
+        <p className="font-mono text-sm text-muted-foreground">
+          <span>{"{{name}}"}</span>
+          <span aria-hidden="true" className="mx-2">
+            →
+          </span>
+          <span className="brand-typed text-primary">Sarah</span>
+        </p>
         <div className="flex flex-wrap items-center gap-4">
           <Button asChild>
             <Link href="/sign-up">Get started</Link>
