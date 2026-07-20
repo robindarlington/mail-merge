@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-24)
 Phase: 09
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-07-19
+Last activity: 2026-07-20 - Completed quick task 260720-whs: brand alignment with robindarlington.com
 
 Progress: [█████████░] 92%
 
@@ -107,6 +107,7 @@ None yet.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260720-whs | Brand-align app with robindarlington.com (forest-green tokens, JetBrains Mono, typing hero) | 2026-07-20 | 88370da | [260720-whs-brand-align-app-with-robindarlington-com](./quick/260720-whs-brand-align-app-with-robindarlington-com/) |
 | 260710-dzc | Apply approved go-to-market planning updates (9 items) to .planning docs and add MIT LICENSE | 2026-07-10 | 5ab57ee | [260710-dzc-apply-approved-go-to-market-planning-upd](./quick/260710-dzc-apply-approved-go-to-market-planning-upd/) |
 | 260713-v0t | Fix compose-editor bugs: merge fields with spaces in column names + caret-following autocomplete popover | 2026-07-13 | 9d1ccf9 | [260713-v0t-fix-compose-editor-bugs-merge-fields-wit](./quick/260713-v0t-fix-compose-editor-bugs-merge-fields-wit/) |
 | 260714-dxm | Rename Recipients page to Lists and add a CSV contents viewer (columns + rows detail page per upload) | 2026-07-14 | 892c0d9 | [260714-dxm-rename-recipients-page-to-lists-and-add-](./quick/260714-dxm-rename-recipients-page-to-lists-and-add-/) |
