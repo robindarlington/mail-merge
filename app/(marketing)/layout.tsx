@@ -21,7 +21,7 @@ export default function MarketingLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <div className="flex min-h-svh flex-col">
+    <div className="brand-marketing flex min-h-svh flex-col">
       <header className="flex h-16 items-center justify-between border-b px-6">
         <Link href="/" className="text-xl font-semibold">
           Mail Merge
