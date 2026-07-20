@@ -128,3 +128,4 @@ Items acknowledged and carried forward from previous milestone close:
 Last session: 2026-07-18T22:09:38.005Z
 Stopped at: Phase 9 UI-SPEC approved
 Resume file: .planning/phases/09-launch-collateral/09-UI-SPEC.md
+| 2026-07-20 | fast | Create UAT-CHECKLIST.md morning reference | ✅ |
