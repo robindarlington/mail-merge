@@ -93,7 +93,17 @@ Exceptions:
 
 ## Typography
 
-Inherited verbatim from 02-UI-SPEC.md. Exactly **4 sizes, 2 weights** (400 regular, 600 semibold). No monospace face introduced — code snippets render in Geist sans inside a `bg-muted` block (self-resolved D-2: a mono font would be a new dependency; `font-mono` maps to the browser default stack, acceptable for code blocks only — see note). No new type scale (09-RESEARCH.md Pitfall 5).
+Inherited verbatim from 02-UI-SPEC.md. Exactly **4 sizes, 2 weights** (400 regular, 600 semibold). No new type scale (09-RESEARCH.md Pitfall 5).
+
+> **AMENDED 2026-07-20 (supersedes D-2 below) — brand-aligned with
+> robindarlington.com.** The earlier "no monospace font package" decision is
+> superseded: **JetBrains Mono** is now self-hosted via `next/font/google` in
+> `app/layout.tsx` (wired as `--font-mono` in the `@theme inline` block of
+> `app/globals.css`). `next/font` self-hosts the woff2 at build time — there is
+> **no runtime Google Fonts request**, so this is a build-time asset, not a
+> forbidden runtime dependency. It drives every code/`pre`/`code` block (marketing
+> pages AND the authed app) via the existing `font-mono` utility. **Geist stays
+> for all UI text** (explicit keep — no Inter/display-font swap).
 
 | Role | Size | Weight | Line Height | Marketing usage |
 |------|------|--------|-------------|-----------------|
@@ -111,13 +121,22 @@ Inherited verbatim from 02-UI-SPEC.md. Exactly **4 sizes, 2 weights** (400 regul
 
 ## Color
 
-All values are existing `app/globals.css` tokens (oklch). Reference by semantic name, never raw values. **No new palette tokens this phase.** Marketing pages are neutral-dominant with a single accent — the exact same one-accent discipline as the app.
+> **AMENDED 2026-07-20 — brand-aligned with robindarlington.com.** The neutral
+> (baseColor: neutral) palette is superseded by a forest-green brand palette
+> mapped into the existing oklch tokens in `app/globals.css`. Light: primary
+> `#2f7d57` on a `#f6faf7` green-tinted background; dark: primary `#73c48f` on
+> `#0b0f0d`. `--success` (sent) and `--destructive` (failed) are unchanged and
+> remain distinct from primary (higher chroma / different hue) so status
+> semantics stay obvious. The one-accent discipline below is preserved — only
+> the accent hue changes, from neutral near-black to forest green.
+
+All values are existing `app/globals.css` tokens (oklch). Reference by semantic name, never raw values. **No new palette tokens this phase.** Marketing pages are brand-dominant with a single accent — the exact same one-accent discipline as the app.
 
 | Role | Value | Usage |
 |------|-------|-------|
-| Dominant (60%) | `--background` oklch(1 0 0) | Page background, hero surface, prose surface |
+| Dominant (60%) | `--background` oklch(0.981 0.006 153.8) light / oklch(0.163 0.008 163.8) dark (`#f6faf7` / `#0b0f0d`) | Page background, hero surface, prose surface |
 | Secondary (30%) | `--card` / `--muted` / `--border` / `--secondary` | Feature/niche `Card` surfaces, code-block backgrounds (`bg-muted`), section dividers (`border`/`Separator`), header bottom border, `secondary` badges |
-| Accent (10%) | `--primary` oklch(0.205 0 0) | See reserved list below |
+| Accent (10%) | `--primary` oklch(0.531 0.098 159.0) light / oklch(0.754 0.111 154.2) dark (`#2f7d57` / `#73c48f`) | See reserved list below |
 | Destructive | `--destructive` oklch(0.577 0.245 27.325) | **Not used** this phase — there are no destructive actions on any marketing page. Listed for completeness only |
 
 Accent (`--primary`) reserved for:
@@ -129,6 +148,25 @@ Accent (`--primary`) reserved for:
 Everything else uses `secondary` / `ghost` / `outline` / neutral text. **Never style all interactive elements with accent** — a docs page with 20 links must not render 20 accent-colored links; they are neutral underlined text. Feature-list icons are `text-muted-foreground` (decorative), never accent.
 
 ---
+
+## Motion
+
+> **ADDED 2026-07-20 — brand-aligned with robindarlington.com** (the brand
+> source). Motion is scoped to the signed-out marketing surface only; the authed
+> work surfaces (dashboard, compose, campaign progress) get **no added motion**.
+
+- **Merge-field typing hero.** The landing hero shows a CSS-only `{{name}} → Sarah`
+  typing animation with a blinking caret (`@keyframes brand-type` / `brand-caret`,
+  `.brand-typed` in `app/globals.css`), echoing robindarlington.com's typing motif.
+  The literal "Sarah" text is present in the DOM (screen-reader legible); the
+  animation only clips its width. The landing page stays a static RSC — no client JS.
+- **Marketing transitions.** Interactive elements on marketing pages (`a`, `button`,
+  `[data-slot="card"]`) carry a `180ms ease` transition, scoped via the
+  `.brand-marketing` class on the marketing layout root so authed pages are never
+  affected.
+- **Reduced motion.** Both the typing animation and the marketing transitions are
+  suppressed under `@media (prefers-reduced-motion: reduce)` — the final state is
+  shown with no motion and no caret.
 
 ## Copywriting Contract
 
@@ -231,7 +269,7 @@ Per the overnight handoff, grey areas were resolved at Claude's discretion using
 | # | Decision | Rationale |
 |---|----------|-----------|
 | D-1 | Marketing pages use `max-w-3xl` (prose) / `max-w-5xl` (hero), wider than the app's 640px `max-w-2xl` column | Marketing/docs is read at rest, not operated; the narrow operating column would waste a landing page. Capped at `max-w-5xl` to stay disciplined |
-| D-2 | No monospace *font package*; code blocks use `font-mono` (browser default stack) inside `bg-muted` | A mono font would be a new dependency (forbidden). Browser mono is adequate for copy-paste commands |
+| D-2 | ~~No monospace *font package*; code blocks use `font-mono` (browser default stack) inside `bg-muted`~~ **SUPERSEDED 2026-07-20:** JetBrains Mono self-hosted via `next/font/google` now drives all code blocks (no runtime request — not a dependency). See Typography amendment. | ~~A mono font would be a new dependency (forbidden). Browser mono is adequate for copy-paste commands~~ Brand alignment with robindarlington.com; `next/font` self-hosts at build so no runtime Google request |
 | D-3 | Hero headline may scale up responsively (`sm:`/`lg:`) but base stays 28px Display | Keeps the declared 4-size scale intact while giving the landing above-the-fold presence |
 | D-4 | Header "Sign in" is `outline` (neutral), not accent | The page's single accent is the "Get started" CTA; two accent buttons would break one-accent discipline |
 | D-5 | Prose/inline links are neutral underlined text, not accent-colored | Matches the existing `SiteFooter` link idiom; avoids a sea of accent on link-heavy docs |
