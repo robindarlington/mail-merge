@@ -78,7 +78,7 @@ Thanks for being a customer at {{company}}.
 | `--delay-ms <n>` | Inter-send throttle in ms (default `3000`). |
 | `--test <addr>` | Send the WHOLE batch to one address (real per-row fill). |
 | `--send` | Send for real, one personalized email per recipient. |
-| `--receipts <file>` | JSONL receipts path (default `<csv>.receipts.jsonl`). |
+| `--receipts <file>` | JSONL receipts path (default: alongside the CSV, `data.csv` → `data.receipts.jsonl`). |
 | `--no-receipts` | Do not write a receipts file. |
 | `--resume` | Skip addresses already recorded `sent` in the receipts. |
 | `-h`, `--help` | Show help. |
@@ -114,8 +114,9 @@ bad host or credential fails fast instead of half-way through your list.
 ## Receipts & `--resume`
 
 Every `--send`/`--test` run appends a JSONL **receipt** per row (`to`, `status`,
-`messageId`/`error`, `timestamp` — never the password) to `<csv>.receipts.jsonl`
-(override with `--receipts`, disable with `--no-receipts`).
+`messageId`/`error`, `timestamp` — never the password) to a file alongside the
+CSV, named after it with the extension replaced (`data.csv` → `data.receipts.jsonl`;
+override with `--receipts`, disable with `--no-receipts`).
 
 `--resume` reads that file and **skips any address already recorded as `sent`**.
 This is **at-least-once**, not exactly-once: each receipt is flushed to disk before

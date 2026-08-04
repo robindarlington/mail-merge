@@ -52,7 +52,7 @@ OPTIONS
   --delay-ms <n>          Inter-send throttle in ms (default 3000).
   --test <addr>           Send the WHOLE batch to one address (real per-row fill).
   --send                  Send for real, one personalized email per recipient.
-  --receipts <file>       JSONL receipts path (default: <csv>.receipts.jsonl).
+  --receipts <file>       JSONL receipts path (default: data.csv -> data.receipts.jsonl).
   --no-receipts           Do not write a receipts file.
   --resume                Skip addresses already recorded 'sent' in the receipts.
   -h, --help              Show this help.
