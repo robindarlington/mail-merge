@@ -173,6 +173,9 @@ body {
 }
 
 .brand-typed {
+  /* content-box: the caret border must sit OUTSIDE the 5ch text width, or
+     preflight's border-box steals 2px from "Sarah" and clips the final glyph */
+  box-sizing: content-box;
   display: inline-block;
   overflow: hidden;
   white-space: nowrap;
