@@ -33,6 +33,20 @@ export default function RootLayout({
           gtag('config', 'G-5BLLNZ9SSD');
         `}
       </Script>
+      <Script id="matomo-analytics" strategy="afterInteractive">
+        {`
+          var _paq = window._paq = window._paq || [];
+          _paq.push(['trackPageView']);
+          _paq.push(['enableLinkTracking']);
+          (function() {
+            var u='https://stats.lancerun.site/';
+            _paq.push(['setTrackerUrl', u+'matomo.php']);
+            _paq.push(['setSiteId', '6']);
+            var d=document, g=d.createElement('script'), s=d.getElementsByTagName('script')[0];
+            g.async=true; g.src=u+'matomo.js'; s.parentNode.insertBefore(g,s);
+          })();
+        `}
+      </Script>
       {/* Clerk rule: ClerkProvider goes INSIDE <body>, not around <html>. */}
       <body>
         <ClerkProvider appearance={{ theme: shadcn }}>{children}</ClerkProvider>
