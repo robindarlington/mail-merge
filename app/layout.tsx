@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 import { Geist, JetBrains_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
@@ -20,6 +21,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={cn("font-sans", geist.variable, jetbrainsMono.variable)}>
+      <Script
+        src="https://www.googletagmanager.com/gtag/js?id=G-5BLLNZ9SSD"
+        strategy="afterInteractive"
+      />
+      <Script id="google-analytics" strategy="afterInteractive">
+        {`
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-5BLLNZ9SSD');
+        `}
+      </Script>
       {/* Clerk rule: ClerkProvider goes INSIDE <body>, not around <html>. */}
       <body>
         <ClerkProvider appearance={{ theme: shadcn }}>{children}</ClerkProvider>
