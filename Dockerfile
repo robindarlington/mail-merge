@@ -19,7 +19,7 @@
 # bumps both together. Keep the base and runtime FROM lines identical.
 # `base` (toolchain'd) is used ONLY by the build-side stages below; the runtime
 # stage starts from the clean slim image so no compiler ever ships (WR-04).
-FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS base
+FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS base
 WORKDIR /app
 # better-sqlite3 compiles a native addon; ship build tooling for npm ci.
 # BUILD STAGES ONLY — the runtime stage must NEVER inherit this layer.
@@ -80,7 +80,7 @@ RUN npm run build \
 # the hardening goal. The native better-sqlite3 addon is already compiled in
 # `prod-deps` (same node:24.22.1-bookworm-slim glibc ABI), so nothing at runtime
 # needs a compiler.
-FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS runtime
+FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 # Ownership is set AT COPY TIME (--chown) — never via a post-hoc `chown -R /app`:
